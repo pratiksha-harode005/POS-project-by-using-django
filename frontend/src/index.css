@@ -1,0 +1,241 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Global resets & base ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  color: #64748B;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Typography helpers ── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0F172A;
+  line-height: 1.2;
+}
+
+/* ── Scrollbar (subtle) ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+/* ── Focus visible utility ── */
+.focus-ring:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Nav link underline animation ── */
+.nav-link {
+  position: relative;
+  font-size: 14px;
+  font-weight: 500;
+  color: #0F172A;
+  transition: color 0.2s;
+}
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: #2563EB;
+  transition: width 0.2s ease;
+}
+.nav-link:hover {
+  color: #2563EB;
+}
+.nav-link:hover::after,
+.nav-link.active::after {
+  width: 100%;
+}
+.nav-link.active {
+  color: #2563EB;
+}
+
+/* ── Card hover shadow ── */
+.feature-card {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -4px rgba(37, 99, 235, 0.12);
+}
+
+/* ── Button base ── */
+.btn-primary {
+  background-color: #2563EB;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-primary:hover {
+  background-color: #1D4ED8;
+}
+.btn-primary:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 3px;
+}
+
+.btn-outline {
+  background-color: transparent;
+  color: #2563EB;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: 2px solid #2563EB;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-outline:hover {
+  background-color: #EFF6FF;
+}
+.btn-outline:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 3px;
+}
+
+/* ── Input base ── */
+.form-input {
+  width: 100%;
+  padding: 10px 12px 10px 42px;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #0F172A;
+  background: #ffffff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+.form-input:focus {
+  border-color: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+.form-input.error {
+  border-color: #EF4444;
+}
+.form-input::placeholder {
+  color: #94A3B8;
+}
+
+/* ── Role selector button ── */
+.role-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border-radius: 10px;
+  border: 2px solid #E5E7EB;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+  flex: 1;
+  min-width: 0;
+}
+.role-btn:hover {
+  border-color: #93C5FD;
+  background: #F0F9FF;
+}
+.role-btn.selected {
+  border-color: #2563EB;
+  background: #EFF6FF;
+}
+.role-btn span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0F172A;
+}
+
+/* ── Stat bar items ── */
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px 16px;
+}
+
+/* ── Eyebrow pill ── */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  background: #DBEAFE;
+  color: #2563EB;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+  margin-bottom: 16px;
+}
+
+/* ── Quote banner ── */
+.quote-banner {
+  background: #0F172A;
+  border-radius: 16px;
+  padding: 40px 48px;
+}
+
+/* ── Contact info card ── */
+.contact-info-card {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 20px;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+/* ── Mobile menu ── */
+.mobile-menu {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-bottom: 1px solid #E5E7EB;
+  padding: 16px 24px 24px;
+  z-index: 49;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+}
