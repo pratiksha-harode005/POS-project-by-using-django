@@ -14,43 +14,46 @@ import {
   Settings,
   Truck,
   ArrowRight,
+  KeyRound,
 } from 'lucide-react'
 
-/* ─── Role definitions ─── */
+/* ─── Role definitions & default credentials ─── */
 const roles = [
-  { label: 'Team Lead', roleKey: 'TEAM_LEAD' as UserRole, icon: Users,      bg: '#DBEAFE', color: '#2563EB' },
-  { label: 'Manager',   roleKey: 'MANAGER' as UserRole,   icon: BarChart3,  bg: '#DCFCE7', color: '#16A34A' },
-  { label: 'Finance',   roleKey: 'FINANCE' as UserRole,   icon: DollarSign, bg: '#FFEDD5', color: '#D97706' },
-  { label: 'Admin',     roleKey: 'ADMIN' as UserRole,     icon: Settings,   bg: '#EDE9FE', color: '#7C3AED' },
-  { label: 'Vendor',    roleKey: 'VENDOR' as UserRole,    icon: Truck,      bg: '#FCE7F3', color: '#DB2777' },
+  { label: 'Team Lead', roleKey: 'TEAM_LEAD' as UserRole, email: 'tl@procurementos.com', pass: 'password123', icon: Users, bg: '#DBEAFE', color: '#2563EB' },
+  { label: 'Manager',   roleKey: 'MANAGER' as UserRole,   email: 'mgr@procurementos.com', pass: 'password123', icon: BarChart3, bg: '#DCFCE7', color: '#16A34A' },
+  { label: 'Finance',   roleKey: 'FINANCE' as UserRole,   email: 'fin@procurementos.com', pass: 'password123', icon: DollarSign, bg: '#FFEDD5', color: '#D97706' },
+  { label: 'Admin',     roleKey: 'ADMIN' as UserRole,     email: 'admin@procurementos.com', pass: 'password123', icon: Settings, bg: '#EDE9FE', color: '#7C3AED' },
+  { label: 'Vendor',    roleKey: 'VENDOR' as UserRole,    email: 'contact@dell.com', pass: 'password123', icon: Truck, bg: '#FCE7F3', color: '#DB2777' },
 ]
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
 
-  const [email, setEmail]         = useState('')
-  const [password, setPassword]   = useState('')
+  const [email, setEmail]         = useState('tl@procurementos.com')
+  const [password, setPassword]   = useState('password123')
   const [showPass, setShowPass]   = useState(false)
-  const [selectedRole, setRole]   = useState<UserRole | null>(null)
-  const [selectedRoleLabel, setSelectedRoleLabel] = useState<string | null>(null)
-  const [errors, setErrors]       = useState<{ email?: string; password?: string; role?: string }>({})
+  const [selectedRole, setRole]   = useState<UserRole>('TEAM_LEAD')
+  const [errors, setErrors]       = useState<{ email?: string; password?: string }>({})
   const [loading, setLoading]     = useState(false)
   const [success, setSuccess]     = useState(false)
 
-  const handleRolePortalClick = async (roleKey: UserRole, label: string) => {
-    setRole(roleKey)
-    setSelectedRoleLabel(label)
+  // Autofill credentials when clicking role icon
+  const handleSelectRole = (r: typeof roles[0]) => {
+    setRole(r.roleKey)
+    setEmail(r.email)
+    setPassword(r.pass)
     setErrors({})
-    setLoading(true)
-    await login(email || 'user@procurementos.com', password || 'password123', roleKey)
-    setTimeout(() => {
-      setLoading(false)
-      setSuccess(true)
-      setTimeout(() => {
-        navigate(`/portal/${roleKey.toLowerCase()}/dashboard`)
-      }, 700)
-    }, 600)
+  }
+
+  // Detect role from email address if user types manually
+  const detectRoleFromEmail = (userEmail: string): UserRole => {
+    const lower = userEmail.toLowerCase().trim()
+    if (lower.includes('mgr') || lower.includes('manager')) return 'MANAGER'
+    if (lower.includes('fin') || lower.includes('finance')) return 'FINANCE'
+    if (lower.includes('admin')) return 'ADMIN'
+    if (lower.includes('dell') || lower.includes('vendor')) return 'VENDOR'
+    return 'TEAM_LEAD'
   }
 
   const validate = (): boolean => {
@@ -65,9 +68,6 @@ export default function LoginPage() {
     } else if (password.length < 6) {
       errs.password = 'Password must be at least 6 characters.'
     }
-    if (!selectedRole) {
-      errs.role = 'Please select your role.'
-    }
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -76,12 +76,17 @@ export default function LoginPage() {
     e.preventDefault()
     if (!validate()) return
     setLoading(true)
-    await login(email, password, selectedRole || 'TEAM_LEAD')
-    setLoading(false)
-    setSuccess(true)
+
+    const targetRole = selectedRole || detectRoleFromEmail(email)
+    await login(email, password, targetRole)
+
     setTimeout(() => {
-      navigate(`/portal/${(selectedRole || 'TEAM_LEAD').toLowerCase()}/dashboard`)
-    }, 700)
+      setLoading(false)
+      setSuccess(true)
+      setTimeout(() => {
+        navigate(`/portal/${targetRole.toLowerCase()}/dashboard`)
+      }, 700)
+    }, 600)
   }
 
   const clearError = (field: keyof typeof errors) => {
@@ -100,14 +105,14 @@ export default function LoginPage() {
         aria-label="Back to Procurement OS home"
       >
         <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center"
+          className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md"
           style={{ backgroundColor: '#2563EB' }}
         >
-          <ShoppingCart size={20} color="#ffffff" strokeWidth={2.5} />
+          <ShoppingCart size={22} color="#FFFFFF" strokeWidth={2.5} />
         </div>
         <span
-          className="font-bold text-[#0F172A] text-lg"
-          style={{ letterSpacing: '-0.01em' }}
+          className="font-bold tracking-tight"
+          style={{ fontSize: '24px', color: '#0F172A' }}
         >
           Procurement OS
         </span>
@@ -130,7 +135,9 @@ export default function LoginPage() {
               <circle cx="12" cy="12" r="10" stroke="#DBEAFE" strokeWidth="3" />
               <path d="M12 2 A10 10 0 0 1 22 12" stroke="#2563EB" strokeWidth="3" strokeLinecap="round" />
             </svg>
-            <p className="font-semibold text-[#0F172A]">Signing in as <span style={{ color: '#2563EB' }}>{selectedRole}</span>…</p>
+            <p className="font-semibold text-[#0F172A]">
+              Signing in as <span style={{ color: '#2563EB' }}>{selectedRole.replace('_', ' ')}</span>…
+            </p>
           </div>
         ) : success ? (
           /* ── Success state ── */
@@ -146,7 +153,7 @@ export default function LoginPage() {
             </div>
             <h2 className="font-bold text-[#0F172A] text-xl">Welcome back!</h2>
             <p style={{ color: '#64748B', fontSize: '14px' }}>
-              Logged in as <strong>{selectedRole}</strong>. Redirecting to your dashboard…
+              Logged in as <strong>{selectedRole.replace('_', ' ')}</strong>. Redirecting to your portal dashboard…
             </p>
           </div>
         ) : (
@@ -158,7 +165,7 @@ export default function LoginPage() {
             >
               Login to Your Account
             </h1>
-            <p className="text-center text-sm mb-8" style={{ color: '#64748B' }}>
+            <p className="text-center text-sm mb-6" style={{ color: '#64748B' }}>
               Enter your credentials to continue
             </p>
 
@@ -184,7 +191,11 @@ export default function LoginPage() {
                     autoComplete="email"
                     placeholder="Email address"
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); clearError('email') }}
+                    onChange={(e) => {
+                      setEmail(e.target.value)
+                      clearError('email')
+                      setRole(detectRoleFromEmail(e.target.value))
+                    }}
                     className={`form-input ${errors.email ? 'error' : ''}`}
                     aria-describedby={errors.email ? 'login-email-error' : undefined}
                     aria-invalid={!!errors.email}
@@ -251,102 +262,95 @@ export default function LoginPage() {
                 )}
               </div>
 
-              {/* Login button */}
+              {/* Submit Button */}
               <button
                 type="submit"
-                className="btn-primary w-full justify-center mb-5"
-                disabled={loading}
-                aria-busy={loading}
+                className="btn-primary w-full py-3 text-base flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
+                style={{ borderRadius: '10px' }}
               >
-                {loading ? (
-                  <>
-                    <svg
-                      className="animate-spin"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" />
-                      <path d="M12 2 A10 10 0 0 1 22 12" stroke="white" strokeWidth="3" strokeLinecap="round" />
-                    </svg>
-                    Signing in…
-                  </>
-                ) : (
-                  <>Login <ArrowRight size={16} /></>
-                )}
+                <span>Login to {selectedRole.replace('_', ' ')} Portal</span>
+                <ArrowRight size={18} />
               </button>
-
-              {/* Divider */}
-              <div className="relative flex items-center mb-5">
-                <div className="flex-1 border-t border-[#E5E7EB]" />
-                <span
-                  className="mx-3 text-xs font-medium"
-                  style={{ color: '#94A3B8' }}
-                >
-                  or
-                </span>
-                <div className="flex-1 border-t border-[#E5E7EB]" />
-              </div>
-
-              {/* Role selector */}
-              <div>
-                <p
-                  className="text-sm font-medium text-[#0F172A] mb-3"
-                  id="role-label"
-                >
-                  Select Your Role
-                </p>
-                <div
-                  className="flex gap-2"
-                  role="radiogroup"
-                  aria-labelledby="role-label"
-                  aria-describedby={errors.role ? 'role-error' : undefined}
-                >
-                  {roles.map(({ label, roleKey, icon: Icon, bg, color }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      role="radio"
-                      aria-checked={selectedRole === roleKey}
-                      onClick={() => handleRolePortalClick(roleKey, label)}
-                      className={`role-btn ${selectedRole === roleKey ? 'selected' : ''}`}
-                      aria-label={`Login as ${label}`}
-                    >
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center"
-                        style={{ backgroundColor: bg }}
-                        aria-hidden="true"
-                      >
-                        <Icon size={16} color={color} strokeWidth={2} />
-                      </div>
-                      <span>{label}</span>
-                    </button>
-                  ))}
-                </div>
-                {errors.role && (
-                  <p
-                    id="role-error"
-                    className="flex items-center gap-1.5 mt-2 text-red-600"
-                    style={{ fontSize: '13px' }}
-                    role="alert"
-                  >
-                    <AlertCircle size={13} /> {errors.role}
-                  </p>
-                )}
-              </div>
             </form>
 
-            {/* Footer note */}
-            <p
-              className="text-center text-xs mt-6"
-              style={{ color: '#94A3B8' }}
-            >
+            {/* Divider */}
+            <div className="relative flex items-center my-6">
+              <div className="flex-1 border-t border-[#E5E7EB]" />
+              <span
+                className="mx-3 text-xs font-medium uppercase tracking-wider"
+                style={{ color: '#94A3B8' }}
+              >
+                or autofill portal credentials
+              </span>
+              <div className="flex-1 border-t border-[#E5E7EB]" />
+            </div>
+
+            {/* Role quick selector */}
+            <div>
+              <p
+                className="text-xs font-bold text-[#0F172A] mb-2.5 uppercase tracking-wider text-center"
+                id="role-label"
+              >
+                Select Role Portal to Autofill
+              </p>
+              <div
+                className="flex gap-2"
+                role="radiogroup"
+                aria-labelledby="role-label"
+              >
+                {roles.map((r) => {
+                  const Icon = r.icon
+                  const isSelected = selectedRole === r.roleKey
+                  return (
+                    <button
+                      key={r.label}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => handleSelectRole(r)}
+                      className={`role-btn ${isSelected ? 'selected' : ''}`}
+                      aria-label={`Autofill credentials for ${r.label}`}
+                    >
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center mb-1"
+                        style={{ backgroundColor: r.bg }}
+                        aria-hidden="true"
+                      >
+                        <Icon size={16} color={r.color} strokeWidth={2} />
+                      </div>
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: isSelected ? '#2563EB' : '#0F172A' }}
+                      >
+                        {r.label}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Quick credentials hint */}
+            <div className="mt-6 p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-[11px] text-gray-600">
+              <div className="flex items-center gap-1.5 font-bold text-blue-900 mb-1">
+                <KeyRound size={13} className="text-blue-600" />
+                <span>Pre-configured Portal Credentials (Password: password123)</span>
+              </div>
+              <ul className="space-y-0.5 text-[10.5px]">
+                <li>• <strong>Team Lead:</strong> tl@procurementos.com</li>
+                <li>• <strong>Manager:</strong> mgr@procurementos.com</li>
+                <li>• <strong>Finance:</strong> fin@procurementos.com</li>
+                <li>• <strong>Admin:</strong> admin@procurementos.com</li>
+                <li>• <strong>Vendor:</strong> contact@dell.com</li>
+              </ul>
+            </div>
+
+            {/* Admin note */}
+            <p className="text-center text-xs mt-4" style={{ color: '#64748B' }}>
               Don't have an account?{' '}
               <Link
                 to="/contact"
-                className="text-[#2563EB] font-medium hover:underline focus-ring rounded"
+                className="font-medium text-[#2563EB] hover:underline focus-ring rounded"
               >
                 Contact your administrator
               </Link>
