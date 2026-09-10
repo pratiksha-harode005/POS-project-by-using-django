@@ -1,5 +1,6 @@
 import { useState, FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth, UserRole } from '../../context/AuthContext'
 import {
   ShoppingCart,
   Mail,
@@ -17,21 +18,40 @@ import {
 
 /* ─── Role definitions ─── */
 const roles = [
-  { label: 'Team Lead', icon: Users,      bg: '#DBEAFE', color: '#2563EB' },
-  { label: 'Manager',   icon: BarChart3,  bg: '#DCFCE7', color: '#16A34A' },
-  { label: 'Finance',   icon: DollarSign, bg: '#FFEDD5', color: '#D97706' },
-  { label: 'Admin',     icon: Settings,   bg: '#EDE9FE', color: '#7C3AED' },
-  { label: 'Vendor',    icon: Truck,      bg: '#FCE7F3', color: '#DB2777' },
+  { label: 'Team Lead', roleKey: 'TEAM_LEAD' as UserRole, icon: Users,      bg: '#DBEAFE', color: '#2563EB' },
+  { label: 'Manager',   roleKey: 'MANAGER' as UserRole,   icon: BarChart3,  bg: '#DCFCE7', color: '#16A34A' },
+  { label: 'Finance',   roleKey: 'FINANCE' as UserRole,   icon: DollarSign, bg: '#FFEDD5', color: '#D97706' },
+  { label: 'Admin',     roleKey: 'ADMIN' as UserRole,     icon: Settings,   bg: '#EDE9FE', color: '#7C3AED' },
+  { label: 'Vendor',    roleKey: 'VENDOR' as UserRole,    icon: Truck,      bg: '#FCE7F3', color: '#DB2777' },
 ]
 
 export default function LoginPage() {
+  const navigate = useNavigate()
+  const { login } = useAuth()
+
   const [email, setEmail]         = useState('')
   const [password, setPassword]   = useState('')
   const [showPass, setShowPass]   = useState(false)
-  const [selectedRole, setRole]   = useState<string | null>(null)
+  const [selectedRole, setRole]   = useState<UserRole | null>(null)
+  const [selectedRoleLabel, setSelectedRoleLabel] = useState<string | null>(null)
   const [errors, setErrors]       = useState<{ email?: string; password?: string; role?: string }>({})
   const [loading, setLoading]     = useState(false)
   const [success, setSuccess]     = useState(false)
+
+  const handleRolePortalClick = async (roleKey: UserRole, label: string) => {
+    setRole(roleKey)
+    setSelectedRoleLabel(label)
+    setErrors({})
+    setLoading(true)
+    await login(email || 'user@procurementos.com', password || 'password123', roleKey)
+    setTimeout(() => {
+      setLoading(false)
+      setSuccess(true)
+      setTimeout(() => {
+        navigate(`/portal/${roleKey.toLowerCase()}/dashboard`)
+      }, 700)
+    }, 600)
+  }
 
   const validate = (): boolean => {
     const errs: typeof errors = {}
@@ -52,15 +72,16 @@ export default function LoginPage() {
     return Object.keys(errs).length === 0
   }
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!validate()) return
     setLoading(true)
-    // Simulate auth call
+    await login(email, password, selectedRole || 'TEAM_LEAD')
+    setLoading(false)
+    setSuccess(true)
     setTimeout(() => {
-      setLoading(false)
-      setSuccess(true)
-    }, 1200)
+      navigate(`/portal/${(selectedRole || 'TEAM_LEAD').toLowerCase()}/dashboard`)
+    }, 700)
   }
 
   const clearError = (field: keyof typeof errors) => {
@@ -102,7 +123,16 @@ export default function LoginPage() {
           padding: '36px 32px',
         }}
       >
-        {success ? (
+        {loading ? (
+          /* ── Loading / signing-in state ── */
+          <div className="flex flex-col items-center text-center py-12 gap-4" role="status" aria-live="polite">
+            <svg className="animate-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" stroke="#DBEAFE" strokeWidth="3" />
+              <path d="M12 2 A10 10 0 0 1 22 12" stroke="#2563EB" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+            <p className="font-semibold text-[#0F172A]">Signing in as <span style={{ color: '#2563EB' }}>{selectedRole}</span>…</p>
+          </div>
+        ) : success ? (
           /* ── Success state ── */
           <div className="flex flex-col items-center text-center py-6 gap-4" role="status" aria-live="polite">
             <div
@@ -274,15 +304,15 @@ export default function LoginPage() {
                   aria-labelledby="role-label"
                   aria-describedby={errors.role ? 'role-error' : undefined}
                 >
-                  {roles.map(({ label, icon: Icon, bg, color }) => (
+                  {roles.map(({ label, roleKey, icon: Icon, bg, color }) => (
                     <button
                       key={label}
                       type="button"
                       role="radio"
-                      aria-checked={selectedRole === label}
-                      onClick={() => { setRole(label); clearError('role') }}
-                      className={`role-btn ${selectedRole === label ? 'selected' : ''}`}
-                      aria-label={`Select role: ${label}`}
+                      aria-checked={selectedRole === roleKey}
+                      onClick={() => handleRolePortalClick(roleKey, label)}
+                      className={`role-btn ${selectedRole === roleKey ? 'selected' : ''}`}
+                      aria-label={`Login as ${label}`}
                     >
                       <div
                         className="w-9 h-9 rounded-full flex items-center justify-center"
