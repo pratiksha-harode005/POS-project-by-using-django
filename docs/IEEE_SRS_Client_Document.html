@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IEEE Software Requirement Specification (SRS v2.0) - EIMP</title>
+    <style>
+        :root {
+            --primary: #1E3A8A;
+            --secondary: #2563EB;
+            --dark: #0F172A;
+            --text: #334155;
+            --light-bg: #F8FAFC;
+            --border: #CBD5E1;
+            --accent: #059669;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px;
+            background-color: #F1F5F9;
+        }
+
+        .document-container {
+            max-width: 960px;
+            margin: 0 auto;
+            background: #FFFFFF;
+            padding: 60px 70px;
+            box-shadow: 0 12px 35px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+
+        .cover-header {
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 30px;
+            margin-bottom: 40px;
+        }
+
+        .company-title {
+            font-weight: 800;
+            color: var(--secondary);
+            font-size: 13px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .doc-main-title {
+            font-size: 30px;
+            color: var(--primary);
+            margin: 15px 0 10px 0;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .doc-sub-title {
+            font-size: 16px;
+            color: #64748B;
+            margin-bottom: 25px;
+        }
+
+        .img-container {
+            margin: 30px 0;
+            text-align: center;
+        }
+
+        .img-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            border: 1px solid var(--border);
+        }
+
+        .img-caption {
+            font-size: 12.5px;
+            color: #64748B;
+            margin-top: 8px;
+            font-style: italic;
+        }
+
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 25px 0;
+            font-size: 13.5px;
+        }
+
+        .meta-table th, .meta-table td {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .meta-table th {
+            background-color: var(--light-bg);
+            color: var(--primary);
+            width: 32%;
+        }
+
+        .alert-important {
+            background-color: #EFF6FF;
+            border-left: 4px solid var(--secondary);
+            padding: 16px;
+            border-radius: 4px;
+            font-size: 13.5px;
+            color: #1E40AF;
+            margin: 25px 0;
+        }
+
+        h1 {
+            font-size: 22px;
+            color: var(--primary);
+            border-bottom: 2px solid #E2E8F0;
+            padding-bottom: 8px;
+            margin-top: 45px;
+        }
+
+        h2 {
+            font-size: 16px;
+            color: var(--secondary);
+            margin-top: 25px;
+        }
+
+        .content-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 13.5px;
+        }
+
+        .content-table th {
+            background-color: #DBEAFE;
+            color: var(--primary);
+            padding: 10px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .content-table td {
+            padding: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .content-table tr:nth-child(even) {
+            background-color: var(--light-bg);
+        }
+
+        code {
+            background: #F1F5F9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12.5px;
+            color: #0F172A;
+        }
+
+        pre {
+            background: #0F172A;
+            color: #F8FAFC;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12.5px;
+        }
+
+        .print-btn {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+        }
+
+        .print-btn:hover {
+            background: var(--primary);
+        }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .document-container { box-shadow: none; padding: 0; max-width: 100%; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="document-container">
+
+    <div class="no-print" style="text-align: right; margin-bottom: 20px;">
+        <button class="print-btn" onclick="window.print()">🖨️ Save as PDF / Print Document</button>
+    </div>
+
+    <!-- COVER HEADER -->
+    <div class="cover-header">
+        <div class="company-title">Kalpanaaa Software Solutions Pvt Ltd — Enterprise Engineering</div>
+        <div class="doc-main-title">IEEE Standard Software Requirement Specification (SRS v2.0)</div>
+        <div class="doc-sub-title">System Requirements & Architecture Specification for Enterprise Investment Management Platform</div>
+
+        <table class="meta-table">
+            <tr>
+                <th>Document Standard</th>
+                <td>IEEE 29148 / ISO 29148 Standard Software Specification</td>
+            </tr>
+            <tr>
+                <th>Document Reference</th>
+                <td>IEEE-29148-EIMP-2026-V2.0</td>
+            </tr>
+            <tr>
+                <th>Target Audience</th>
+                <td>Enterprise Clients, CTOs, VCs, Product Managers, Engineers, Compliance Auditors</td>
+            </tr>
+            <tr>
+                <th>Regulatory Compliance</th>
+                <td>SEBI AIF/Syndicate Rules, RBI P2P/NBFC Norms, BUDS Act 2019, DPDP Act 2023</td>
+            </tr>
+            <tr>
+                <th>Date of Release</th>
+                <td>August 10, 2026</td>
+            </tr>
+            <tr>
+                <th>Approval Status</th>
+                <td>APPROVED FOR CLIENT PRESENTATION & DEVELOPMENT</td>
+            </tr>
+        </table>
+
+        <div class="alert-important">
+            <strong>REVISION NOTICE & COMPLIANCE ALIGNMENT (v2.0):</strong><br>
+            This specification updates and replaces v1.0. All previous fixed-rate investment plans under the label of "Venture Capital" have been realigned into compliant <strong>Debt Investment Slabs (RBI P2P/NBFC Aligned)</strong> and <strong>Syndicate Equity NAV Plans (SEBI Compliant)</strong> to adhere strictly to SEBI AIF Regulations, RBI Financial Guidelines, and the Banning of Unregulated Deposit Schemes (BUDS) Act 2019.
+        </div>
+    </div>
+
+    <!-- DASHBOARD MOCKUP -->
+    <div class="img-container">
+        <img src="./assets/investor_dashboard_mockup.jpg" alt="Investor Dashboard UI Mockup">
+        <div class="img-caption">Figure 1.1: Executive Investor & Finance Analytics Dashboard Interface Mockup</div>
+    </div>
+
+    <!-- SECTION 1 -->
+    <h1>1. Executive Summary & Introduction</h1>
+    <p>The <strong>Enterprise Investment Management Platform (EIMP v2.0)</strong> is an enterprise-grade, multi-tenant digital solution designed to streamline individual and corporate capital allocation, automated return distribution, and wallet payout management.</p>
+    
+    <h2>1.1 Purpose & Scope</h2>
+    <p>This SRS document defines the complete functional, technical, architectural, and security requirements for EIMP v2.0. The platform encompasses:</p>
+    <ul>
+        <li>Investor Onboarding with Instant Automated Digital KYC (PAN, Aadhaar e-KYC, Bank Penny-Drop).</li>
+        <li>Multi-Tier Capital Allocation (Fixed Debt Slabs and Equity Syndicate NAVs).</li>
+        <li>Virtual Account Wallet Management with instant automated payment reconciliation.</li>
+        <li>Authorized Agent Field Portal with Tokenized OTP Verification to eliminate cash fraud.</li>
+        <li>Multi-Level Payout & Withdrawal Approval Engine with automated TDS reporting.</li>
+    </ul>
+
+    <!-- SECTION 2 -->
+    <h1>2. System User Roles & Access Permissions</h1>
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>User Role</th>
+                <th>Interface</th>
+                <th>Core Responsibilities & Capabilities</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Investor</strong></td>
+                <td>Investor Portal</td>
+                <td>Complete Digital KYC, deposit funds via UPI/NetBanking, allocate capital, view daily growth, e-sign contracts, request withdrawals.</td>
+            </tr>
+            <tr>
+                <td><strong>Authorized Agent</strong></td>
+                <td>Agent Portal</td>
+                <td>Assist offline investors, initiate tokenized cash/cheque collection requests verified via mandatory investor OTP.</td>
+            </tr>
+            <tr>
+                <td><strong>Founder / Deal Lead</strong></td>
+                <td>Founder Dashboard</td>
+                <td>Submit pitch data, track total capital raised, publish quarterly performance disclosures, communicate with investors.</td>
+            </tr>
+            <tr>
+                <td><strong>Finance Admin</strong></td>
+                <td>Finance Portal</td>
+                <td>Verify offline bank deposits, approve pending withdrawal requests, review ledger reconciliations, download TDS/Tax reports.</td>
+            </tr>
+            <tr>
+                <td><strong>Super Admin</strong></td>
+                <td>Super Admin Panel</td>
+                <td>Global system configuration, manage investment plan slabs, assign RBAC permissions, audit immutable system logs.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- WORKFLOW DIAGRAM -->
+    <h1>3. End-to-End User Workflow & Process Lifecycle</h1>
+    <div class="img-container">
+        <img src="./assets/user_workflow_lifecycle.jpg" alt="User Workflow Diagram">
+        <div class="img-caption">Figure 3.1: 5-Stage Investment & Withdrawal Lifecycle Process Flow</div>
+    </div>
+
+    <!-- SECTION 4 -->
+    <h1>4. System Architecture & High-Level Design (HLD)</h1>
+    <div class="img-container">
+        <img src="./assets/system_architecture_diagram.jpg" alt="System Architecture Diagram">
+        <div class="img-caption">Figure 4.1: High-Level System Architecture & Technology Stack Topology</div>
+    </div>
+
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>Layer</th>
+                <th>Selected Enterprise Technology</th>
+                <th>Technical Rationale</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Client Layer</strong></td>
+                <td>Next.js 14 (TypeScript), Tailwind CSS</td>
+                <td>Server-Side Rendering (SSR) for ultra-fast load times, SEO optimized, unified TypeScript type safety.</td>
+            </tr>
+            <tr>
+                <td><strong>API Gateway</strong></td>
+                <td>Nginx / AWS API Gateway</td>
+                <td>Rate limiting, SSL/TLS termination, DDOS protection, CORS policy enforcement.</td>
+            </tr>
+            <tr>
+                <td><strong>Backend Microservices</strong></td>
+                <td>Java Spring Boot 3.x OR NestJS</td>
+                <td>High-throughput RESTful architecture, enterprise Spring Security / Passport JWT, asynchronous event processing.</td>
+            </tr>
+            <tr>
+                <td><strong>Relational Database</strong></td>
+                <td>PostgreSQL 16</td>
+                <td>Strict ACID compliance for financial ledger, Row-Level Security (RLS), multi-version concurrency control.</td>
+            </tr>
+            <tr>
+                <td><strong>In-Memory Cache</strong></td>
+                <td>Redis 7</td>
+                <td>High-speed session caching, distributed atomic locks, rate limiting.</td>
+            </tr>
+            <tr>
+                <td><strong>Storage & Cloud Infra</strong></td>
+                <td>AWS EKS, Amazon S3, RDS PostgreSQL</td>
+                <td>Containerized Kubernetes deployment, automated multi-region backup and disaster recovery.</td>
+            </tr>
+            <tr>
+                <td><strong>Integrations</strong></td>
+                <td>RazorpayX, DigiLocker, Amazon SES, Gupshup</td>
+                <td>Instant payment reconciliation, digital KYC verification, transactional emails and SMS.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- SECTION 5 -->
+    <h1>5. Non-Functional & Regulatory Compliance Matrix</h1>
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>Regulatory Body / Standard</th>
+                <th>Applicable Regulation</th>
+                <th>Platform Compliance Implementation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>SEBI</strong></td>
+                <td>AIF / Syndicate Investment Norms</td>
+                <td>Strictly prohibits unauthorized fixed returns under VC label; supports transparent NAV and equity share distribution.</td>
+            </tr>
+            <tr>
+                <td><strong>RBI</strong></td>
+                <td>P2P Lending Directions</td>
+                <td>Restricts fixed return debt products to licensed P2P partner escrow accounts with automated reconciliation.</td>
+            </tr>
+            <tr>
+                <td><strong>Government of India</strong></td>
+                <td>BUDS Act 2019</td>
+                <td>Eliminates unregulated deposit schemes; mandates digital contract e-signing and immutable transaction receipts.</td>
+            </tr>
+            <tr>
+                <td><strong>FIU-IND</strong></td>
+                <td>Anti-Money Laundering (AML) / KYC</td>
+                <td>Mandatory pre-investment Aadhaar e-KYC, PAN validation, and PEP (Politically Exposed Persons) screening.</td>
+            </tr>
+            <tr>
+                <td><strong>Income Tax Dept</strong></td>
+                <td>Section 194A / 194K TDS Compliance</td>
+                <td>Automated TDS calculation and generation of Form 16A quarterly certificates for investors.</td>
+            </tr>
+        </tbody>
+    </table>
+
+</div>
+
+</body>
+</html>
+
