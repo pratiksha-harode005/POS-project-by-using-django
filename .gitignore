@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Build, coverage, and generated output
+dist/
+build/
+coverage/
+htmlcov/
+staticfiles/
+mediafiles/
+
+# Databases and logs
+*.sqlite3
+*.log
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Package manager caches
+.npm/
+.yarn/
+.pnpm-store/
+*.tsbuildinfo
