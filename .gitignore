@@ -6,14 +6,13 @@ node_modules/
 .env.*
 !.env.example
 
-# Python
+# Python caches and virtual environments
 __pycache__/
 *.py[cod]
-*.pyd
 .venv/
 venv/
 
-# Build and coverage output
+# Build, coverage, and generated output
 dist/
 build/
 coverage/
@@ -21,7 +20,7 @@ htmlcov/
 staticfiles/
 mediafiles/
 
-# Database and logs
+# Databases and logs
 *.sqlite3
 *.log
 
@@ -33,7 +32,7 @@ Thumbs.db
 *.swp
 *.swo
 
-# Package manager and tool caches
+# Package manager caches
 .npm/
 .yarn/
 .pnpm-store/
