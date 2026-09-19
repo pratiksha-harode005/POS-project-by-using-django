@@ -12,9 +12,10 @@ export interface CreateRFQModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: (rfq: RFQ) => void
+  initialPrId?: string
 }
 
-export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose, onSuccess, initialPrId }) => {
   const { allRequests, myApprovals, vendors, addRFQ, rfqs } = useManagerData()
 
   // Generate next sequential RFQ ID
@@ -88,15 +89,19 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
       setRequester(found.requester || 'Sarah Manager')
       if (found.priority) setPriority(found.priority)
 
-      // Auto populate item
+      const qty = found.quantity || 1
+      const totalAmount = found.amount || 50000
+      const unitPrice = qty > 0 ? Math.round(totalAmount / qty) : totalAmount
+
+      // Auto populate item with exact PR quantity & unit price
       setItems([
         {
           id: `item-${Date.now()}`,
           product: found.title,
           category: found.category || 'Hardware',
-          quantity: 1,
+          quantity: qty,
           uom: 'Units',
-          expectedPrice: found.amount || 50000,
+          expectedPrice: unitPrice,
           requiredBy: new Date(Date.now() + 21 * 86400000).toISOString().split('T')[0],
           specification: found.description || `Required for ${found.department} operations`
         }
@@ -113,6 +118,16 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
     }
   }
 
+  // Prepopulate PR on modal open
+  useEffect(() => {
+    if (isOpen && availablePrs.length > 0) {
+      const targetPrId = initialPrId || availablePrs[0].id
+      if (targetPrId) {
+        handlePrChange(targetPrId)
+      }
+    }
+  }, [isOpen, initialPrId, availablePrs.length])
+
   // Prepopulate default vendors on mount
   useEffect(() => {
     if (vendors.length > 0 && selectedVendorNames.length === 0) {
@@ -122,7 +137,11 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
 
   // Calculate total estimated amount
   const totalEstimatedAmount = useMemo(() => {
-    return items.reduce((sum, it) => sum + (it.quantity * it.expectedPrice), 0)
+    return items.reduce((sum, it) => {
+      const q = typeof it.quantity === 'number' ? it.quantity : (parseFloat(String(it.quantity)) || 0)
+      const p = typeof it.expectedPrice === 'number' ? it.expectedPrice : (parseFloat(String(it.expectedPrice)) || 0)
+      return sum + (q * p)
+    }, 0)
   }, [items])
 
   if (!isOpen) return null
@@ -501,7 +520,10 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
                           type="number"
                           min="1"
                           value={item.quantity}
-                          onChange={e => handleUpdateItem(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                          onChange={e => {
+                            const val = e.target.value === '' ? '' : (parseInt(e.target.value) || '')
+                            handleUpdateItem(item.id, 'quantity', val)
+                          }}
                           className="w-20 text-xs border border-slate-300 rounded-lg px-2 py-2 bg-white font-black text-right text-indigo-950 shadow-2xs"
                         />
                         <select
@@ -525,7 +547,10 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
                         type="number"
                         min="1"
                         value={item.expectedPrice}
-                        onChange={e => handleUpdateItem(item.id, 'expectedPrice', parseFloat(e.target.value) || 0)}
+                        onChange={e => {
+                          const val = e.target.value === '' ? '' : (parseFloat(e.target.value) || '')
+                          handleUpdateItem(item.id, 'expectedPrice', val)
+                        }}
                         className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-2 bg-white font-black text-right text-emerald-800 shadow-2xs"
                         required
                       />
@@ -547,7 +572,7 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
                     <div className="text-right flex flex-col justify-end">
                       <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide">Est. Line Total</span>
                       <div className="inline-flex items-center justify-end px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm shadow-2xs mt-0.5">
-                        {fmt(item.quantity * item.expectedPrice)}
+                        {fmt((Number(item.quantity) || 0) * (Number(item.expectedPrice) || 0))}
                       </div>
                     </div>
                   </div>
