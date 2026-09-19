@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import {
   ShoppingBag, Search, CheckCircle, Clock, Truck, FileText,
   ChevronDown, ChevronUp, Plus, Building, User, Calendar,
-  ShieldCheck, AlertCircle, ArrowRight, Layers, Tag, DollarSign,
+  ShieldCheck, AlertCircle, ArrowRight, Layers, Tag, IndianRupee,
   Package, MapPin, Check, SlidersHorizontal, RefreshCw, X,
   Laptop, Cpu, CheckCircle2, Sparkles, TrendingUp, ExternalLink,
   ArrowUpRight, RotateCcw, AlertTriangle, HelpCircle, Filter
@@ -385,7 +385,7 @@ export const MyOrdersPage: React.FC = () => {
         date: req.date,
         time: '10:00 AM',
         status: status,
-        currentStage: status === 'Approved' ? 3 : (req.currentStage ? req.currentStage : (isCompleted ? 9 : 2)),
+        currentStage: status === 'Approved' ? 2 : (req.currentStage ? req.currentStage - 1 : (isCompleted ? 9 : 1)),
         currentlyWith: status === 'Approved' ? 'Finance Department' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team',
         lastUpdated: req.date,
         department: req.department,
@@ -904,7 +904,7 @@ export const MyOrdersPage: React.FC = () => {
                     {/* Total Estimated Cost */}
                     <div className="bg-slate-50/70 hover:bg-slate-50 p-3 rounded-xl border border-slate-100/90 transition-colors">
                       <div className="flex items-center gap-1.5 text-slate-400 mb-1">
-                        <DollarSign size={13} className="text-blue-600" />
+                        <IndianRupee size={13} className="text-blue-600" />
                         <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
                           Total Estimated Value
                         </span>
