@@ -46,9 +46,13 @@ export const getPendingRequests = async (params?: ApiRequestParams) => {
 }
 
 /** POST /api/requests/{id}/process_approval/ (APPROVE) */
-export const approveRequestApi = async (id: string, notes?: string) => {
+export const approveRequestApi = async (id: string, notes?: string, amount?: number) => {
   try {
-    const res = await apiClient.post(`/requests/${id}/process_approval/`, { action: 'APPROVE', notes })
+    const res = await apiClient.post(`/requests/${id}/process_approval/`, {
+      action: 'APPROVE',
+      notes,
+      amount: amount || undefined
+    })
     return res.data
   } catch {
     return { success: true }

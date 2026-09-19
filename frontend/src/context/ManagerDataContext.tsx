@@ -622,23 +622,33 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     try {
       const res = await getDashboardStats()
       const list = Array.isArray(res) ? res : res?.results || []
-      const mapped: ProcurementRequest[] = list.map((item: any) => ({
-        id: item.request_id || item.id,
-        title: item.title,
-        requester: item.created_by_detail?.first_name ? `${item.created_by_detail.first_name} ${item.created_by_detail.last_name}` : 'Team Lead',
-        department: item.department_detail?.name || 'IT',
-        category: item.category,
-        amount: Number(item.total_estimated_cost) || 0,
-        quantity: item.quantity || 1,
-        currentStage: item.current_stage || 1,
-        costCenter: item.cost_center || item.budget_code,
-        date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        status: item.status === 'Pending' ? 'pending_approval' : item.status === 'Approved' ? 'approved' : item.status === 'Rejected' ? 'rejected' : 'finance_review',
-        priority: item.priority || 'Medium',
-        vendor: item.preferred_vendor || 'Preferred Vendor',
-        description: item.description,
-        justification: item.justification,
-      }))
+      const existingMap = new Map(allRequestsRef.current.map(r => [r.id, r]))
+
+      const mapped: ProcurementRequest[] = list.map((item: any) => {
+        const reqId = item.request_id || item.id
+        const existing = existingMap.get(reqId)
+        const backendAmount = Number(item.total_estimated_cost) || 0
+        const effectiveAmount = backendAmount > 0 ? backendAmount : (existing?.amount || existing?.approvalParams?.approvedAmount || 0)
+
+        return {
+          id: reqId,
+          title: item.title,
+          requester: item.created_by_detail?.first_name ? `${item.created_by_detail.first_name} ${item.created_by_detail.last_name}` : (existing?.requester || 'Team Lead'),
+          department: item.department_detail?.name || existing?.department || 'IT',
+          category: item.category || existing?.category || 'General',
+          amount: effectiveAmount,
+          quantity: item.quantity || existing?.quantity || 1,
+          currentStage: item.current_stage || existing?.currentStage || 1,
+          costCenter: item.cost_center || item.budget_code || existing?.costCenter,
+          date: item.created_at ? item.created_at.split('T')[0] : (existing?.date || new Date().toISOString().split('T')[0]),
+          status: item.status === 'Pending' ? 'pending_approval' : item.status === 'Approved' ? 'approved' : item.status === 'Rejected' ? 'rejected' : 'finance_review',
+          priority: item.priority || existing?.priority || 'Medium',
+          vendor: item.preferred_vendor || existing?.vendor || 'Preferred Vendor',
+          description: item.description || existing?.description,
+          justification: item.justification || existing?.justification,
+          approvalParams: existing?.approvalParams,
+        }
+      })
       setPendingApprovals(mapped.filter(r => r.status === 'pending_approval'))
       setMyApprovals(mapped.filter(r => r.status === 'approved'))
       setRejectedRequests(mapped.filter(r => r.status === 'rejected'))
@@ -672,6 +682,11 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     ]
     return list.filter((item, idx, self) => idx === self.findIndex(t => t.id === item.id))
   }, [arrivedRequests, pendingApprovals, myApprovals, rejectedRequests, financeReview, recommendedToFinance, recommendedToAdmin])
+
+  const allRequestsRef = React.useRef<ProcurementRequest[]>([])
+  useEffect(() => {
+    allRequestsRef.current = allRequests
+  }, [allRequests])
 
   // Computed: Pending Financial Approvals (all requests awaiting finance action)
   const pendingFinancialApprovals = useMemo(() => {
@@ -814,16 +829,9 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [arrivedRequests, pendingApprovals])
 
   const approveRequest = useCallback((id: string, notes?: string, approvalParams?: ApprovalParameters) => {
-    approveRequestApi(id, notes)
-      .then(() => refreshManagerBackendData())
-      .catch((e) => console.warn('Backend approve warning:', e))
-    const req = pendingApprovals.find(r => r.id === id) || arrivedRequests.find(r => r.id === id)
+    const req = pendingApprovals.find(r => r.id === id) || arrivedRequests.find(r => r.id === id) || allRequestsRef.current.find(r => r.id === id)
     if (!req) return
     const today = new Date().toISOString().split('T')[0]
-
-    // 1. Remove from Manager's pending queue
-    setPendingApprovals(prev => prev.filter(r => r.id !== id))
-    setArrivedRequests(prev => prev.filter(r => r.id !== id))
 
     const finalParams: ApprovalParameters = approvalParams || {
       requestedAmount: req.amount,
@@ -840,6 +848,16 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       approvedAt: new Date().toISOString()
     }
 
+    const approvedAmountVal = finalParams.approvedAmount || req.amount || 0
+
+    approveRequestApi(id, notes, approvedAmountVal)
+      .then(() => refreshManagerBackendData())
+      .catch((e) => console.warn('Backend approve warning:', e))
+
+    // 1. Remove from Manager's pending queue
+    setPendingApprovals(prev => prev.filter(r => r.id !== id))
+    setArrivedRequests(prev => prev.filter(r => r.id !== id))
+
     const approvedReq: ProcurementRequest = {
       ...req,
       status: 'finance_review',
@@ -847,7 +865,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       approvedBy: finalParams.approvedBy,
       approvedDate: today,
       description: notes || req.description,
-      amount: finalParams.approvedAmount,
+      amount: approvedAmountVal,
       vendor: finalParams.vendor || req.vendor,
       costCenter: finalParams.costCenter || req.costCenter,
       approvalParams: finalParams

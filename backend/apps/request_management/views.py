@@ -97,6 +97,10 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         act = serializer.validated_data['action']
         reason_id = serializer.validated_data.get('reason_id')
         notes = serializer.validated_data.get('notes', '')
+        amount = serializer.validated_data.get('amount')
+
+        if amount is not None and amount > 0:
+            pr.total_estimated_cost = amount
 
         reason_obj = None
         if reason_id:

@@ -37,6 +37,7 @@ class ApproveRejectActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['APPROVE', 'REJECT', 'RECOMMEND', 'RETURN'])
     reason_id = serializers.IntegerField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
 
     def validate(self, data):
         action = data.get('action')

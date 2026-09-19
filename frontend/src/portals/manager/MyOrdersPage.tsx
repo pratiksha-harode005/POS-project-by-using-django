@@ -365,7 +365,7 @@ export const MyOrdersPage: React.FC = () => {
       else status = 'Pending'
 
       const qty = req.quantity || 1
-      const totalCost = req.amount || 0
+      const totalCost = req.amount || req.approvalParams?.approvedAmount || 0
       const unitPriceVal = qty > 0 ? Math.round(totalCost / qty) : totalCost
       const deptClean = (req.department || 'IT').toUpperCase().replace(/\s+/g, '')
 
