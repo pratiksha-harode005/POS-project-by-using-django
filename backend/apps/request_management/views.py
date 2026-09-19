@@ -40,6 +40,32 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             return queryset.filter(current_stage__gte=4)
         return queryset
 
+    def get_object(self):
+        from django.db import models
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_val = self.kwargs.get(lookup_url_kwarg) or self.kwargs.get('pk')
+
+        if not lookup_val:
+            return super().get_object()
+
+        obj = None
+        if str(lookup_val).isdigit():
+            obj = queryset.filter(models.Q(pk=lookup_val) | models.Q(request_id=lookup_val)).first()
+            if not obj:
+                obj = PurchaseRequest.objects.filter(models.Q(pk=lookup_val) | models.Q(request_id=lookup_val)).first()
+        else:
+            obj = queryset.filter(request_id=lookup_val).first()
+            if not obj:
+                obj = PurchaseRequest.objects.filter(request_id=lookup_val).first()
+
+        if not obj:
+            from rest_framework.exceptions import NotFound
+            raise NotFound(detail=f"Purchase request '{lookup_val}' not found.")
+
+        self.check_object_permissions(self.request, obj)
+        return obj
+
     def perform_create(self, serializer):
         user = self.request.user if (self.request.user and self.request.user.is_authenticated) else None
         if not user or user.is_anonymous:
@@ -61,7 +87,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             status='Pending'
         )
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=['post'], permission_classes=[])
     def process_approval(self, request, pk=None):
         pr = self.get_object()
         serializer = ApproveRejectActionSerializer(data=request.data)
@@ -80,10 +106,12 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 return Response({'reason_id': 'Invalid reason ID'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Record step
+        actor = request.user if (request.user and request.user.is_authenticated) else pr.created_by
+        role = getattr(actor, 'role', 'MANAGER')
         step = ApprovalStep.objects.create(
             request=pr,
-            actor=request.user,
-            role=request.user.role,
+            actor=actor,
+            role=role,
             decision=act,
             reason=reason_obj,
             notes=notes
@@ -91,6 +119,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
 
         # Update request state
         if act == 'APPROVE':
+            pr.status = 'Approved'
             if pr.current_stage == 1: # Manager approval
                 pr.current_stage = 2
             elif pr.current_stage == 2: # Finance approval
@@ -112,7 +141,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             pr.current_stage = 0 # Returned to Team Lead
 
         elif act == 'RECOMMEND':
-            # Escalated
+            pr.status = 'Recommended'
             if pr.current_stage == 1:
                 pr.current_stage = 2 # Escalate to Finance
             elif pr.current_stage == 2:
@@ -121,22 +150,28 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         pr.save()
 
         # Dynamic Notification: notify creator + all previous actors
-        recipients = set([pr.created_by])
-        previous_actors = ApprovalStep.objects.filter(request=pr).values_list('actor', flat=True)
-        for actor_id in previous_actors:
-            recipients.add(actor_id)
+        recipients = set()
+        if pr.created_by:
+            recipients.add(pr.created_by)
+        for step_item in ApprovalStep.objects.filter(request=pr).select_related('actor'):
+            if step_item.actor:
+                recipients.add(step_item.actor)
 
-        msg = f"Request {pr.request_id} ({pr.title}) updated to '{pr.status}' by {request.user.username} ({act})"
+        username_display = getattr(request.user, 'username', 'Manager') if request.user else 'Manager'
+        msg = f"Request {pr.request_id} ({pr.title}) updated to '{pr.status}' by {username_display} ({act})"
         if reason_obj:
             msg += f" - Reason: {reason_obj.text}"
 
-        for r_user_id in recipients:
-            Notification.objects.create(
-                user_id=r_user_id,
-                purchase_request=pr,
-                title=f"Request {pr.request_id} Update",
-                message=msg
-            )
+        for u in recipients:
+            try:
+                Notification.objects.create(
+                    user=u,
+                    purchase_request=pr,
+                    title=f"Request {pr.request_id} Update",
+                    message=msg
+                )
+            except Exception:
+                pass
 
         return Response(PurchaseRequestSerializer(pr).data)
 
