@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { getTeamLeadRequests, createTeamLeadRequest, resubmitTeamLeadRequest } from '../api/teamleadApi'
 
 export interface ApprovalStep {
   date: string
@@ -445,6 +446,55 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     localStorage.setItem('kss_tl_notif_prefs', JSON.stringify(notificationPreferences))
   }, [notificationPreferences])
 
+  // Dynamic fetch from Django REST API backend
+  const refreshBackendRequests = async () => {
+    try {
+      const data = await getTeamLeadRequests()
+      const list = Array.isArray(data) ? data : data?.results || []
+      if (list.length > 0) {
+        const mapped: PurchaseRequest[] = list.map((item: any) => ({
+          id: item.request_id || item.id,
+          title: item.title,
+          category: item.category,
+          subcategory: item.subcategory || 'General',
+          description: item.description || '',
+          quantity: item.quantity || 1,
+          estimatedCost: Number(item.total_estimated_cost) || 0,
+          requiredBy: item.required_by || new Date().toISOString().split('T')[0],
+          department: item.department_detail?.name || 'IT & Infrastructure',
+          deliveryLocation: item.delivery_location || 'Pune HQ',
+          priority: item.priority || 'Medium',
+          preferredVendor: item.preferred_vendor || '',
+          justification: item.justification || '',
+          attachmentCount: item.attachments ? 1 : 0,
+          status: item.status || 'Pending',
+          currentStage: item.current_stage ?? 1,
+          date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          currentlyWith: item.status === 'Pending' ? { role: 'Manager', name: 'Sarah Manager' } : { role: item.status, name: 'System' },
+          flowType: item.flow_type || 'A',
+          extraFields: item.extra_fields || {},
+          history: Array.isArray(item.approval_steps)
+            ? item.approval_steps.map((s: any) => ({
+                date: s.created_at || '',
+                actorRole: s.role || 'User',
+                actorName: s.actor_detail?.first_name ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : 'User',
+                action: s.decision || 'Updated',
+                remark: s.notes || '',
+              }))
+            : [],
+        }))
+        setRequests(mapped)
+      }
+    } catch (e) {
+      console.warn('Backend requests fetch fallback:', e)
+    }
+  }
+
+  useEffect(() => {
+    refreshBackendRequests()
+  }, [])
+
   const addRequest = (
     reqData: Omit<PurchaseRequest, 'id' | 'date' | 'lastUpdated' | 'currentlyWith' | 'history'> & { id?: string }
   ): PurchaseRequest => {
@@ -473,11 +523,28 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     setRequests((prev) => [newReq, ...prev])
 
+    // Persist to PostgreSQL backend via Django REST API
+    createTeamLeadRequest({
+      title: reqData.title,
+      category: reqData.category,
+      subcategory: reqData.subcategory || 'General',
+      description: reqData.description,
+      quantity: reqData.quantity,
+      required_by: reqData.requiredBy || today,
+      delivery_location: reqData.deliveryLocation || 'Pune HQ',
+      priority: reqData.priority || 'Medium',
+      preferred_vendor: reqData.preferredVendor || '',
+      justification: reqData.justification || '',
+      total_estimated_cost: reqData.estimatedCost || 0,
+    })
+      .then(() => refreshBackendRequests())
+      .catch((e) => console.warn('Backend persist warning:', e))
+
     if (!isDraft) {
       const newNotif: NotificationRecord = {
         id: Date.now(),
         title: `Approval Required for ${nextId}`,
-        message: `${newReq.title} (RS {newReq.estimatedCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}) awaits Manager Approval.`,
+        message: `${newReq.title} awaits Manager Approval.`,
         timestamp: 'Just now',
         dateGroup: 'Today',
         isRead: false,

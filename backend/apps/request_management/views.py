@@ -40,7 +40,12 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user, current_stage=1, status='Pending')
+        user = self.request.user
+        dept = serializer.validated_data.get('department') or user.department
+        if not dept:
+            from apps.users.models import Department
+            dept = Department.objects.first()
+        serializer.save(created_by=user, department=dept, current_stage=1, status='Pending')
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def process_approval(self, request, pk=None):

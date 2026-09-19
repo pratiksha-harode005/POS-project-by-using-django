@@ -13,6 +13,16 @@ import {
   getAuditLogsApi
 } from '../api/permissionsApi'
 import { detectWorkflowType } from '../utils/workflowUtils'
+import {
+  getDashboardStats,
+  getPendingRequests,
+  approveRequestApi,
+  rejectRequestApi,
+  recommendToFinanceApi,
+  sendToFinanceApi,
+  getBudgets,
+  getRFQs
+} from '../api/managerApi'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2454,6 +2464,40 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [quotations, setQuotations] = useState<QuotationItem[]>(MOCK_QUOTATIONS)
   const [loading] = useState(false)
 
+  // Dynamic fetch from Django REST API backend
+  const refreshManagerBackendData = async () => {
+    try {
+      const res = await getDashboardStats()
+      const list = Array.isArray(res) ? res : res?.results || []
+      if (list.length > 0) {
+        const mapped: ProcurementRequest[] = list.map((item: any) => ({
+          id: item.request_id || item.id,
+          title: item.title,
+          requester: item.created_by_detail?.first_name ? `${item.created_by_detail.first_name} ${item.created_by_detail.last_name}` : 'Team Lead',
+          department: item.department_detail?.name || 'IT',
+          category: item.category,
+          amount: Number(item.total_estimated_cost) || 0,
+          date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          status: item.status === 'Pending' ? 'pending_approval' : item.status === 'Approved' ? 'approved' : item.status === 'Rejected' ? 'rejected' : 'finance_review',
+          priority: item.priority || 'Medium',
+          vendor: item.preferred_vendor || 'Preferred Vendor',
+          description: item.description,
+          justification: item.justification,
+        }))
+        const pending = mapped.filter(r => r.status === 'pending_approval')
+        if (pending.length > 0) {
+          setPendingApprovals(pending)
+        }
+      }
+    } catch (e) {
+      console.warn('Backend manager fetch fallback:', e)
+    }
+  }
+
+  useEffect(() => {
+    refreshManagerBackendData()
+  }, [])
+
   // Computed: ALL requests across the procurement lifecycle
   const allRequests = useMemo(() => {
     const list = [
@@ -2571,6 +2615,9 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [arrivedRequests])
 
   const rejectRequest = useCallback((id: string, reason: string, notes?: string) => {
+    rejectRequestApi(id, 1, reason)
+      .then(() => refreshManagerBackendData())
+      .catch((e) => console.warn('Backend reject warning:', e))
     const req = arrivedRequests.find(r => r.id === id) || pendingApprovals.find(r => r.id === id)
     if (!req) return
     setArrivedRequests(prev => prev.filter(r => r.id !== id))
@@ -2586,6 +2633,9 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [arrivedRequests, pendingApprovals])
 
   const recommendToFinance = useCallback((id: string, reason: string) => {
+    recommendToFinanceApi(id, 1, reason)
+      .then(() => refreshManagerBackendData())
+      .catch((e) => console.warn('Backend recommend warning:', e))
     const req = arrivedRequests.find(r => r.id === id) || pendingApprovals.find(r => r.id === id)
     if (!req) return
     setArrivedRequests(prev => prev.filter(r => r.id !== id))
@@ -2603,6 +2653,9 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [arrivedRequests, pendingApprovals])
 
   const approveRequest = useCallback((id: string, notes?: string, approvalParams?: ApprovalParameters) => {
+    approveRequestApi(id, notes)
+      .then(() => refreshManagerBackendData())
+      .catch((e) => console.warn('Backend approve warning:', e))
     const req = pendingApprovals.find(r => r.id === id) || arrivedRequests.find(r => r.id === id)
     if (!req) return
     const today = new Date().toISOString().split('T')[0]

@@ -66,6 +66,8 @@ class PurchaseRequest(TimeStampedModel):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_requests')
     
     total_estimated_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    flow_type = models.CharField(max_length=5, choices=(('A', 'Flow A'), ('B', 'Flow B')), default='A')
+    extra_fields = models.JSONField(default=dict, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.request_id:
