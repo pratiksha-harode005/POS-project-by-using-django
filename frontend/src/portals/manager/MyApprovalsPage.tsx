@@ -1,132 +1,98 @@
 import React, { useState } from 'react'
+import { CheckCircle, XCircle, ArrowUpRight, Search, Filter } from 'lucide-react'
+import { useManagerData } from '../../context/ManagerDataContext'
 import { ActionModal, ModalActionType } from '../../components/portal/ActionModal'
-import { CheckCircle, XCircle, ArrowUpRight, Clock, RotateCcw } from 'lucide-react'
+import type { ProcurementRequest } from '../../context/ManagerDataContext'
 
-interface PendingRequest {
-  id: string
-  title: string
-  teamLead: string
-  department: string
-  category: string
-  estCost: string
-  date: string
+const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+
+const statusBadge: Record<string, string> = {
+  approved: 'bg-green-100 text-green-800',
+  rejected: 'bg-red-100 text-red-800',
+  recommended_to_finance: 'bg-blue-100 text-blue-800',
 }
 
 export const MyApprovalsPage: React.FC = () => {
-  const [requests, setRequests] = useState<PendingRequest[]>([
-    {
-      id: 'REQ-DEMO-002',
-      title: 'Cloud Infrastructure Yearly Renewal',
-      teamLead: 'Alex Developer',
-      department: 'IT & Infrastructure',
-      category: 'SaaS & Cloud',
-      estCost: 'RS 60,000.00',
-      date: '2026-09-10',
-    },
-    {
-      id: 'REQ-DEMO-006',
-      title: 'AI Workstation GPU Clusters',
-      teamLead: 'Maria Lead',
-      department: 'IT & Infrastructure',
-      category: 'IT Hardware',
-      estCost: 'RS 45,000.00',
-      date: '2026-09-09',
-    },
-  ])
-
-  const [activeReq, setActiveReq] = useState<PendingRequest | null>(null)
+  const { myApprovals, rejectRequest, recommendToFinance } = useManagerData()
+  const [search, setSearch] = useState('')
+  const [activeReq, setActiveReq] = useState<ProcurementRequest | null>(null)
   const [modalAction, setModalAction] = useState<ModalActionType | null>(null)
 
-  const openAction = (req: PendingRequest, act: ModalActionType) => {
-    setActiveReq(req)
-    setModalAction(act)
-  }
+  const filtered = myApprovals.filter(r =>
+    !search ||
+    r.title.toLowerCase().includes(search.toLowerCase()) ||
+    r.id.toLowerCase().includes(search.toLowerCase())
+  )
 
   const handleConfirm = (data: { action: ModalActionType; reason?: string; notes?: string }) => {
     if (!activeReq) return
-    // Remove approved/rejected/escalated request from pending queue
-    setRequests((prev) => prev.filter((r) => r.id !== activeReq.id))
+    if (data.action === 'REJECT') rejectRequest(activeReq.id, data.reason || '', data.notes)
+    else if (data.action === 'RECOMMEND') recommendToFinance(activeReq.id, data.reason || '')
   }
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">My Approvals Queue</h1>
-        <p className="text-xs text-gray-500">
-          Review pending requests. Approve, Reject (requires dropdown reason), Recommend to Finance (requires dropdown reason), or Return.
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <CheckCircle className="text-green-500" size={24} /> My Approvals
+        </h1>
+        <p className="text-xs text-gray-500 mt-0.5">
+          {myApprovals.length} request{myApprovals.length !== 1 ? 's' : ''} approved by you.
         </p>
       </div>
 
-      <div className="space-y-4">
-        {requests.length === 0 ? (
-          <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center text-gray-500 text-xs">
-            <CheckCircle size={32} className="mx-auto text-green-500 mb-2" />
-            No pending approvals remaining in your queue!
+      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+        <div className="relative max-w-sm">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search approvals…"
+            className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <CheckCircle size={40} className="mx-auto mb-3 text-green-200" />
+            <p className="font-semibold text-gray-600">No approvals found</p>
           </div>
         ) : (
-          requests.map((req) => (
-            <div key={req.id} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm flex flex-wrap items-center justify-between gap-6">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    {req.id}
-                  </span>
-                  <span className="text-xs text-gray-400 font-medium">{req.date}</span>
-                </div>
-                <h2 className="text-base font-bold text-gray-900">{req.title}</h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  Submitted by: <span className="font-semibold text-gray-800">{req.teamLead}</span> • Category:{' '}
-                  <span className="font-semibold text-gray-700">{req.category}</span> • Department:{' '}
-                  <span className="font-semibold text-gray-700">{req.department}</span>
-                </p>
-                <p className="text-sm font-extrabold text-gray-900 mt-2">Est. Total: {req.estCost}</p>
-              </div>
-
-              {/* 3 Explicit Action Buttons */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => openAction(req, 'APPROVE')}
-                  className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow transition-all"
-                >
-                  <CheckCircle size={15} /> Approve
-                </button>
-
-                <button
-                  onClick={() => openAction(req, 'REJECT')}
-                  className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow transition-all"
-                >
-                  <XCircle size={15} /> Reject
-                </button>
-
-                <button
-                  onClick={() => openAction(req, 'RECOMMEND')}
-                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow transition-all"
-                >
-                  <ArrowUpRight size={15} /> Recommend to Finance
-                </button>
-
-                <button
-                  onClick={() => openAction(req, 'RETURN')}
-                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-3 py-2 rounded-xl shadow transition-all"
-                  title="Return to Team Lead"
-                >
-                  <RotateCcw size={15} /> Return
-                </button>
-              </div>
-            </div>
-          ))
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr className="text-gray-600 font-bold uppercase tracking-wide text-[10px]">
+                <th className="text-left px-4 py-3">Request ID</th>
+                <th className="text-left px-4 py-3">Title</th>
+                <th className="text-left px-4 py-3">Requester</th>
+                <th className="text-left px-4 py-3">Department</th>
+                <th className="text-left px-4 py-3">Amount</th>
+                <th className="text-left px-4 py-3">Status</th>
+                <th className="text-left px-4 py-3">Approved Date</th>
+                <th className="text-left px-4 py-3">Level</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map(r => (
+                <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3 font-bold text-blue-600">{r.id}</td>
+                  <td className="px-4 py-3 font-semibold text-gray-900 max-w-[200px]"><div className="truncate">{r.title}</div></td>
+                  <td className="px-4 py-3 text-gray-600">{r.requester}</td>
+                  <td className="px-4 py-3 text-gray-600">{r.department}</td>
+                  <td className="px-4 py-3 font-bold text-gray-900">{fmt(r.amount)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${statusBadge[r.status] || 'bg-gray-100 text-gray-700'}`}>
+                      {r.status === 'approved' ? '✓ Approved' : r.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">{r.approvedDate || r.date}</td>
+                  <td className="px-4 py-3 text-gray-600">{r.approvalLevel || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      {/* Decision Action Modal enforcing required dropdown reasons */}
-      <ActionModal
-        isOpen={!!modalAction}
-        actionType={modalAction}
-        requestId={activeReq?.id || ''}
-        requestTitle={activeReq?.title || ''}
-        onClose={() => setModalAction(null)}
-        onConfirm={handleConfirm}
-      />
+      <ActionModal isOpen={!!modalAction} actionType={modalAction} requestId={activeReq?.id || ''} requestTitle={activeReq?.title || ''} onClose={() => setModalAction(null)} onConfirm={handleConfirm} />
     </div>
   )
 }

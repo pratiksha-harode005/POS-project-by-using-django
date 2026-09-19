@@ -36,7 +36,7 @@ const defaultUserForRole = (r: UserRole): UserProfile => {
     case 'FINANCE':
       return { id: 3, username: 'finance', email: 'fin@procurementos.com', role: 'FINANCE', first_name: 'David', last_name: 'Finance', job_title: 'VP Finance', work_location: 'Pune HQ', phone: '+91 98765 33333' }
     case 'ADMIN':
-      return { id: 4, username: 'admin', email: 'admin@procurementos.com', role: 'ADMIN', first_name: 'Alex', last_name: 'Admin', job_title: 'System Administrator', work_location: 'Pune HQ', phone: '+91 98765 44444' }
+      return { id: 4, username: 'admin', email: 'admin@procurementos.com', role: 'ADMIN', first_name: 'Priyanka', last_name: 'Sharma', job_title: 'System Administrator', work_location: 'Pune HQ', phone: '+91 98765 44444' }
     case 'VENDOR':
       return { id: 5, username: 'vendor_dell', email: 'contact@dell.com', role: 'VENDOR', first_name: 'Michael', last_name: 'Dell', vendor_id_code: 'VND-HW-001', job_title: 'Key Account Manager', work_location: 'Bengaluru', phone: '+91 98765 55555' }
   }

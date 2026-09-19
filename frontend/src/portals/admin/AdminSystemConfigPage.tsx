@@ -119,7 +119,7 @@ export const AdminSystemConfigPage: React.FC = () => {
         {tab === 'workflows' && (
           <div>
             <h2 className="text-sm font-bold text-gray-900 mb-2">Multi-Level Stepper Workflow Rules</h2>
-            <p className="text-gray-500">Active Stepper: Create Request → Manager Approval → Finance Approval → Admin Approval → RFQ Sent → Vendor Quotes Received → Product Order → Delivery → Invoice → Payment.</p>
+            <p className="text-gray-500">Active Stepper: Create Request → Manager Approval → Finance Approval → Admin Approval → RFQ Sent → Vendor Quotes Received → Delivery → Invoice → Verification and Order Complete → Payment.</p>
           </div>
         )}
       </div>

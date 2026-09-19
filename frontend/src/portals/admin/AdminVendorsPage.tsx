@@ -1,374 +1,730 @@
-import React, { useState, useEffect } from 'react'
-import { PlusCircle, Truck, ShieldCheck, Award, FileText, AlertTriangle, FolderOpen, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react'
-import { MASTER_VENDORS } from '../vendor/VendorPortalPages'
+import React, { useState, useMemo } from 'react'
 import {
-  getScopedVendorData,
-  getDocStatusOverrides,
-  setDocStatusOverride,
-} from '../vendor/VendorPortalPages'
-import { isFlowBCategory } from '../../components/portal/TrackingStepper'
+  Truck, PlusCircle, ShieldCheck, Award, FileText,
+  CheckCircle, XCircle, AlertTriangle, Search, Filter,
+  Phone, Mail, Building, FileCheck, Check, X, Eye,
+  Clock, DollarSign, Download, UploadCloud, HelpCircle
+} from 'lucide-react'
+import { useManagerData, VendorItem } from '../../context/ManagerDataContext'
 
-// ─── Helper: compute effective doc status (Admin override wins) ───────────────
-function resolveDocStatus(doc: any, overrides: Record<string, string>): string {
-  return overrides[doc.id] ?? doc.status
-}
+const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
-// ─── Admin Vendor Documents Tab ───────────────────────────────────────────────
-const AdminVendorDocsTab: React.FC = () => {
-  const [selectedVendorId, setSelectedVendorId] = useState(MASTER_VENDORS[0].id)
-  const [docs, setDocs] = useState<any[]>([])
-  const [overrides, setOverrides] = useState<Record<string, string>>({})
-  const [toastMsg, setToastMsg] = useState('')
+export const AdminVendorsPage: React.FC = () => {
+  const { vendors, updateVendorStatus, addVendor } = useManagerData()
 
-  // Load docs + overrides whenever selected vendor changes
-  useEffect(() => {
-    const { documents } = getScopedVendorData(selectedVendorId)
-    const ov = getDocStatusOverrides(selectedVendorId)
-    setDocs(documents)
-    setOverrides(ov)
-  }, [selectedVendorId])
+  // Sub-tabs: 'list' | 'approval' | 'risk' | 'performance' | 'docs' | 'add'
+  const [subTab, setSubTab] = useState<'list' | 'approval' | 'risk' | 'performance' | 'docs' | 'add'>('list')
+  const [search, setSearch] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState('ALL')
 
-  const handleStatusChange = (docId: string, newStatus: string) => {
-    setDocStatusOverride(selectedVendorId, docId, newStatus)
-    setOverrides((prev) => ({ ...prev, [docId]: newStatus }))
-    setToastMsg(`Status updated to "${newStatus}" for document ${docId}`)
-    setTimeout(() => setToastMsg(''), 3000)
+  // Modals & Details
+  const [selectedVendor, setSelectedVendor] = useState<VendorItem | null>(null)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null)
+
+  const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 3500)
   }
 
-  const handleRefresh = () => {
-    const { documents } = getScopedVendorData(selectedVendorId)
-    const ov = getDocStatusOverrides(selectedVendorId)
-    setDocs(documents)
-    setOverrides(ov)
-    setToastMsg('Document list refreshed.')
-    setTimeout(() => setToastMsg(''), 2000)
-  }
+  // Add Vendor Form State
+  const [formData, setFormData] = useState({
+    name: '',
+    company: '',
+    contactPerson: '',
+    email: '',
+    phone: '',
+    category: 'IT Hardware',
+    gstNumber: '',
+    panNumber: '',
+    address: '',
+    paymentTerms: 'Net 30',
+    notes: '',
+  })
 
-  const selectedVendor = MASTER_VENDORS.find((v) => v.id === selectedVendorId)
+  // Categories
+  const categories = useMemo(() => {
+    const s = new Set<string>()
+    vendors.forEach(v => { if (v.category) s.add(v.category) })
+    return ['ALL', ...Array.from(s)]
+  }, [vendors])
 
-  const statusBadge = (status: string) => {
-    const cfg: Record<string, string> = {
-      Verified:       'bg-green-100 text-green-800 border-green-200',
-      Pending:        'bg-yellow-50 text-yellow-800 border-yellow-200',
-      Rejected:       'bg-red-100 text-red-800 border-red-200',
-      'Expiring Soon':'bg-amber-100 text-amber-800 border-amber-200',
+  // Filtered Vendors
+  const filteredVendors = useMemo(() => {
+    return vendors.filter(v => {
+      const q = search.toLowerCase()
+      const matchesSearch =
+        v.id.toLowerCase().includes(q) ||
+        v.name.toLowerCase().includes(q) ||
+        v.company.toLowerCase().includes(q) ||
+        v.contactPerson.toLowerCase().includes(q) ||
+        v.category.toLowerCase().includes(q)
+
+      const matchesCat = categoryFilter === 'ALL' || v.category === categoryFilter
+      const matchesStatus = statusFilter === 'ALL' || v.status === statusFilter
+
+      return matchesSearch && matchesCat && matchesStatus
+    })
+  }, [vendors, search, categoryFilter, statusFilter])
+
+  // Form submit
+  const handleAddVendorSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.name.trim() || !formData.email.trim()) {
+      showToast('Vendor Name and Official Email are required', 'error')
+      return
     }
-    const cls = cfg[status] ?? 'bg-gray-100 text-gray-700 border-gray-200'
-    const icon =
-      status === 'Verified'  ? <CheckCircle size={11} className="inline mr-1" /> :
-      status === 'Rejected'  ? <XCircle     size={11} className="inline mr-1" /> :
-      status === 'Pending'   ? <Clock       size={11} className="inline mr-1" /> : null
-    return (
-      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${cls}`}>
-        {icon}{status === 'Pending' ? 'Pending Review' : status}
-      </span>
-    )
+
+    addVendor({
+      name: formData.name,
+      company: formData.company || formData.name,
+      contactPerson: formData.contactPerson,
+      email: formData.email,
+      phone: formData.phone,
+      category: formData.category,
+      status: 'Pending Approval',
+      riskLevel: 'Low',
+      performanceScore: 92,
+      activeContracts: 0,
+      totalOrders: 0,
+      totalPurchaseValue: 0,
+      complianceStatus: 'Pending Audit',
+      documentsCount: 4,
+      onTimeDeliveryRate: 95,
+      qualityIssuesCount: 0,
+      complaintsCount: 0,
+      notes: formData.notes,
+    })
+
+    showToast(`✓ Vendor ${formData.name} successfully submitted for approval!`, 'success')
+    setFormData({
+      name: '',
+      company: '',
+      contactPerson: '',
+      email: '',
+      phone: '',
+      category: 'IT Hardware',
+      gstNumber: '',
+      panNumber: '',
+      address: '',
+      paymentTerms: 'Net 30',
+      notes: '',
+    })
+    setSubTab('approval')
+  }
+
+  // Action: Approve Vendor
+  const handleApproveVendor = (v: VendorItem) => {
+    updateVendorStatus(v.id, 'Active')
+    showToast(`✓ Vendor ${v.name} has been approved and activated!`, 'success')
+  }
+
+  // Action: Reject Vendor
+  const handleRejectVendor = (v: VendorItem) => {
+    updateVendorStatus(v.id, 'Rejected')
+    showToast(`✕ Vendor ${v.name} has been rejected.`, 'error')
   }
 
   return (
-    <div className="p-6 space-y-5">
-      {/* Header row */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-            <FolderOpen size={18} className="text-blue-600" /> Vendor Documents
-          </h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Review and verify compliance documents uploaded by vendors. Only Admins can mark documents as Verified.
-          </p>
-        </div>
-        <button
-          onClick={handleRefresh}
-          className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer"
-        >
-          <RefreshCw size={13} /> Refresh
-        </button>
-      </div>
-
+    <div className="max-w-7xl mx-auto space-y-6 pb-16">
       {/* Toast */}
-      {toastMsg && (
-        <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl text-xs font-bold flex items-center gap-2">
-          <CheckCircle size={14} className="text-blue-600" /> {toastMsg}
+      {toast && (
+        <div
+          className={`fixed top-6 right-6 z-50 px-4 py-3 rounded-xl shadow-xl text-xs font-bold flex items-center gap-2 text-white animate-fadeIn ${
+            toast.type === 'success' ? 'bg-emerald-600' : toast.type === 'error' ? 'bg-rose-600' : 'bg-indigo-600'
+          }`}
+        >
+          {toast.type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+          <span>{toast.msg}</span>
         </div>
       )}
 
-      {/* Vendor selector */}
-      <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl p-4">
-        <label className="text-xs font-bold text-gray-700 shrink-0">Select Vendor:</label>
-        <select
-          value={selectedVendorId}
-          onChange={(e) => setSelectedVendorId(e.target.value)}
-          className="flex-1 p-2 border border-gray-300 rounded-lg bg-white text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+              <Truck size={12} /> VENDOR ECOSYSTEM
+            </span>
+            <span className="text-xs text-slate-400 font-medium">{vendors.length} Total Registered Partners</span>
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1 flex items-center gap-2">
+            Vendor Master Management
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Onboard new vendors, review onboarding approvals, monitor risk scores, track delivery performance, and manage compliance files.
+          </p>
+        </div>
+
+        <button
+          onClick={() => setSubTab('add')}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition-all w-fit"
         >
-          {MASTER_VENDORS.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.id} — {v.name} ({v.category})
-            </option>
+          <PlusCircle size={15} /> Add New Vendor
+        </button>
+      </div>
+
+      {/* 6 Sub-Tabs */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-2 shadow-2xs">
+        <div className="flex border-b border-slate-100 pb-2 overflow-x-auto gap-1">
+          {[
+            { id: 'list', label: 'Vendor List' },
+            { id: 'approval', label: 'Vendor Approval' },
+            { id: 'risk', label: 'Vendor Risk' },
+            { id: 'performance', label: 'Vendor Performance' },
+            { id: 'docs', label: 'Vendor Documents' },
+            { id: 'add', label: 'Add Vendor' },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setSubTab(t.id as any)}
+              className={`px-4 py-2 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
+                subTab === t.id
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              {t.label}
+            </button>
           ))}
-        </select>
-        {selectedVendor && (
-          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
-            {docs.length} document{docs.length !== 1 ? 's' : ''}
-          </span>
+        </div>
+
+        {/* Filter bar for list/approval/risk/perf */}
+        {subTab !== 'add' && (
+          <div className="flex flex-col md:flex-row items-center gap-3 pt-3">
+            <div className="relative flex-1 w-full">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search vendor by ID, company name, contact, category..."
+                className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <span className="text-xs text-slate-400 font-medium">Category:</span>
+              <select
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value)}
+                className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-medium"
+              >
+                {categories.map(c => (
+                  <option key={c} value={c}>{c === 'ALL' ? 'All Categories' : c}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <span className="text-xs text-slate-400 font-medium">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-medium"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Pending Approval">Pending Approval</option>
+                <option value="Suspended">Suspended</option>
+                <option value="Rejected">Rejected</option>
+              </select>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Admin notice */}
-      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
-        <ShieldCheck size={15} className="text-amber-600 shrink-0 mt-0.5" />
-        <span>
-          <strong>Admin-only control:</strong> Use the Status dropdown to Verify or Reject documents. Status changes are reflected immediately on the Vendor's Documents page.
-          Vendors can upload but cannot self-mark documents as Verified.
-        </span>
-      </div>
-
-      {/* Document table */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden text-xs">
-        <table className="w-full text-left">
-          <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-bold uppercase">
-            <tr>
-              <th className="p-4">Document Ref</th>
-              <th className="p-4">Document Name</th>
-              <th className="p-4">Category</th>
-              <th className="p-4">Uploaded</th>
-              <th className="p-4">Expiry</th>
-              <th className="p-4">Current Status</th>
-              <th className="p-4">Change Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
-            {docs.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="p-8 text-center text-gray-400 font-medium">
-                  No documents found for this vendor.
-                </td>
-              </tr>
-            ) : (
-              docs.map((doc) => {
-                const effectiveStatus = resolveDocStatus(doc, overrides)
-                return (
-                  <tr key={doc.id} className="hover:bg-gray-50">
-                    <td className="p-4 font-bold text-blue-600">{doc.id}</td>
-                    <td className="p-4 font-bold text-gray-900 max-w-xs">
-                      <span className="block truncate" title={doc.name}>{doc.name}</span>
-                    </td>
-                    <td className="p-4 text-gray-600 font-semibold">{doc.category}</td>
-                    <td className="p-4 text-gray-600">{doc.uploadedDate}</td>
-                    <td className="p-4 text-gray-600">{doc.expiryDate}</td>
-                    <td className="p-4">{statusBadge(effectiveStatus)}</td>
-                    <td className="p-4">
-                      <select
-                        value={effectiveStatus}
-                        onChange={(e) => handleStatusChange(doc.id, e.target.value)}
-                        className={`p-1.5 border rounded-lg text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer ${
-                          effectiveStatus === 'Verified' ? 'border-green-300 bg-green-50 text-green-800' :
-                          effectiveStatus === 'Rejected' ? 'border-red-300 bg-red-50 text-red-800' :
-                          'border-yellow-300 bg-yellow-50 text-yellow-800'
-                        }`}
-                      >
-                        <option value="Pending">Pending</option>
-                        <option value="Verified">Verified</option>
-                        <option value="Rejected">Rejected</option>
-                      </select>
-                    </td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-// ─── Main Admin Vendors Page ──────────────────────────────────────────────────
-export const AdminVendorsPage: React.FC = () => {
-  const [subTab, setSubTab] = useState<'list' | 'approval' | 'risk' | 'performance' | 'docs'>('list')
-  const [showAddModal, setShowAddModal] = useState(false)
-  const [vendors, setVendors] = useState(MASTER_VENDORS)
-
-  const [newVendor, setNewVendor] = useState({ name: '', category: 'IT Hardware', contactPerson: '', email: '' })
-
-  const handleAddVendor = (e: React.FormEvent) => {
-    e.preventDefault()
-    const isFlowB = isFlowBCategory(newVendor.category)
-    const newId = `VND-${newVendor.category.substring(0, 2).toUpperCase()}-00${vendors.length + 1}`
-    setVendors([
-      ...vendors,
-      {
-        id: newId,
-        name: newVendor.name,
-        category: newVendor.category,
-        risk: 'Low',
-        score: '90.0%',
-        status: isFlowB ? 'Flow B Excluded (Direct Fund Release)' : 'Active',
-        contactPerson: newVendor.contactPerson || 'Account Rep',
-        email: newVendor.email || 'contact@vendor.com',
-        phone: '+1 800-555-0199',
-        openRfqsCount: 0,
-        activePosCount: 0,
-        totalDisbursed: 0,
-      },
-    ])
-    setShowAddModal(false)
-    setNewVendor({ name: '', category: 'IT Hardware', contactPerson: '', email: '' })
-  }
-
-  return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Truck className="text-blue-600" /> Vendor Management
-          </h1>
-          <p className="text-xs text-gray-500">Manage vendor master database, risk ratings, performance scores &amp; onboarding.</p>
-        </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow flex items-center gap-2"
-        >
-          <PlusCircle size={16} /> Add Vendor
-        </button>
-      </div>
-
-      {/* Notice Banner */}
-      <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl flex items-start gap-3 text-xs text-purple-950 shadow-xs">
-        <AlertTriangle size={18} className="text-purple-600 shrink-0 mt-0.5" />
-        <div>
-          <h4 className="font-bold text-purple-950">Flow B Category Notice (Software &amp; SaaS / Cloud &amp; Infrastructure)</h4>
-          <p className="text-purple-800 mt-0.5 leading-relaxed">
-            Software &amp; SaaS and Cloud &amp; Infrastructure are designated Flow B categories. Requests in these categories route directly to Team Lead Fund Release and are excluded from vendor RFQs, PO generation, and vendor auto-recommendation. Vendors under these categories are flagged below.
-          </p>
-        </div>
-      </div>
-
-      {/* 5 Sub-Tabs */}
-      <div className="flex border-b border-gray-200 bg-white rounded-t-xl px-4 pt-2">
-        {[
-          { id: 'list',        label: `Vendor List (${vendors.length})` },
-          { id: 'approval',    label: 'Vendor Approval' },
-          { id: 'risk',        label: 'Vendor Risk' },
-          { id: 'performance', label: 'Vendor Performance' },
-          { id: 'docs',        label: 'Vendor Documents' },
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setSubTab(t.id as any)}
-            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all ${
-              subTab === t.id
-                ? 'border-blue-600 text-blue-600 bg-blue-50/50'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      {subTab === 'docs' ? (
-        <div className="bg-white rounded-b-2xl border border-gray-200 shadow-sm overflow-hidden">
-          <AdminVendorDocsTab />
-        </div>
-      ) : (
-        /* Vendor list table — shown for list / approval / risk / performance */
-        <div className="bg-white rounded-b-2xl border border-gray-200 shadow-sm overflow-hidden text-xs">
-          {(subTab === 'list' || subTab === 'approval' || subTab === 'risk' || subTab === 'performance') && (
-            <table className="w-full text-left">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-bold uppercase">
+      {/* Sub-Tab 1: Vendor List */}
+      {subTab === 'list' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden text-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                 <tr>
-                  <th className="p-4">Unique Vendor ID</th>
-                  <th className="p-4">Vendor Name</th>
-                  <th className="p-4">Category</th>
-                  <th className="p-4">Risk Rating</th>
-                  <th className="p-4">Performance Score</th>
-                  <th className="p-4">Status &amp; Flow Classification</th>
+                  <th className="p-3.5">Vendor ID</th>
+                  <th className="p-3.5">Company & Name</th>
+                  <th className="p-3.5">Contact Details</th>
+                  <th className="p-3.5">Category</th>
+                  <th className="p-3.5">Status</th>
+                  <th className="p-3.5">Risk Level</th>
+                  <th className="p-3.5">Score</th>
+                  <th className="p-3.5">Orders & Spend</th>
+                  <th className="p-3.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
-                {vendors.map((v) => {
-                  const isFlowB = isFlowBCategory(v.category) || v.status.includes('Flow B')
-                  return (
-                    <tr key={v.id} className={isFlowB ? 'bg-purple-50/30' : 'hover:bg-gray-50'}>
-                      <td className="p-4 font-bold text-blue-600">{v.id}</td>
-                      <td className="p-4 font-bold text-gray-900">{v.name}</td>
-                      <td className="p-4 text-gray-600">
-                        <span className="font-semibold">{v.category}</span>
-                      </td>
-                      <td className="p-4">
-                        <span className="px-2 py-0.5 bg-green-100 text-green-800 font-bold rounded text-[10px]">{v.risk}</span>
-                      </td>
-                      <td className="p-4 font-bold text-gray-900">{v.score}</td>
-                      <td className="p-4 font-bold">
-                        {isFlowB ? (
-                          <span className="px-2.5 py-1 bg-purple-100 text-purple-800 font-extrabold rounded-full text-[10px] border border-purple-200">
-                            ⚠️ Flow B Excluded (Direct Fund Release)
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 bg-green-100 text-green-800 font-bold rounded-full text-[10px]">
-                            Active (Flow A)
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                {filteredVendors.map(v => (
+                  <tr key={v.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="p-3.5 font-bold text-indigo-600 whitespace-nowrap">{v.id}</td>
+                    <td className="p-3.5">
+                      <p className="font-bold text-slate-900">{v.name}</p>
+                      <span className="text-[11px] text-slate-400">{v.company}</span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <p className="text-slate-800 font-semibold">{v.contactPerson}</p>
+                      <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                        <span className="flex items-center gap-1"><Mail size={10} /> {v.email}</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1"><Phone size={10} /> {v.phone}</span>
+                      </div>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap text-slate-700">
+                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-semibold text-slate-700">{v.category}</span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        v.status === 'Active' ? 'bg-emerald-100 text-emerald-800' :
+                        v.status === 'Pending Approval' ? 'bg-amber-100 text-amber-800 animate-pulse' :
+                        v.status === 'Suspended' ? 'bg-orange-100 text-orange-800' : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {v.status}
+                      </span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        v.riskLevel === 'Low' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        v.riskLevel === 'Medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                        'bg-rose-50 text-rose-700 border border-rose-200'
+                      }`}>
+                        {v.riskLevel} Risk
+                      </span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap font-bold text-slate-900">
+                      {v.performanceScore}%
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <p className="font-bold text-slate-900">{fmt(v.totalPurchaseValue)}</p>
+                      <span className="text-[10px] text-slate-400">{v.totalOrders} POs completed</span>
+                    </td>
+                    <td className="p-3.5 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => setSelectedVendor(v)}
+                        className="px-2.5 py-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors inline-flex items-center gap-1"
+                      >
+                        <Eye size={12} /> Dossier
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-          )}
+          </div>
         </div>
       )}
 
-      {/* Add Vendor Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h2 className="text-base font-bold text-gray-900 mb-4">Add New Vendor &amp; Assign Unique ID</h2>
-            <form onSubmit={handleAddVendor} className="space-y-3 text-xs">
+      {/* Sub-Tab 2: Vendor Approval */}
+      {subTab === 'approval' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
+            <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+              <FileCheck size={18} className="text-purple-600" /> Pending Vendor Onboarding Approvals
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Vendors that have submitted GST, bank details, and compliance documents awaiting Administrative verification.
+            </p>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3">Vendor ID</th>
+                    <th className="p-3">Company Name</th>
+                    <th className="p-3">Category</th>
+                    <th className="p-3">Compliance Docs</th>
+                    <th className="p-3">Submitted On</th>
+                    <th className="p-3">Current Status</th>
+                    <th className="p-3 text-right">Approval Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {vendors.filter(v => v.status === 'Pending Approval').map(v => (
+                    <tr key={v.id} className="hover:bg-amber-50/40">
+                      <td className="p-3 font-bold text-indigo-600">{v.id}</td>
+                      <td className="p-3 font-bold text-slate-900">{v.name}</td>
+                      <td className="p-3 text-slate-600">{v.category}</td>
+                      <td className="p-3 text-emerald-700 font-semibold">{v.documentsCount} Verified Attachments</td>
+                      <td className="p-3 text-slate-500">{v.registeredDate}</td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                          Pending Approval
+                        </span>
+                      </td>
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleApproveVendor(v)}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-2xs"
+                          >
+                            <Check size={13} /> Approve
+                          </button>
+                          <button
+                            onClick={() => handleRejectVendor(v)}
+                            className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-2xs"
+                          >
+                            <X size={13} /> Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {vendors.filter(v => v.status === 'Pending Approval').length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-center py-10 text-slate-400">
+                        No vendors currently pending approval.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-Tab 3: Vendor Risk */}
+      {subTab === 'risk' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden text-xs">
+          <div className="p-4 border-b border-slate-100">
+            <h3 className="font-bold text-slate-900 text-sm">Vendor Risk & Compliance Assessment Matrix</h3>
+            <p className="text-slate-500 text-xs">Continuous evaluation of vendor statutory compliance, quality defect rates, and SLA adherence.</p>
+          </div>
+          <table className="w-full text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+              <tr>
+                <th className="p-3.5">Vendor</th>
+                <th className="p-3.5">Risk Level</th>
+                <th className="p-3.5">Compliance Status</th>
+                <th className="p-3.5">Doc Status</th>
+                <th className="p-3.5">Delivery Reliability</th>
+                <th className="p-3.5">Quality Issues</th>
+                <th className="p-3.5">Complaints</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {filteredVendors.map(v => (
+                <tr key={v.id} className="hover:bg-slate-50/70">
+                  <td className="p-3.5">
+                    <span className="font-bold text-slate-900 block">{v.name}</span>
+                    <span className="text-[11px] text-indigo-600">{v.id}</span>
+                  </td>
+                  <td className="p-3.5">
+                    <span className={`px-2.5 py-1 rounded font-bold text-[10px] border ${
+                      v.riskLevel === 'Low' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                      v.riskLevel === 'Medium' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                      'bg-rose-50 text-rose-800 border-rose-200'
+                    }`}>
+                      {v.riskLevel} Risk
+                    </span>
+                  </td>
+                  <td className="p-3.5 text-slate-700">{v.complianceStatus}</td>
+                  <td className="p-3.5 text-slate-700">{v.documentsCount} Files Uploaded</td>
+                  <td className="p-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-emerald-600 h-full" style={{ width: `${v.onTimeDeliveryRate}%` }} />
+                      </div>
+                      <span className="font-bold text-slate-900">{v.onTimeDeliveryRate}%</span>
+                    </div>
+                  </td>
+                  <td className="p-3.5 font-bold text-slate-800">{v.qualityIssuesCount} reported</td>
+                  <td className="p-3.5 font-bold text-slate-800">{v.complaintsCount} tickets</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Sub-Tab 4: Vendor Performance */}
+      {subTab === 'performance' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden text-xs">
+          <div className="p-4 border-b border-slate-100">
+            <h3 className="font-bold text-slate-900 text-sm">Vendor Performance & Fulfillment Telemetry</h3>
+            <p className="text-slate-500 text-xs">Historical tracking of on-time delivery rates, total spend volume, and active contract execution.</p>
+          </div>
+          <table className="w-full text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+              <tr>
+                <th className="p-3.5">Vendor</th>
+                <th className="p-3.5">Performance Score</th>
+                <th className="p-3.5">Total Orders</th>
+                <th className="p-3.5">On-Time Delivery</th>
+                <th className="p-3.5">Delayed Deliveries</th>
+                <th className="p-3.5">Total Enterprise Spend</th>
+                <th className="p-3.5">Active Contracts</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {filteredVendors.map(v => (
+                <tr key={v.id} className="hover:bg-slate-50/70">
+                  <td className="p-3.5 font-bold text-slate-900">{v.name}</td>
+                  <td className="p-3.5">
+                    <span className="text-base font-extrabold text-emerald-700">{v.performanceScore}%</span>
+                  </td>
+                  <td className="p-3.5 text-slate-700 font-bold">{v.totalOrders} Completed</td>
+                  <td className="p-3.5 text-emerald-700 font-bold">{v.onTimeDeliveryRate}%</td>
+                  <td className="p-3.5 text-slate-500">{Math.max(0, 100 - v.onTimeDeliveryRate)}%</td>
+                  <td className="p-3.5 font-black text-slate-900">{fmt(v.totalPurchaseValue)}</td>
+                  <td className="p-3.5 text-indigo-700 font-bold">{v.activeContracts} MSA / SLA</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Sub-Tab 5: Vendor Documents */}
+      {subTab === 'docs' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4 text-xs">
+          <div className="border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-sm">Vendor Statutory & Compliance Document Repository</h3>
+            <p className="text-slate-500 text-xs">Centralized vault for GST certificates, PAN cards, MSME registrations, and MSA contracts.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {vendors.map(v => (
+              <div key={v.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 truncate max-w-[180px]">{v.name}</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">{v.id}</span>
+                </div>
+                <div className="space-y-1.5 text-slate-600">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1"><FileText size={12} className="text-slate-400" /> Certificate of Incorporation</span>
+                    <span className="text-emerald-700 font-bold text-[10px]">Verified</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1"><FileText size={12} className="text-slate-400" /> GST Registration Form</span>
+                    <span className="text-emerald-700 font-bold text-[10px]">Verified</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1"><FileText size={12} className="text-slate-400" /> Cancelled Cheque / Bank Mandate</span>
+                    <span className="text-emerald-700 font-bold text-[10px]">Verified</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => showToast(`Downloading compliance pack for ${v.name}...`, 'info')}
+                  className="w-full py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download size={13} /> Download Document Dossier
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sub-Tab 6: Add Vendor */}
+      {subTab === 'add' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs max-w-2xl mx-auto text-xs space-y-4">
+          <div className="border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <PlusCircle className="text-indigo-600" /> Onboard New Enterprise Vendor
+            </h3>
+            <p className="text-slate-500 text-xs">
+              Fill out company particulars, category, commercial terms, and contact representative to assign unique Vendor ID.
+            </p>
+          </div>
+
+          <form onSubmit={handleAddVendorSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Vendor Company Name *</label>
+                <label className="block font-bold text-slate-700 mb-1">Vendor Trading Name *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Cisco Systems"
-                  value={newVendor.name}
-                  onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
-                  className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300"
+                  placeholder="e.g. Cisco Systems India"
+                  value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
                 />
               </div>
+
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Category *</label>
-                <select
-                  value={newVendor.category}
-                  onChange={(e) => setNewVendor({ ...newVendor, category: e.target.value })}
-                  className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium"
-                >
-                  <option value="IT Hardware">IT Hardware</option>
-                  <option value="SaaS &amp; Cloud">SaaS &amp; Cloud</option>
-                  <option value="Office Accessories">Office Accessories</option>
-                  <option value="Office Technology">Office Technology</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">Contact Person</label>
+                <label className="block font-bold text-slate-700 mb-1">Registered Legal Entity *</label>
                 <input
                   type="text"
-                  placeholder="Contact Name"
-                  value={newVendor.contactPerson}
-                  onChange={(e) => setNewVendor({ ...newVendor, contactPerson: e.target.value })}
-                  className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300"
+                  required
+                  placeholder="e.g. Cisco Commerce India Pvt Ltd"
+                  value={formData.company}
+                  onChange={e => setFormData({ ...formData, company: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-3">
-                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 font-semibold text-gray-600">
-                  Cancel
-                </button>
-                <button type="submit" className="bg-blue-600 text-white font-bold px-4 py-2 rounded-lg shadow">
-                  Create Vendor
-                </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Primary Contact Representative *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ramesh Kulkarni"
+                  value={formData.contactPerson}
+                  onChange={e => setFormData({ ...formData, contactPerson: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                />
               </div>
-            </form>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Official Corporate Email *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. enterprise-sales@cisco.com"
+                  value={formData.email}
+                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Phone Number *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. +91 98200 12345"
+                  value={formData.phone}
+                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Primary Procurement Category *</label>
+                <select
+                  value={formData.category}
+                  onChange={e => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                >
+                  <option value="IT Hardware">IT Hardware</option>
+                  <option value="Software & SaaS">Software & SaaS</option>
+                  <option value="Cloud & Infrastructure">Cloud & Infrastructure</option>
+                  <option value="Cybersecurity">Cybersecurity</option>
+                  <option value="IT Services">IT Services</option>
+                  <option value="Office Accessories">Office Accessories</option>
+                  <option value="Office Technology">Office Technology</option>
+                  <option value="Networking & Telecom">Networking & Telecom</option>
+                  <option value="Training & Certifications">Training & Certifications</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">GSTIN Number *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 29AAAAA0000A1Z5"
+                  value={formData.gstNumber}
+                  onChange={e => setFormData({ ...formData, gstNumber: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800 uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Standard Payment Terms</label>
+                <select
+                  value={formData.paymentTerms}
+                  onChange={e => setFormData({ ...formData, paymentTerms: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                >
+                  <option value="Net 15">Net 15</option>
+                  <option value="Net 30">Net 30</option>
+                  <option value="Net 45">Net 45</option>
+                  <option value="Immediate Wire">Immediate Wire</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Remarks & Onboarding Justification</label>
+              <textarea
+                rows={2}
+                placeholder="Details regarding sole source, tender selection, or master contract terms..."
+                value={formData.notes}
+                onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSubTab('list')}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs transition-colors"
+              >
+                Submit Vendor for Onboarding
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Vendor Dossier Modal */}
+      {selectedVendor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-xl w-full border border-slate-200 shadow-2xl p-6 text-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-bold text-indigo-600">{selectedVendor.id}</span>
+                <h3 className="text-base font-bold text-slate-900">{selectedVendor.name}</h3>
+              </div>
+              <button onClick={() => setSelectedVendor(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase">Corporate Entity</span>
+                <strong className="text-slate-800">{selectedVendor.company}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase">Category</span>
+                <strong className="text-slate-800">{selectedVendor.category}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase">Contact Person</span>
+                <strong className="text-slate-800">{selectedVendor.contactPerson}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase">Email</span>
+                <strong className="text-slate-800">{selectedVendor.email}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase">Total Purchase Value</span>
+                <strong className="text-slate-900 text-sm font-black">{fmt(selectedVendor.totalPurchaseValue)}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase">Performance Score</span>
+                <strong className="text-emerald-700 text-sm font-black">{selectedVendor.performanceScore}%</strong>
+              </div>
+            </div>
+
+            {selectedVendor.notes && (
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase mb-1">Administrative Notes</span>
+                <p className="text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-200">{selectedVendor.notes}</p>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedVendor(null)}
+                className="px-4 py-2 bg-slate-200 text-slate-700 font-bold text-xs rounded-xl"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

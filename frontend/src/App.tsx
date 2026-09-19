@@ -1,6 +1,8 @@
 import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ProcurementProvider } from './context/ProcurementContext'
+import { ManagerDataProvider } from './context/ManagerDataContext'
+import { ActivityProvider } from './context/ActivityContext'
 import AppRoutes from './routes/AppRoutes'
 
 function App() {
@@ -8,7 +10,11 @@ function App() {
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AuthProvider>
         <ProcurementProvider>
-          <AppRoutes />
+          <ManagerDataProvider>
+            <ActivityProvider>
+              <AppRoutes />
+            </ActivityProvider>
+          </ManagerDataProvider>
         </ProcurementProvider>
       </AuthProvider>
     </BrowserRouter>

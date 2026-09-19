@@ -32,19 +32,19 @@ export function rankVendorsForCategory(category: string): Array<VendorRecord & {
 
   // Find active Flow A vendors matching category
   let matches = MASTER_VENDORS.filter(
-    (v) => v.category.toLowerCase() === category.toLowerCase() && v.status === 'Active'
+    (v: VendorRecord) => v.category.toLowerCase() === category.toLowerCase() && v.status === 'Active'
   )
 
   // Fallback to active Flow A vendors only if no direct match for custom category
   if (matches.length === 0) {
-    matches = MASTER_VENDORS.filter((v) => v.status === 'Active').slice(0, 3)
+    matches = MASTER_VENDORS.filter((v: VendorRecord) => v.status === 'Active').slice(0, 3)
   }
 
   // Calculate weighted rank score per vendor
-  const ranked = matches.map((v, idx) => {
+  const ranked = matches.map((v: VendorRecord, idx: number) => {
     const perfNum = parseFloat(v.score) || 90.0
     // Deterministic delivery rate and price score derived from vendor ID seed
-    const seed = v.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+    const seed = v.id.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0)
     const onTimeNum = 92.0 + (seed % 7.5)
     const priceNum = 90.0 + ((seed * 3) % 9.0)
 
@@ -68,7 +68,7 @@ export function rankVendorsForCategory(category: string): Array<VendorRecord & {
     }
   })
 
-  return ranked.sort((a, b) => b.rankScore - a.rankScore)
+  return ranked.sort((a: { rankScore: number }, b: { rankScore: number }) => b.rankScore - a.rankScore)
 }
 
 export const VendorRecommendationPanel: React.FC<VendorRecommendationPanelProps> = ({
