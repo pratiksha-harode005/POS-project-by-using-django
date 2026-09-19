@@ -69,9 +69,14 @@ export const CreateRequestPage: React.FC = () => {
                 className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium"
               >
                 <option value="IT Hardware">IT Hardware</option>
-                <option value="SaaS & Cloud">SaaS & Cloud</option>
-                <option value="Furniture">Furniture</option>
+                <option value="Software & SaaS">Software & SaaS</option>
+                <option value="Cloud & Infrastructure">Cloud & Infrastructure</option>
+                <option value="Cybersecurity">Cybersecurity</option>
+                <option value="IT Services">IT Services</option>
+                <option value="Office Accessories">Office Accessories</option>
                 <option value="Office Technology">Office Technology</option>
+                <option value="Networking & Telecom">Networking & Telecom</option>
+                <option value="Training & Certifications">Training & Certifications</option>
               </select>
             </div>
             <div>

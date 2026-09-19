@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { TrackingStepper } from '../../components/portal/TrackingStepper'
 import { FileText, RotateCcw, AlertCircle, ArrowRight } from 'lucide-react'
+import { useActivity, UnreadBadge } from '../../context/ActivityContext'
 
 interface RequestItem {
   id: string
@@ -11,10 +12,13 @@ interface RequestItem {
   status: 'Pending' | 'Approved' | 'Rejected' | 'Returned' | 'In Procurement' | 'Completed'
   currentStage: number
   date: string
+  currentlyWith?: string
+  lastUpdated?: string
   returnReason?: string
 }
 
 export const MyRequestsPage: React.FC = () => {
+  const { isUnread, markAsRead } = useActivity()
   const [requests, setRequests] = useState<RequestItem[]>([
     {
       id: 'REQ-DEMO-001',
@@ -24,16 +28,20 @@ export const MyRequestsPage: React.FC = () => {
       estCost: '$35,000.00',
       status: 'In Procurement',
       currentStage: 6,
+      currentlyWith: 'Procurement — Admin Purchasing Team',
+      lastUpdated: '2026-09-11',
       date: '2026-09-08',
     },
     {
       id: 'REQ-DEMO-002',
       title: 'Cloud Infrastructure Yearly Renewal',
-      category: 'SaaS & Cloud',
-      quantity: 1,
-      estCost: '$60,000.00',
+      category: 'Software & SaaS',
+      quantity: 10,
+      estCost: '$0.00',
       status: 'Pending',
       currentStage: 1,
+      currentlyWith: 'Manager — Sarah Manager',
+      lastUpdated: '2026-09-11',
       date: '2026-09-10',
     },
     {
@@ -44,6 +52,8 @@ export const MyRequestsPage: React.FC = () => {
       estCost: '$2,500.00',
       status: 'Returned',
       currentStage: 0,
+      currentlyWith: 'Team Lead Alex — Requires Resubmission',
+      lastUpdated: '2026-09-05',
       date: '2026-09-05',
       returnReason: 'Insufficient details provided regarding chair specifications and model warranty.',
     },
@@ -69,23 +79,40 @@ export const MyRequestsPage: React.FC = () => {
       </div>
 
       <div className="space-y-6">
-        {requests.map((req) => (
-          <div key={req.id} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-gray-100">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded border border-blue-200">
-                    {req.id}
-                  </span>
-                  <span className="text-xs text-gray-400 font-medium">{req.date}</span>
+        {requests.map((req) => {
+          const isNew = isUnread(req.id)
+          return (
+            <div
+              key={req.id}
+              onClick={() => { if (isNew) markAsRead(req.id) }}
+              className={`req-card-elevated rounded-2xl p-6 transition-all ${
+                isNew
+                  ? 'border-l-4 border-l-blue-600 bg-blue-50/20'
+                  : ''
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-200">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <UnreadBadge isUnread={isNew} />
+                    <span className="req-id-badge font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-200">
+                      {req.id}
+                    </span>
+                    <span className="text-xs text-slate-500 font-semibold">{req.date}</span>
+                  </div>
+                  <h2 className="text-base font-extrabold text-slate-900 mt-1.5">{req.title}</h2>
+                  <div className="flex items-center gap-3 flex-wrap mt-2 text-xs">
+                    <span className="bg-slate-100 text-slate-800 font-semibold px-2 py-0.5 rounded border border-slate-200">
+                      {req.category}
+                    </span>
+                    <span className="text-slate-700 font-medium">
+                      Qty: <span className="font-bold text-slate-900">{req.quantity}</span>
+                    </span>
+                    <span className="cost-callout-pill">
+                      Est. Cost: {req.estCost}
+                    </span>
+                  </div>
                 </div>
-                <h2 className="text-base font-bold text-gray-900 mt-1">{req.title}</h2>
-                <p className="text-xs text-gray-500">
-                  Category: <span className="font-semibold text-gray-700">{req.category}</span> • Qty:{' '}
-                  <span className="font-semibold text-gray-700">{req.quantity}</span> • Est. Cost:{' '}
-                  <span className="font-semibold text-gray-900">{req.estCost}</span>
-                </p>
-              </div>
 
               {/* Returned Alert Banner & Resubmit Action */}
               {req.status === 'Returned' && (
@@ -109,11 +136,19 @@ export const MyRequestsPage: React.FC = () => {
               </div>
             )}
 
-            {/* 10-Stage Horizontal Stepper */}
-            <TrackingStepper currentStage={req.currentStage} status={req.status} />
+            {/* Dynamic Workflow Progress Stepper */}
+            <TrackingStepper
+              category={req.category}
+              title={req.title}
+              currentStage={req.currentStage}
+              status={req.status}
+              currentlyWith={req.currentlyWith}
+              lastUpdated={req.lastUpdated}
+            />
           </div>
-        ))}
-      </div>
+        )
+      })}
+    </div>
     </div>
   )
 }
