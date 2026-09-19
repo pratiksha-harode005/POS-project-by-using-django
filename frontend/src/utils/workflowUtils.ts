@@ -169,7 +169,6 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       stageIndex = 1
       currentlyWith = 'Manager — Sarah Manager'
     } else if (
-      st === 'approved' ||
       st === 'finance_review' ||
       st === 'sent_to_finance' ||
       st === 'recommended_to_finance' ||
@@ -184,7 +183,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     ) {
       stageIndex = 3
       currentlyWith = 'Admin — Executive Authority'
-    } else if (st === 'assigned_to_vendor' || st === 'vendor_assigned') {
+    } else if (st === 'approved' || st === 'assigned_to_vendor' || st === 'vendor_assigned' || st === 'in_procurement') {
       stageIndex = 4
       currentlyWith = 'IT Operations & Provisioning'
     } else if (st === 'vendor_accepted') {
@@ -193,7 +192,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     } else if (st === 'vendor_rejected') {
       stageIndex = 3
       currentlyWith = 'Vendor Declined — Reassignment Required'
-    } else if (st === 'verified' || st === 'order_complete' || st === 'in_procurement' || st === 'finance_approved') {
+    } else if (st === 'verified' || st === 'order_complete' || st === 'finance_approved') {
       stageIndex = 4
       currentlyWith = 'IT Operations & Provisioning Verification'
     } else if (st === 'completed' || st === 'payment' || st === 'payment_pending' || pst === 'pending' || pst === 'processing' || pst === 'paid') {
@@ -223,6 +222,12 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       currentlyWith = 'Manager — Sarah Manager'
     } else if (
       st === 'approved' ||
+      st === 'rfq_sent' ||
+      st === 'in_procurement'
+    ) {
+      stageIndex = 4
+      currentlyWith = 'Sourcing Team (RFQ Sent)'
+    } else if (
       st === 'finance_review' ||
       st === 'sent_to_finance' ||
       st === 'recommended_to_finance' ||
@@ -237,9 +242,6 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     ) {
       stageIndex = 3
       currentlyWith = 'Admin — Executive Authority'
-    } else if (st === 'rfq_sent') {
-      stageIndex = 4
-      currentlyWith = 'Sourcing Team (RFQ Sent)'
     } else if (st === 'quotes_received' || st === 'assigned_to_vendor' || st === 'vendor_assigned') {
       stageIndex = 5
       currentlyWith = 'Selected Vendor (Awaiting Acceptance)'
@@ -255,7 +257,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     } else if (st === 'invoiced' || st === 'invoice') {
       stageIndex = 8 // Verification and Order Complete
       currentlyWith = 'Procurement Audit & Raise Ticket Verification'
-    } else if (st === 'verified' || st === 'order_complete' || st === 'in_procurement' || st === 'finance_approved' || st === 'product_order') {
+    } else if (st === 'verified' || st === 'order_complete' || st === 'finance_approved' || st === 'product_order') {
       if (typeof req.currentStage === 'number' && req.currentStage >= 4) {
         stageIndex = Math.min(req.currentStage, totalStages - 1)
       } else {

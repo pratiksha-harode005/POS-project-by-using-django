@@ -123,17 +123,14 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
 
         # Update request state
         if act == 'APPROVE':
-            pr.status = 'Approved'
-            if pr.current_stage == 1: # Manager approval
-                pr.current_stage = 2
-            elif pr.current_stage == 2: # Finance approval
-                pr.current_stage = 3
-            elif pr.current_stage == 3: # Admin approval -> moves to RFQ
+            pr.status = 'In Procurement'
+            if pr.current_stage <= 2:
                 pr.current_stage = 4
-                pr.status = 'In Procurement'
+            elif pr.current_stage == 3:
+                pr.current_stage = 5
             else:
                 pr.current_stage = min(pr.current_stage + 1, 9)
-            
+
             if pr.current_stage == 9:
                 pr.status = 'Completed'
 

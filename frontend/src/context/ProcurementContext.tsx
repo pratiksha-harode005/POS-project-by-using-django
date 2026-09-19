@@ -231,10 +231,10 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         justification: item.justification || '',
         attachmentCount: item.attachments ? 1 : 0,
         status: item.status || 'Pending',
-        currentStage: item.current_stage ?? 1,
+        currentStage: item.status === 'Approved' || item.status === 'In Procurement' ? Math.max(item.current_stage ?? 4, 4) : (item.current_stage ?? 1),
         date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
         lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        currentlyWith: item.status === 'Pending' ? { role: 'Manager', name: 'Sarah Manager' } : { role: item.status, name: 'System' },
+        currentlyWith: item.status === 'Pending' ? { role: 'Manager', name: 'Sarah Manager' } : item.status === 'Approved' || item.status === 'In Procurement' ? { role: 'Procurement Sourcing Desk', name: 'Sourcing Team (RFQ Sent)' } : { role: item.status, name: 'System' },
         flowType: item.flow_type || 'A',
         extraFields: item.extra_fields || {},
         history: Array.isArray(item.approval_steps)
