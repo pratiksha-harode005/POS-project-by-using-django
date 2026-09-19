@@ -30,7 +30,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   const requestedAmount = request.amount
 
   // 2. Approved Amount (editable)
-  const [approvedAmount, setApprovedAmount] = useState<number>(request.amount)
+  const [approvedAmount, setApprovedAmount] = useState<number | string>(request.amount || '')
 
   // 3. Budget Available
   const [budgetAvailable, setBudgetAvailable] = useState<'Yes' | 'No'>('Yes')
@@ -69,7 +69,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   // Reset form when request changes
   useEffect(() => {
     if (request) {
-      setApprovedAmount(request.amount)
+      setApprovedAmount(request.amount || '')
       setBudgetAvailable('Yes')
       setCostCenter(request.costCenter || `CC-${(request.department || 'ENG').toUpperCase().slice(0, 3)}-2026-Q3`)
       setVendor(request.vendor || 'Dell Technologies Enterprise')
@@ -85,14 +85,16 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   const handleConfirm = (e: React.FormEvent) => {
     e.preventDefault()
 
+    const numApproved = typeof approvedAmount === 'number' ? approvedAmount : parseFloat(String(approvedAmount)) || 0
+
     // Validate fields
-    if (!approvedAmount || approvedAmount <= 0) {
+    if (!numApproved || numApproved <= 0) {
       setValidationError('Approved amount must be greater than zero.')
       return
     }
 
-    if (approvedAmount > requestedAmount) {
-      setValidationError(`Approved amount (${fmt(approvedAmount)}) cannot exceed requested amount (${fmt(requestedAmount)}).`)
+    if (requestedAmount > 0 && numApproved > requestedAmount) {
+      setValidationError(`Approved amount (${fmt(numApproved)}) cannot exceed requested amount (${fmt(requestedAmount)}).`)
       return
     }
 
@@ -125,7 +127,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
 
     const params: ApprovalParameters = {
       requestedAmount,
-      approvedAmount,
+      approvedAmount: numApproved,
       budgetAvailable,
       costCenter: costCenter.trim(),
       vendor: vendor.trim(),
@@ -220,10 +222,17 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
                 </label>
                 <input
                   type="number"
-                  min="1"
-                  max={requestedAmount}
+                  min="0"
                   value={approvedAmount}
-                  onChange={(e) => setApprovedAmount(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === '') {
+                      setApprovedAmount('')
+                    } else {
+                      const num = parseFloat(val)
+                      setApprovedAmount(isNaN(num) ? '' : num)
+                    }
+                  }}
                   className="w-full px-3.5 py-2 bg-white rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 font-mono font-bold text-sm text-slate-900"
                   required
                 />
