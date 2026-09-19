@@ -29,7 +29,7 @@ export const FinancialReportsPage: React.FC = () => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" fontSize={12} />
               <YAxis fontSize={12} />
-              <Tooltip formatter={(value: any) => `$${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => `RS {value.toLocaleString()}`} />
               <Bar dataKey="spend" fill="#2563EB" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

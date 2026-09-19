@@ -23,7 +23,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
     MANAGER: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
     FINANCE: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
     ADMIN: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-    VENDOR: { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
+    VENDOR: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
   }
 
   const currentRole = role || 'TEAM_LEAD'
@@ -98,10 +98,11 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
                 logout()
                 navigate('/login')
               }}
-              className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-red-200"
               title="Logout"
             >
-              <LogOut size={18} />
+              <LogOut size={16} />
+              <span>Logout</span>
             </button>
           </div>
         </header>

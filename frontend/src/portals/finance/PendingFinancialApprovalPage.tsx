@@ -21,7 +21,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
       teamLead: 'Alex Developer',
       department: 'IT & Infrastructure',
       category: 'SaaS & Cloud',
-      estCost: '$60,000.00',
+      estCost: 'RS 60,000.00',
       escalationReason: 'Exceeds manager approval budget',
       date: '2026-09-10',
     },

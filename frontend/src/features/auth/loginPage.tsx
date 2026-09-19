@@ -10,7 +10,7 @@ import {
   AlertCircle,
   Users,
   BarChart3,
-  DollarSign,
+  IndianRupee,
   Settings,
   Truck,
   ArrowRight,
@@ -21,7 +21,7 @@ import {
 const roles = [
   { label: 'Team Lead', roleKey: 'TEAM_LEAD' as UserRole, email: 'tl@procurementos.com', pass: 'password123', icon: Users, bg: '#DBEAFE', color: '#2563EB' },
   { label: 'Manager',   roleKey: 'MANAGER' as UserRole,   email: 'mgr@procurementos.com', pass: 'password123', icon: BarChart3, bg: '#DCFCE7', color: '#16A34A' },
-  { label: 'Finance',   roleKey: 'FINANCE' as UserRole,   email: 'fin@procurementos.com', pass: 'password123', icon: DollarSign, bg: '#FFEDD5', color: '#D97706' },
+  { label: 'Finance',   roleKey: 'FINANCE' as UserRole,   email: 'fin@procurementos.com', pass: 'password123', icon: IndianRupee, bg: '#FFEDD5', color: '#D97706' },
   { label: 'Admin',     roleKey: 'ADMIN' as UserRole,     email: 'admin@procurementos.com', pass: 'password123', icon: Settings, bg: '#EDE9FE', color: '#7C3AED' },
   { label: 'Vendor',    roleKey: 'VENDOR' as UserRole,    email: 'contact@dell.com', pass: 'password123', icon: Truck, bg: '#FCE7F3', color: '#DB2777' },
 ]
@@ -60,7 +60,7 @@ export default function LoginPage() {
     const errs: typeof errors = {}
     if (!email.trim()) {
       errs.email = 'Email is required.'
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    } else if (!/^[^\s@]+@[^\s@]+.[^\s@]+$/.test(email)) {
       errs.email = 'Enter a valid email address.'
     }
     if (!password) {

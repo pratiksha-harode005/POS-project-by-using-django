@@ -100,7 +100,7 @@ export default function ContactPage() {
     if (!form.name.trim()) errs.name = 'Name is required.'
     if (!form.email.trim()) {
       errs.email = 'Email is required.'
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+    } else if (!/^[^\s@]+@[^\s@]+.[^\s@]+$/.test(form.email)) {
       errs.email = 'Enter a valid email address.'
     }
     if (!form.message.trim()) errs.message = 'Message is required.'

@@ -1,15 +1,15 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { CheckSquare, CheckCircle, XCircle, Landmark, DollarSign, CreditCard } from 'lucide-react'
+import { CheckSquare, CheckCircle, XCircle, Landmark, IndianRupee, CreditCard } from 'lucide-react'
 
 export const ManagerDashboard: React.FC = () => {
   const cards = [
-    { label: 'Pending Approvals', count: 4, icon: CheckSquare, color: 'bg-amber-500' },
-    { label: 'Approvals This Month', count: 18, icon: CheckCircle, color: 'bg-green-500' },
-    { label: 'Rejected Requests', count: 2, icon: XCircle, color: 'bg-red-500' },
-    { label: 'Finance Review', count: 5, icon: Landmark, color: 'bg-purple-500', note: 'Sent to Finance' },
-    { label: 'Total Request Value', count: '$145,000.00', icon: DollarSign, color: 'bg-blue-600' },
-    { label: 'Budget Amount Remaining', count: '$355,000.00', icon: CreditCard, color: 'bg-indigo-600' },
+    { label: 'Pending Approvals', count: 4, icon: CheckSquare, bg: 'bg-amber-50 text-amber-600 border border-amber-200' },
+    { label: 'Approvals This Month', count: 18, icon: CheckCircle, bg: 'bg-emerald-50 text-emerald-600 border border-emerald-200' },
+    { label: 'Rejected Requests', count: 2, icon: XCircle, bg: 'bg-rose-50 text-rose-600 border border-rose-200' },
+    { label: 'Finance Review', count: 5, icon: Landmark, bg: 'bg-purple-50 text-purple-600 border border-purple-200', note: 'Sent to Finance' },
+    { label: 'Total Request Value', count: 'RS 145,000.00', icon: IndianRupee, bg: 'bg-blue-50 text-blue-600 border border-blue-200' },
+    { label: 'Budget Amount Remaining', count: 'RS 355,000.00', icon: CreditCard, bg: 'bg-indigo-50 text-indigo-600 border border-indigo-200' },
   ]
 
   return (
@@ -25,13 +25,13 @@ export const ManagerDashboard: React.FC = () => {
           const Icon = c.icon
           return (
             <div key={c.label} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-xl ${c.color} text-white flex items-center justify-center shadow-md`}>
+              <div className={`w-12 h-12 rounded-xl ${c.bg} flex items-center justify-center flex-shrink-0`}>
                 <Icon size={24} />
               </div>
               <div>
                 <p className="text-2xl font-black text-gray-900 leading-none mb-1">{c.count}</p>
                 <p className="text-xs font-semibold text-gray-500">{c.label}</p>
-                {c.note && <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded mt-1 inline-block">{c.note}</span>}
+                {c.note && <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded mt-1 inline-block border border-purple-200">{c.note}</span>}
               </div>
             </div>
           )

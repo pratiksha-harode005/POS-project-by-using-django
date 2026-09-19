@@ -4,10 +4,10 @@ export const AdminRequestsPage: React.FC = () => {
   const [subTab, setSubTab] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'returned'>('all')
 
   const requests = [
-    { id: 'REQ-DEMO-001', title: 'High Performance Laptops', category: 'IT Hardware', status: 'In Procurement', cost: '$35,000.00' },
-    { id: 'REQ-DEMO-002', title: 'Cloud Infrastructure Renewal', category: 'SaaS & Cloud', status: 'Pending', cost: '$60,000.00' },
-    { id: 'REQ-DEMO-003', title: 'Ergonomic Desk Chairs', category: 'Furniture', status: 'Returned', cost: '$2,500.00' },
-    { id: 'REQ-DEMO-005', title: 'Legacy Server Replacement', category: 'IT Hardware', status: 'Rejected', cost: '$80,000.00' },
+    { id: 'REQ-DEMO-001', title: 'High Performance Laptops', category: 'IT Hardware', status: 'In Procurement', cost: 'RS 35,000.00' },
+    { id: 'REQ-DEMO-002', title: 'Cloud Infrastructure Renewal', category: 'SaaS & Cloud', status: 'Pending', cost: 'RS 60,000.00' },
+    { id: 'REQ-DEMO-003', title: 'Ergonomic Desk Chairs', category: 'Office Accessories', status: 'Returned', cost: 'RS 2,500.00' },
+    { id: 'REQ-DEMO-005', title: 'Legacy Server Replacement', category: 'IT Hardware', status: 'Rejected', cost: 'RS 80,000.00' },
   ]
 
   const filtered = requests.filter((r) => {

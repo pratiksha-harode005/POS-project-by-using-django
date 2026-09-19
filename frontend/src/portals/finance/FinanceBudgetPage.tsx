@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { CreditCard, DollarSign, CheckCircle } from 'lucide-react'
+import { CreditCard, IndianRupee, CheckCircle } from 'lucide-react'
 
 export const FinanceBudgetPage: React.FC = () => {
   const [subTab, setSubTab] = useState<'overview' | 'allocated' | 'committed' | 'available'>('overview')
@@ -41,15 +41,15 @@ export const FinanceBudgetPage: React.FC = () => {
             <div className="grid grid-cols-3 gap-4">
               <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <span className="text-gray-500 block">Total Allocated</span>
-                <span className="text-lg font-black text-gray-900">$500,000.00</span>
+                <span className="text-lg font-black text-gray-900">RS 500,000.00</span>
               </div>
               <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <span className="text-gray-500 block">Total Committed</span>
-                <span className="text-lg font-black text-purple-600">$120,000.00</span>
+                <span className="text-lg font-black text-purple-600">RS 120,000.00</span>
               </div>
               <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <span className="text-gray-500 block">Total Available</span>
-                <span className="text-lg font-black text-green-600">$295,000.00</span>
+                <span className="text-lg font-black text-green-600">RS 295,000.00</span>
               </div>
             </div>
           </div>
@@ -58,21 +58,21 @@ export const FinanceBudgetPage: React.FC = () => {
         {subTab === 'allocated' && (
           <div>
             <h2 className="font-bold text-gray-900 text-sm mb-3">Allocated Budgets by Department</h2>
-            <p className="text-gray-500 mb-4">IT & Infrastructure: $500,000.00 • Operations: $200,000.00 • HR: $100,000.00</p>
+            <p className="text-gray-500 mb-4">IT & Infrastructure: RS 500,000.00 • Operations: RS 200,000.00 • HR: RS 100,000.00</p>
           </div>
         )}
 
         {subTab === 'committed' && (
           <div>
             <h2 className="font-bold text-gray-900 text-sm mb-3">Committed PO Funds</h2>
-            <p className="text-gray-500 mb-4">$120,000.00 tied to active POs awaiting delivery and 3-way match.</p>
+            <p className="text-gray-500 mb-4">RS 120,000.00 tied to active POs awaiting delivery and 3-way match.</p>
           </div>
         )}
 
         {subTab === 'available' && (
           <div>
             <h2 className="font-bold text-gray-900 text-sm mb-3">Uncommitted Available Balance</h2>
-            <p className="text-gray-500 mb-4">$295,000.00 ready for new purchase request approvals.</p>
+            <p className="text-gray-500 mb-4">RS 295,000.00 ready for new purchase request approvals.</p>
           </div>
         )}
       </div>

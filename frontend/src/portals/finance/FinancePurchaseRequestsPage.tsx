@@ -3,8 +3,8 @@ import { FileText } from 'lucide-react'
 
 export const FinancePurchaseRequestsPage: React.FC = () => {
   const requests = [
-    { id: 'REQ-DEMO-001', title: 'High Performance Laptops', stage: 'Stage 6 (Product Order)', cost: '$35,000.00', status: 'In Procurement' },
-    { id: 'REQ-DEMO-002', title: 'Cloud Infrastructure Renewal', stage: 'Stage 2 (Finance Approval)', cost: '$60,000.00', status: 'Pending' },
+    { id: 'REQ-DEMO-001', title: 'High Performance Laptops', stage: 'Stage 6 (Product Order)', cost: 'RS 35,000.00', status: 'In Procurement' },
+    { id: 'REQ-DEMO-002', title: 'Cloud Infrastructure Renewal', stage: 'Stage 2 (Finance Approval)', cost: 'RS 60,000.00', status: 'Pending' },
   ]
 
   return (

@@ -62,7 +62,7 @@ export const AdminSystemConfigPage: React.FC = () => {
           <form onSubmit={handleSave} className="space-y-4 max-w-lg">
             <h2 className="text-sm font-bold text-gray-900 mb-2">Configure Approval Budget Thresholds</h2>
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Manager Max Approval Limit ($) *</label>
+              <label className="block font-bold text-gray-700 mb-1">Manager Max Approval Limit (RS) *</label>
               <input
                 type="number"
                 value={limits.managerLimit}
@@ -73,7 +73,7 @@ export const AdminSystemConfigPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Finance Max Approval Limit ($) *</label>
+              <label className="block font-bold text-gray-700 mb-1">Finance Max Approval Limit (RS) *</label>
               <input
                 type="number"
                 value={limits.financeLimit}
@@ -84,7 +84,7 @@ export const AdminSystemConfigPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Admin Approval Threshold ($) *</label>
+              <label className="block font-bold text-gray-700 mb-1">Admin Approval Threshold (RS) *</label>
               <input
                 type="number"
                 value={limits.adminLimit}

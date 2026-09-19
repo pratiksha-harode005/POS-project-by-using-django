@@ -6,7 +6,7 @@ export const RecommendedToFinancePage: React.FC = () => {
     {
       id: 'REQ-DEMO-002',
       title: 'Cloud Infrastructure Yearly Renewal',
-      cost: '$60,000.00',
+      cost: 'RS 60,000.00',
       reason: 'Exceeds my approval budget',
       date: '2026-09-10',
       status: 'Awaiting Finance Action',

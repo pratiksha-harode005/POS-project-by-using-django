@@ -2,13 +2,17 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import HomePage from '../pages/HomePage'
 import AboutPage from '../pages/AboutPage'
 import FeaturesPage from '../pages/FeaturesPage'
+import FeatureDetailPage from '../pages/FeatureDetailPage'
+import CategoryDetailPage from '../pages/CategoryDetailPage'
 import ContactPage from '../pages/ContactPage'
 import LoginPage from '../features/auth/loginPage'
+import ScrollToTop from '../components/common/ScrollToTop'
 
 // Shared Portal Components
 import { PortalLayout } from '../components/portal/PortalLayout'
 import { SharedProfilePage } from '../components/portal/SharedProfilePage'
 import { SharedNotificationsPage } from '../components/portal/SharedNotificationsPage'
+import { ProcurementProvider } from '../context/ProcurementContext'
 
 // Team Lead Portal Pages
 import { TeamLeadDashboard } from '../portals/teamlead/TeamLeadDashboard'
@@ -44,17 +48,33 @@ import { AdminRecordsPage } from '../portals/admin/AdminRecordsPage'
 import { AdminSystemConfigPage } from '../portals/admin/AdminSystemConfigPage'
 
 // Vendor Portal Pages
-import { VendorDashboard, VendorRFQsPage, VendorQuotationsPage } from '../portals/vendor/VendorPortalPages'
+import {
+  VendorCategoriesPage,
+  VendorsInCategoryPage,
+  VendorDashboard,
+  VendorRFQsPage,
+  VendorQuotationsPage,
+  VendorPurchaseOrdersPage,
+  VendorDeliveriesPage,
+  VendorReceiptsPage,
+  VendorInvoicesPage,
+  VendorPaymentStatusPage,
+  VendorDocumentsPage,
+} from '../portals/vendor/VendorPortalPages'
 
 export default function AppRoutes() {
   return (
-    <Routes>
-      {/* Marketing Pages */}
-      <Route path="/" element={<HomePage />} />
-      <Route path="/about" element={<AboutPage />} />
-      <Route path="/features" element={<FeaturesPage />} />
-      <Route path="/contact" element={<ContactPage />} />
-      <Route path="/login" element={<LoginPage />} />
+    <>
+      <ScrollToTop />
+      <Routes>
+        {/* Marketing Pages */}
+        <Route path="/" element={<HomePage />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/features" element={<FeaturesPage />} />
+        <Route path="/features/:featureId" element={<FeatureDetailPage />} />
+        <Route path="/categories/:categoryId" element={<CategoryDetailPage />} />
+        <Route path="/contact" element={<ContactPage />} />
+        <Route path="/login" element={<LoginPage />} />
 
       {/* ── 1. TEAM LEAD PORTAL ── */}
       <Route path="/portal/team_lead/*" element={<PortalLayout><TeamLeadRoutes /></PortalLayout>} />
@@ -74,6 +94,7 @@ export default function AppRoutes() {
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }
 
@@ -155,18 +176,37 @@ function AdminRoutes() {
 function VendorRoutes() {
   return (
     <Routes>
-      <Route path="dashboard" element={<VendorDashboard />} />
-      <Route path="profile" element={<SharedProfilePage />} />
-      <Route path="documents" element={<SharedProfilePage />} />
-      <Route path="rfqs" element={<VendorRFQsPage />} />
-      <Route path="quotations" element={<VendorQuotationsPage />} />
-      <Route path="purchase-orders" element={<VendorQuotationsPage />} />
-      <Route path="deliveries" element={<VendorQuotationsPage />} />
-      <Route path="receipts" element={<VendorQuotationsPage />} />
-      <Route path="invoices" element={<VendorQuotationsPage />} />
-      <Route path="payment-status" element={<VendorQuotationsPage />} />
-      <Route path="notifications" element={<SharedNotificationsPage />} />
-      <Route path="*" element={<Navigate to="dashboard" replace />} />
+      {/* Category & Vendor Selection landing pages */}
+      <Route path="categories" element={<VendorCategoriesPage />} />
+      <Route path="categories/:categoryId" element={<VendorsInCategoryPage />} />
+
+      {/* Scoped Vendor Portal routes */}
+      <Route path="vendor/:vendorId/dashboard" element={<VendorDashboard />} />
+      <Route path="vendor/:vendorId/documents" element={<VendorDocumentsPage />} />
+      <Route path="vendor/:vendorId/rfqs" element={<VendorRFQsPage />} />
+      <Route path="vendor/:vendorId/quotations" element={<VendorQuotationsPage />} />
+      <Route path="vendor/:vendorId/purchase-orders" element={<VendorPurchaseOrdersPage />} />
+      <Route path="vendor/:vendorId/deliveries" element={<Navigate to="../purchase-orders" replace />} />
+      <Route path="vendor/:vendorId/receipts" element={<VendorReceiptsPage />} />
+      <Route path="vendor/:vendorId/invoices" element={<VendorInvoicesPage />} />
+      <Route path="vendor/:vendorId/payment-status" element={<VendorPaymentStatusPage />} />
+      <Route path="vendor/:vendorId/notifications" element={<SharedNotificationsPage />} />
+      <Route path="vendor/:vendorId/profile" element={<SharedProfilePage />} />
+
+      {/* Unscoped shortcuts — default to VND-HW-001 or categories */}
+      <Route path="dashboard" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/dashboard" replace />} />
+      <Route path="documents" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/documents" replace />} />
+      <Route path="rfqs" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/rfqs" replace />} />
+      <Route path="quotations" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/quotations" replace />} />
+      <Route path="purchase-orders" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/purchase-orders" replace />} />
+      <Route path="deliveries" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/purchase-orders" replace />} />
+      <Route path="receipts" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/receipts" replace />} />
+      <Route path="invoices" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/invoices" replace />} />
+      <Route path="payment-status" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/payment-status" replace />} />
+      <Route path="notifications" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/notifications" replace />} />
+      <Route path="profile" element={<Navigate to="/portal/vendor/vendor/VND-HW-001/profile" replace />} />
+
+      <Route path="*" element={<Navigate to="/portal/vendor/categories" replace />} />
     </Routes>
   )
 }

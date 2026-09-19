@@ -20,7 +20,7 @@ export const MyApprovalsPage: React.FC = () => {
       teamLead: 'Alex Developer',
       department: 'IT & Infrastructure',
       category: 'SaaS & Cloud',
-      estCost: '$60,000.00',
+      estCost: 'RS 60,000.00',
       date: '2026-09-10',
     },
     {
@@ -29,7 +29,7 @@ export const MyApprovalsPage: React.FC = () => {
       teamLead: 'Maria Lead',
       department: 'IT & Infrastructure',
       category: 'IT Hardware',
-      estCost: '$45,000.00',
+      estCost: 'RS 45,000.00',
       date: '2026-09-09',
     },
   ])

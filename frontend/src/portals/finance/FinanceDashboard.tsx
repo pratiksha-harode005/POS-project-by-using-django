@@ -29,7 +29,7 @@ export const FinanceDashboard: React.FC = () => {
           <h2 className="text-base font-bold text-gray-900 mb-2 flex items-center gap-2">
             <Landmark size={20} className="text-blue-600" /> Budget Utilization Breakdown
           </h2>
-          <p className="text-xs text-gray-500 mb-4">Total Budget: $500,000.00</p>
+          <p className="text-xs text-gray-500 mb-4">Total Budget: RS 500,000.00</p>
 
           <div className="h-52 w-full flex items-center justify-between">
             <ResponsiveContainer width="55%" height="100%">
@@ -39,22 +39,22 @@ export const FinanceDashboard: React.FC = () => {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: any) => `$${value.toLocaleString()}`} />
+                <Tooltip formatter={(value: any) => `RS {value.toLocaleString()}`} />
               </PieChart>
             </ResponsiveContainer>
 
             <div className="w-[40%] space-y-2 text-xs">
               <div className="p-2 bg-blue-50 rounded-lg border border-blue-200">
                 <span className="text-gray-500 block">Spent</span>
-                <span className="font-bold text-blue-700">$85,000.00</span>
+                <span className="font-bold text-blue-700">RS 85,000.00</span>
               </div>
               <div className="p-2 bg-purple-50 rounded-lg border border-purple-200">
                 <span className="text-gray-500 block">Committed</span>
-                <span className="font-bold text-purple-700">$120,000.00</span>
+                <span className="font-bold text-purple-700">RS 120,000.00</span>
               </div>
               <div className="p-2 bg-green-50 rounded-lg border border-green-200">
                 <span className="text-gray-500 block">Available</span>
-                <span className="font-bold text-green-700">$295,000.00</span>
+                <span className="font-bold text-green-700">RS 295,000.00</span>
               </div>
             </div>
           </div>
@@ -75,22 +75,22 @@ export const FinanceDashboard: React.FC = () => {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: any) => `$${value.toLocaleString()}`} />
+                <Tooltip formatter={(value: any) => `RS {value.toLocaleString()}`} />
               </PieChart>
             </ResponsiveContainer>
 
             <div className="w-[40%] space-y-2 text-xs">
               <div className="p-2 bg-green-50 rounded-lg border border-green-200">
                 <span className="text-gray-500 block">Paid Amount</span>
-                <span className="font-bold text-green-700">$42,000.00</span>
+                <span className="font-bold text-green-700">RS 42,000.00</span>
               </div>
               <div className="p-2 bg-amber-50 rounded-lg border border-amber-200">
                 <span className="text-gray-500 block">Pending Invoice</span>
-                <span className="font-bold text-amber-700">$35,000.00</span>
+                <span className="font-bold text-amber-700">RS 35,000.00</span>
               </div>
               <div className="p-2 bg-red-50 rounded-lg border border-red-200">
                 <span className="text-gray-500 block">Exceptions</span>
-                <span className="font-bold text-red-700">$12,000.00</span>
+                <span className="font-bold text-red-700">RS 12,000.00</span>
               </div>
             </div>
           </div>
