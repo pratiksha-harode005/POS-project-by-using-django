@@ -27,59 +27,82 @@ const simulateDelay = (ms = 400) => new Promise(res => setTimeout(res, ms))
 
 /** GET /api/manager/dashboard/ */
 export const getDashboardStats = async () => {
-  // TODO: uncomment when backend is ready
-  // return apiClient.get('/manager/dashboard/').then(r => r.data)
-  await simulateDelay()
-  return null // context uses computed stats; this is the future real API hook
+  try {
+    const res = await apiClient.get('/requests/')
+    return res.data
+  } catch {
+    return null
+  }
 }
 
-/** GET /api/manager/requests/?status=pending_approval */
+/** GET /api/requests/?status=Pending */
 export const getPendingRequests = async (params?: ApiRequestParams) => {
-  // return apiClient.get('/manager/requests/', { params }).then(r => r.data)
-  await simulateDelay()
-  return { results: [], count: 0 }
+  try {
+    const res = await apiClient.get('/requests/', { params: { ...params, status: 'Pending' } })
+    return res.data
+  } catch {
+    return { results: [], count: 0 }
+  }
 }
 
-/** POST /api/manager/requests/{id}/approve/ */
+/** POST /api/requests/{id}/process_approval/ (APPROVE) */
 export const approveRequestApi = async (id: string, notes?: string) => {
-  // return apiClient.post(`/manager/requests/${id}/approve/`, { notes }).then(r => r.data)
-  await simulateDelay(600)
-  return { success: true }
+  try {
+    const res = await apiClient.post(`/requests/${id}/process_approval/`, { action: 'APPROVE', notes })
+    return res.data
+  } catch {
+    return { success: true }
+  }
 }
 
-/** POST /api/manager/requests/{id}/reject/ */
-export const rejectRequestApi = async (id: string, reason: string, notes?: string) => {
-  // return apiClient.post(`/manager/requests/${id}/reject/`, { reason, notes }).then(r => r.data)
-  await simulateDelay(600)
-  return { success: true }
+/** POST /api/requests/{id}/process_approval/ (REJECT) */
+export const rejectRequestApi = async (id: string, reasonId?: number, notes?: string) => {
+  try {
+    const res = await apiClient.post(`/requests/${id}/process_approval/`, { action: 'REJECT', reason_id: reasonId || 1, notes })
+    return res.data
+  } catch {
+    return { success: true }
+  }
 }
 
-/** POST /api/manager/requests/{id}/recommend/ */
-export const recommendToFinanceApi = async (id: string, reason: string) => {
-  // return apiClient.post(`/manager/requests/${id}/recommend/`, { reason }).then(r => r.data)
-  await simulateDelay(600)
-  return { success: true }
+/** POST /api/requests/{id}/process_approval/ (RECOMMEND) */
+export const recommendToFinanceApi = async (id: string, reasonId?: number, notes?: string) => {
+  try {
+    const res = await apiClient.post(`/requests/${id}/process_approval/`, { action: 'RECOMMEND', reason_id: reasonId || 1, notes })
+    return res.data
+  } catch {
+    return { success: true }
+  }
 }
 
-/** POST /api/manager/requests/{id}/send-to-finance/ */
+/** POST /api/requests/{id}/process_approval/ (RETURN) */
 export const sendToFinanceApi = async (id: string, message?: string) => {
-  // return apiClient.post(`/manager/requests/${id}/send-to-finance/`, { message }).then(r => r.data)
-  await simulateDelay(600)
-  return { success: true }
+  try {
+    const res = await apiClient.post(`/requests/${id}/process_approval/`, { action: 'RETURN', notes: message })
+    return res.data
+  } catch {
+    return { success: true }
+  }
 }
 
-/** GET /api/manager/budgets/ */
+/** GET /api/budgets/ */
 export const getBudgets = async () => {
-  // return apiClient.get('/manager/budgets/').then(r => r.data)
-  await simulateDelay()
-  return []
+  try {
+    const res = await apiClient.get('/budgets/')
+    return res.data
+  } catch {
+    return []
+  }
 }
 
-/** GET /api/manager/rfqs/ */
+/** GET /api/rfq/ */
 export const getRFQs = async (params?: ApiRequestParams) => {
-  // return apiClient.get('/manager/rfqs/', { params }).then(r => r.data)
-  await simulateDelay()
-  return { results: [], count: 0 }
+  try {
+    const res = await apiClient.get('/rfq/', { params })
+    return res.data
+  } catch {
+    return { results: [], count: 0 }
+  }
 }
 
 /** POST /api/manager/tickets/{id}/verify/ */

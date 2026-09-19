@@ -162,7 +162,7 @@ export const TeamLeadDashboard: React.FC = () => {
             <span className="bg-white/20 text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
               Quick Create
             </span>
-            <h2 className="text-lg font-extrabold mt-3">
+            <h2 className="text-xl font-extrabold text-white mt-3 leading-snug">
               You've submitted {totalCount} requests this quarter — {pendingCount} pending
             </h2>
 
