@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom'
 import { TrackingStepper, StepHistoryItem } from '../../components/portal/TrackingStepper'
 import { detectWorkflowType } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
+import { useManagerData } from '../../context/ManagerDataContext'
 
 export interface ManagerOrder {
   id: string
@@ -347,7 +348,49 @@ const INITIAL_ORDERS: ManagerOrder[] = [
 
 export const MyOrdersPage: React.FC = () => {
   const { user } = useAuth()
-  const [orders, setOrders] = useState<ManagerOrder[]>(INITIAL_ORDERS)
+  const { allRequests } = useManagerData()
+
+  const liveOrders = useMemo<ManagerOrder[]>(() => {
+    if (!allRequests || allRequests.length === 0) return []
+    return allRequests.map((req) => {
+      const isCompleted = (req.status as string) === 'completed' || req.status === 'delivered'
+      const isInProcurement = req.status === 'assigned_to_vendor' || req.status === 'vendor_accepted'
+      const isRejected = req.status === 'rejected' || req.status === 'finance_rejected' || req.status === 'vendor_rejected'
+      
+      let status: 'Pending' | 'Approved' | 'Rejected' | 'In Procurement' | 'Completed' = 'Pending'
+      if (isCompleted) status = 'Completed'
+      else if (isInProcurement) status = 'In Procurement'
+      else if (isRejected) status = 'Rejected'
+      else if (req.status === 'approved' || req.status === 'finance_review' || req.status === 'recommended_to_finance' || req.status === 'finance_approved') status = 'Approved'
+      else status = 'Pending'
+
+      return {
+        id: req.id,
+        title: req.title,
+        description: req.description || req.justification || 'Purchase requisition',
+        category: req.category,
+        quantity: 1,
+        unit: 'Units',
+        estCost: `₹${req.amount.toLocaleString('en-IN')}`,
+        rawCost: req.amount,
+        unitPrice: `₹${req.amount.toLocaleString('en-IN')}`,
+        vendor: req.vendor || 'Approved Vendor',
+        deliveryLocation: 'Pune HQ',
+        budgetCode: req.costCenter || `CC-${(req.department || 'IT').toUpperCase().slice(0, 3)}-2026`,
+        date: req.date,
+        time: '10:00 AM',
+        status: status,
+        currentStage: isCompleted ? 9 : status === 'Approved' ? 3 : 2,
+        currentlyWith: status === 'Approved' ? 'Finance Department' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team',
+        lastUpdated: req.date,
+        department: req.department,
+        requester: req.requester,
+        priority: (req.priority as any) || 'Medium',
+      }
+    })
+  }, [allRequests])
+
+  const orders = liveOrders
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'In Procurement' | 'Completed'>('All')
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Hardware' | 'Software'>('All')
