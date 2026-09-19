@@ -645,6 +645,13 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   useEffect(() => {
     refreshManagerBackendData()
+    const handleUpdate = () => refreshManagerBackendData()
+    window.addEventListener('kss_backend_updated', handleUpdate)
+    const interval = setInterval(refreshManagerBackendData, 5000)
+    return () => {
+      window.removeEventListener('kss_backend_updated', handleUpdate)
+      clearInterval(interval)
+    }
   }, [])
 
   // Computed: ALL requests across the procurement lifecycle

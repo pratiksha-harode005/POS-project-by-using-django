@@ -28,6 +28,9 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
         model = PurchaseRequest
         fields = '__all__'
         read_only_fields = ['request_id', 'created_by', 'status', 'current_stage', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'department': {'required': False, 'allow_null': True}
+        }
 
 
 class ApproveRejectActionSerializer(serializers.Serializer):

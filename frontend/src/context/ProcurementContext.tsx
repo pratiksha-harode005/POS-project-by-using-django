@@ -298,8 +298,13 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       preferred_vendor: reqData.preferredVendor || '',
       justification: reqData.justification || '',
       total_estimated_cost: reqData.estimatedCost || 0,
+      flow_type: reqData.flowType || 'A',
+      extra_fields: reqData.extraFields || {},
     })
-      .then(() => refreshBackendRequests())
+      .then(() => {
+        refreshBackendRequests()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
       .catch((e) => console.warn('Backend persist warning:', e))
 
     if (!isDraft) {

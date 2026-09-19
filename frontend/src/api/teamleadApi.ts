@@ -16,6 +16,8 @@ export interface CreateRequestPayload {
   preferred_vendor?: string
   justification: string
   total_estimated_cost?: number
+  flow_type?: string
+  extra_fields?: Record<string, any>
 }
 
 export const getTeamLeadRequests = async (params?: { status?: string; search?: string }) => {
