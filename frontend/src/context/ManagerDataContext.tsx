@@ -71,6 +71,8 @@ export interface ProcurementRequest {
   department: string
   category: string
   amount: number
+  quantity?: number
+  currentStage?: number
   date: string
   status: RequestStatus
   priority: 'Low' | 'Medium' | 'High' | 'Critical'
@@ -627,6 +629,9 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         department: item.department_detail?.name || 'IT',
         category: item.category,
         amount: Number(item.total_estimated_cost) || 0,
+        quantity: item.quantity || 1,
+        currentStage: item.current_stage || 1,
+        costCenter: item.cost_center || item.budget_code,
         date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
         status: item.status === 'Pending' ? 'pending_approval' : item.status === 'Approved' ? 'approved' : item.status === 'Rejected' ? 'rejected' : 'finance_review',
         priority: item.priority || 'Medium',

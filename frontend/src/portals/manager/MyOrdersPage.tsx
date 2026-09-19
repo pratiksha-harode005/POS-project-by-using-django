@@ -364,23 +364,28 @@ export const MyOrdersPage: React.FC = () => {
       else if (req.status === 'approved' || req.status === 'finance_review' || req.status === 'recommended_to_finance' || req.status === 'finance_approved') status = 'Approved'
       else status = 'Pending'
 
+      const qty = req.quantity || 1
+      const totalCost = req.amount || 0
+      const unitPriceVal = qty > 0 ? Math.round(totalCost / qty) : totalCost
+      const deptClean = (req.department || 'IT').toUpperCase().replace(/\s+/g, '')
+
       return {
         id: req.id,
         title: req.title,
         description: req.description || req.justification || 'Purchase requisition',
         category: req.category,
-        quantity: 1,
+        quantity: qty,
         unit: 'Units',
-        estCost: `₹${req.amount.toLocaleString('en-IN')}`,
-        rawCost: req.amount,
-        unitPrice: `₹${req.amount.toLocaleString('en-IN')}`,
+        estCost: `₹${totalCost.toLocaleString('en-IN')}`,
+        rawCost: totalCost,
+        unitPrice: qty > 1 ? `₹${unitPriceVal.toLocaleString('en-IN')} / unit` : `₹${totalCost.toLocaleString('en-IN')}`,
         vendor: req.vendor || 'Approved Vendor',
         deliveryLocation: 'Pune HQ',
-        budgetCode: req.costCenter || `CC-${(req.department || 'IT').toUpperCase().slice(0, 3)}-2026`,
+        budgetCode: req.costCenter || `CC-${deptClean}-2026-Q3`,
         date: req.date,
         time: '10:00 AM',
         status: status,
-        currentStage: isCompleted ? 9 : status === 'Approved' ? 3 : 2,
+        currentStage: status === 'Approved' ? 3 : (req.currentStage ? req.currentStage : (isCompleted ? 9 : 2)),
         currentlyWith: status === 'Approved' ? 'Finance Department' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team',
         lastUpdated: req.date,
         department: req.department,
