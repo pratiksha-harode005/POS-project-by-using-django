@@ -1,3 +1,5 @@
+import React from 'react'
+import { Link } from 'react-router-dom'
 import {
   FileText,
   CheckCircle2,
@@ -10,12 +12,15 @@ import {
   Bell,
   BarChart3,
   Settings,
+  ArrowRight,
 } from 'lucide-react'
 import Navbar from '../components/layout/Navbar'
 import Footer from '../components/layout/Footer'
+import ProcurementCategoriesSection from '../components/common/ProcurementCategoriesSection'
 
 const features = [
   {
+    slug: 'purchase-requests',
     icon: FileText,
     title: 'Purchase Requests',
     desc: 'Create & track purchase requests with custom approval fields.',
@@ -23,6 +28,7 @@ const features = [
     color: '#2563EB',
   },
   {
+    slug: 'approvals-workflow',
     icon: CheckCircle2,
     title: 'Approvals',
     desc: 'Dynamic multi-level approval workflows with audit trail.',
@@ -30,6 +36,7 @@ const features = [
     color: '#16A34A',
   },
   {
+    slug: 'budget-spend-control',
     icon: Wallet,
     title: 'Budget Management',
     desc: 'Track budgets, commitments & available spend.',
@@ -37,6 +44,7 @@ const features = [
     color: '#D97706',
   },
   {
+    slug: 'vendor-management',
     icon: Tag,
     title: 'Vendor Management',
     desc: 'Manage vendors, RFQs, quotations in one place.',
@@ -44,6 +52,7 @@ const features = [
     color: '#7C3AED',
   },
   {
+    slug: 'purchase-orders',
     icon: Package,
     title: 'Purchase Orders',
     desc: 'Track POs end-to-end with real-time status.',
@@ -51,6 +60,7 @@ const features = [
     color: '#DB2777',
   },
   {
+    slug: 'complete-lifecycle',
     icon: Receipt,
     title: 'Invoice & Matching',
     desc: 'PO + receipt + invoice three-way matching made easy.',
@@ -58,6 +68,7 @@ const features = [
     color: '#0D9488',
   },
   {
+    slug: 'it-assets',
     icon: Laptop,
     title: 'IT Assets',
     desc: 'Track hardware lifecycle, assignments & audit trail.',
@@ -65,6 +76,7 @@ const features = [
     color: '#2563EB',
   },
   {
+    slug: 'saas-cloud',
     icon: Cloud,
     title: 'SaaS & Cloud',
     desc: 'Manage software licences, subscriptions & cloud spend.',
@@ -72,6 +84,7 @@ const features = [
     color: '#16A34A',
   },
   {
+    slug: 'notifications',
     icon: Bell,
     title: 'Notifications',
     desc: 'Approval, renewal & system alerts in real time.',
@@ -79,6 +92,7 @@ const features = [
     color: '#7C3AED',
   },
   {
+    slug: 'analytics',
     icon: BarChart3,
     title: 'Analytics',
     desc: 'Spend, usage & procurement reports at a glance.',
@@ -113,7 +127,7 @@ export default function FeaturesPage() {
             <p
               style={{ color: '#64748B', fontSize: '16px', lineHeight: 1.7 }}
             >
-              Powerful features to simplify procurement, improve control and drive efficiency across your IT organisation.
+              Powerful features to simplify procurement, improve control and drive efficiency across your IT organisation. Click any feature card for details.
             </p>
           </div>
         </section>
@@ -126,25 +140,31 @@ export default function FeaturesPage() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
 
               {/* First 9 regular cards */}
-              {features.slice(0, 9).map(({ icon: Icon, title, desc, bg, color }) => (
-                <article
-                  key={title}
-                  className="feature-card bg-white border border-[#E5E7EB] rounded-2xl p-6"
+              {features.slice(0, 9).map(({ slug, icon: Icon, title, desc, bg, color }) => (
+                <Link
+                  key={slug}
+                  to={`/features/${slug}`}
+                  className="feature-card block bg-white border border-[#E5E7EB] rounded-2xl p-6 cursor-pointer hover:border-blue-300 hover:shadow-lg transition-all duration-300 group text-left"
                 >
-                  <div
-                    className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
-                    style={{ backgroundColor: bg }}
-                  >
-                    <Icon size={20} color={color} strokeWidth={2} />
+                  <div className="flex items-center justify-between mb-4">
+                    <div
+                      className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+                      style={{ backgroundColor: bg }}
+                    >
+                      <Icon size={20} color={color} strokeWidth={2} />
+                    </div>
+                    <span className="text-[11px] font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                      Explore Feature <ArrowRight size={12} />
+                    </span>
                   </div>
                   <h2
-                    className="font-semibold mb-2"
+                    className="font-bold mb-2 group-hover:text-blue-600 transition-colors"
                     style={{ fontSize: '16px', color: '#0F172A' }}
                   >
                     {title}
                   </h2>
                   <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.6 }}>{desc}</p>
-                </article>
+                </Link>
               ))}
 
               {/* 10th card: Analytics */}
@@ -152,54 +172,73 @@ export default function FeaturesPage() {
                 const f10 = features[9]
                 const AnalyticsIcon = f10.icon
                 return (
-                  <article
-                    key={f10.title}
-                    className="feature-card bg-white border border-[#E5E7EB] rounded-2xl p-6"
+                  <Link
+                    key={f10.slug}
+                    to={`/features/${f10.slug}`}
+                    className="feature-card block bg-white border border-[#E5E7EB] rounded-2xl p-6 cursor-pointer hover:border-blue-300 hover:shadow-lg transition-all duration-300 group text-left"
                   >
-                    <div
-                      className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
-                      style={{ backgroundColor: f10.bg }}
-                    >
-                      <AnalyticsIcon size={20} color={f10.color} strokeWidth={2} />
+                    <div className="flex items-center justify-between mb-4">
+                      <div
+                        className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+                        style={{ backgroundColor: f10.bg }}
+                      >
+                        <AnalyticsIcon size={20} color={f10.color} strokeWidth={2} />
+                      </div>
+                      <span className="text-[11px] font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                        Explore Feature <ArrowRight size={12} />
+                      </span>
                     </div>
                     <h2
-                      className="font-semibold mb-2"
+                      className="font-bold mb-2 group-hover:text-blue-600 transition-colors"
                       style={{ fontSize: '16px', color: '#0F172A' }}
                     >
                       {f10.title}
                     </h2>
                     <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.6 }}>{f10.desc}</p>
-                  </article>
+                  </Link>
                 )
               })()}
 
               {/* 11th special card: spans full row on large screen, dark navy */}
-              <article
-                className="feature-card sm:col-span-2 lg:col-span-2 rounded-2xl p-8 flex flex-col sm:flex-row items-start sm:items-center gap-6"
+              <Link
+                to="/features/complete-lifecycle"
+                className="feature-card block sm:col-span-2 lg:col-span-2 rounded-2xl p-8 cursor-pointer hover:border-blue-500 hover:shadow-xl transition-all text-left group"
                 style={{ backgroundColor: '#0F172A' }}
               >
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: 'rgba(37,99,235,0.25)' }}
-                >
-                  <Settings size={28} color="#60A5FA" strokeWidth={2} />
-                </div>
-                <div>
-                  <h2
-                    className="font-bold text-white mb-2"
-                    style={{ fontSize: '18px', letterSpacing: '-0.02em' }}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+                  <div
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: 'rgba(37,99,235,0.25)' }}
                   >
-                    All Modules Work Together
-                  </h2>
-                  <p style={{ color: '#94A3B8', fontSize: '15px', lineHeight: 1.6 }}>
-                    All modules work together for a seamless procurement experience — from the first purchase request to final payment reconciliation.
-                  </p>
+                    <Settings size={28} color="#60A5FA" strokeWidth={2} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h2
+                        className="font-bold text-white mb-2 group-hover:text-blue-400 transition-colors"
+                        style={{ fontSize: '18px', letterSpacing: '-0.02em' }}
+                      >
+                        All Modules Work Together
+                      </h2>
+                      <span className="text-xs font-semibold text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                        Explore Feature <ArrowRight size={14} />
+                      </span>
+                    </div>
+                    <p style={{ color: '#94A3B8', fontSize: '15px', lineHeight: 1.6 }}>
+                      All modules work together for a seamless procurement experience — from the first purchase request to final payment reconciliation.
+                    </p>
+                  </div>
                 </div>
-              </article>
+              </Link>
 
             </div>
           </div>
         </section>
+
+        {/* ══════════════════════════════════════
+            PROCUREMENT CATEGORIES SECTION
+        ══════════════════════════════════════ */}
+        <ProcurementCategoriesSection />
       </main>
 
       <Footer />

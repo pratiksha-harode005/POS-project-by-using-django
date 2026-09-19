@@ -1,13 +1,14 @@
 import React from 'react'
-import { NavLink, Link } from 'react-router-dom'
+import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusCircle, History, Bell, CreditCard, User,
   CheckSquare, CheckCircle, Landmark, FileCheck, Layers, Users,
   ShieldAlert, Building, Sliders, Truck, FileSpreadsheet, Package,
   FolderOpen, ShoppingCart, LucideIcon, XCircle, Inbox, Ticket, ArrowUpRight,
-  BarChart2, GitCompare, ShoppingBag, AlertTriangle, HelpCircle, Tag, Scale
+  BarChart2, GitCompare, ShoppingBag, AlertTriangle, HelpCircle, Tag, Scale,
+  LogOut, Grid
 } from 'lucide-react'
-import { UserRole } from '../../context/AuthContext'
+import { UserRole, useAuth } from '../../context/AuthContext'
 
 interface SidebarProps {
   role: UserRole
@@ -19,7 +20,7 @@ export interface MenuItem {
   icon: LucideIcon
 }
 
-export const getSidebarItems = (role: UserRole): MenuItem[] => {
+export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuItem[] => {
   const basePath = `/portal/${role.toLowerCase()}`
 
   switch (role) {
@@ -93,24 +94,32 @@ export const getSidebarItems = (role: UserRole): MenuItem[] => {
       ]
 
     case 'VENDOR':
+      const vPrefix = activeVendorId ? `${basePath}/vendor/${activeVendorId}` : `${basePath}/vendor/VND-HW-001`
       return [
-        { label: 'Dashboard', path: `${basePath}/dashboard`, icon: LayoutDashboard },
-        { label: 'Profile', path: `${basePath}/profile`, icon: User },
-        { label: 'Documents', path: `${basePath}/documents`, icon: FolderOpen },
-        { label: 'RFQs', path: `${basePath}/rfqs`, icon: FileSpreadsheet },
-        { label: 'Quotations', path: `${basePath}/quotations`, icon: Layers },
-        { label: 'Purchase Orders', path: `${basePath}/purchase-orders`, icon: Package },
-        { label: 'Deliveries', path: `${basePath}/deliveries`, icon: Truck },
-        { label: 'Receipts', path: `${basePath}/receipts`, icon: FileCheck },
-        { label: 'Invoices', path: `${basePath}/invoices`, icon: FileText },
-        { label: 'Payment Status', path: `${basePath}/payment-status`, icon: CreditCard },
-        { label: 'Notifications', path: `${basePath}/notifications`, icon: Bell },
+        { label: 'Dashboard', path: `${vPrefix}/dashboard`, icon: LayoutDashboard },
+        { label: 'Vendor Categories', path: `${basePath}/categories`, icon: Grid },
+        { label: 'Documents', path: `${vPrefix}/documents`, icon: FolderOpen },
+        { label: 'RFQs', path: `${vPrefix}/rfqs`, icon: FileSpreadsheet },
+        { label: 'Quotations', path: `${vPrefix}/quotations`, icon: Layers },
+        { label: 'Purchase Orders', path: `${vPrefix}/purchase-orders`, icon: Package },
+        { label: 'Receipts', path: `${vPrefix}/receipts`, icon: FileCheck },
+        { label: 'Invoices', path: `${vPrefix}/invoices`, icon: FileText },
+        { label: 'Payment Status', path: `${vPrefix}/payment-status`, icon: CreditCard },
+        { label: 'Notifications', path: `${vPrefix}/notifications`, icon: Bell },
+        { label: 'Profile', path: `${vPrefix}/profile`, icon: User },
       ]
   }
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
-  const menuItems = getSidebarItems(role)
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const vendorMatch = location.pathname.match(/\/portal\/vendor\/vendor\/([^\/]+)/)
+  const activeVendorId = vendorMatch ? vendorMatch[1] : undefined
+
+  const menuItems = getSidebarItems(role, activeVendorId)
 
   return (
     <aside className="w-64 bg-[#0A1128] text-slate-300 h-full flex flex-col flex-shrink-0 shadow-lg border-r border-slate-900 z-30 select-none">
@@ -126,6 +135,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
           </p>
         </div>
       </div>
+
+      {/* Active Vendor Banner (for Vendor Portal) */}
+      {role === 'VENDOR' && activeVendorId && (
+        <div className="px-4 py-2 bg-blue-950/80 border-b border-blue-800/60 flex items-center justify-between text-[11px]">
+          <span className="text-white font-bold truncate">Active: <span className="text-blue-200 font-extrabold">{activeVendorId}</span></span>
+          <NavLink
+            to="/portal/vendor/categories"
+            className="text-[10px] text-blue-300 hover:text-white underline font-semibold flex-shrink-0"
+          >
+            Switch
+          </NavLink>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto min-h-0 [scrollbar-width:thin] [scrollbar-color:#334155_transparent]">

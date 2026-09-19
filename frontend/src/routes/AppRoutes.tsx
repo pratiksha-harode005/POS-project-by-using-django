@@ -2,13 +2,17 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import HomePage from '../pages/HomePage'
 import AboutPage from '../pages/AboutPage'
 import FeaturesPage from '../pages/FeaturesPage'
+import FeatureDetailPage from '../pages/FeatureDetailPage'
+import CategoryDetailPage from '../pages/CategoryDetailPage'
 import ContactPage from '../pages/ContactPage'
 import LoginPage from '../features/auth/loginPage'
+import ScrollToTop from '../components/common/ScrollToTop'
 
 // Shared Portal Components
 import { PortalLayout } from '../components/portal/PortalLayout'
 import { SharedProfilePage } from '../components/portal/SharedProfilePage'
 import { SharedNotificationsPage } from '../components/portal/SharedNotificationsPage'
+import { ProcurementProvider } from '../context/ProcurementContext'
 
 // Team Lead Portal Pages
 import { TeamLeadDashboard } from '../portals/teamlead/TeamLeadDashboard'
@@ -69,6 +73,8 @@ import { AdminWorkflowsPage } from '../portals/admin/AdminWorkflowsPage'
 
 // Vendor Portal Pages
 import {
+  VendorCategoriesPage,
+  VendorsInCategoryPage,
   VendorDashboard,
   VendorRFQsPage,
   VendorQuotationsPage,
@@ -76,7 +82,9 @@ import {
   VendorDeliveriesPage,
   VendorReceiptsPage,
   VendorInvoicesPage,
-  VendorPaymentsPage
+  VendorPaymentStatusPage,
+  VendorDocumentsPage,
+  VendorPaymentsPage,
 } from '../portals/vendor/VendorPortalPages'
 
 // Common Multi-Portal Pages
@@ -84,13 +92,17 @@ import { VendorQuotationsPage as CommonVendorQuotationsPage } from '../portals/c
 
 export default function AppRoutes() {
   return (
-    <Routes>
-      {/* Marketing Pages */}
-      <Route path="/" element={<HomePage />} />
-      <Route path="/about" element={<AboutPage />} />
-      <Route path="/features" element={<FeaturesPage />} />
-      <Route path="/contact" element={<ContactPage />} />
-      <Route path="/login" element={<LoginPage />} />
+    <>
+      <ScrollToTop />
+      <Routes>
+        {/* Marketing Pages */}
+        <Route path="/" element={<HomePage />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/features" element={<FeaturesPage />} />
+        <Route path="/features/:featureId" element={<FeatureDetailPage />} />
+        <Route path="/categories/:categoryId" element={<CategoryDetailPage />} />
+        <Route path="/contact" element={<ContactPage />} />
+        <Route path="/login" element={<LoginPage />} />
 
       {/* ── 1. TEAM LEAD PORTAL ── */}
       <Route path="/portal/team_lead/*" element={<PortalLayout><TeamLeadRoutes /></PortalLayout>} />
@@ -110,6 +122,7 @@ export default function AppRoutes() {
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }
 
@@ -221,18 +234,37 @@ function AdminRoutes() {
 function VendorRoutes() {
   return (
     <Routes>
+      {/* Category & Vendor Selection landing pages */}
+      <Route path="categories" element={<VendorCategoriesPage />} />
+      <Route path="categories/:categoryId" element={<VendorsInCategoryPage />} />
+
+      {/* Scoped Vendor Portal routes */}
+      <Route path="vendor/:vendorId/dashboard" element={<VendorDashboard />} />
+      <Route path="vendor/:vendorId/documents" element={<VendorDocumentsPage />} />
+      <Route path="vendor/:vendorId/rfqs" element={<VendorRFQsPage />} />
+      <Route path="vendor/:vendorId/quotations" element={<VendorQuotationsPage />} />
+      <Route path="vendor/:vendorId/purchase-orders" element={<VendorPurchaseOrdersPage />} />
+      <Route path="vendor/:vendorId/deliveries" element={<VendorDeliveriesPage />} />
+      <Route path="vendor/:vendorId/receipts" element={<VendorReceiptsPage />} />
+      <Route path="vendor/:vendorId/invoices" element={<VendorInvoicesPage />} />
+      <Route path="vendor/:vendorId/payment-status" element={<VendorPaymentStatusPage />} />
+      <Route path="vendor/:vendorId/notifications" element={<SharedNotificationsPage />} />
+      <Route path="vendor/:vendorId/profile" element={<SharedProfilePage />} />
+
+      {/* Unscoped shortcuts */}
       <Route path="dashboard" element={<VendorDashboard />} />
       <Route path="profile" element={<SharedProfilePage />} />
-      <Route path="documents" element={<SharedProfilePage />} />
+      <Route path="documents" element={<VendorDocumentsPage />} />
       <Route path="rfqs" element={<VendorRFQsPage />} />
       <Route path="quotations" element={<VendorQuotationsPage />} />
       <Route path="purchase-orders" element={<VendorPurchaseOrdersPage />} />
       <Route path="deliveries" element={<VendorDeliveriesPage />} />
       <Route path="receipts" element={<VendorReceiptsPage />} />
       <Route path="invoices" element={<VendorInvoicesPage />} />
-      <Route path="payment-status" element={<VendorPaymentsPage />} />
+      <Route path="payment-status" element={<VendorPaymentStatusPage />} />
       <Route path="notifications" element={<SharedNotificationsPage />} />
-      <Route path="*" element={<Navigate to="dashboard" replace />} />
+
+      <Route path="*" element={<Navigate to="/portal/vendor/categories" replace />} />
     </Routes>
   )
 }

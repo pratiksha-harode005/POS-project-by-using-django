@@ -7,13 +7,13 @@ export const ManagerThreeWayMatchingPage: React.FC = () => {
       id: '3WM-2026-001',
       reqId: 'REQ-DEMO-001',
       poId: 'PO-2026-001',
-      poAmount: '$35,000.00',
+      poAmount: 'RS 35,000.00',
       receiptId: 'REC-2026-001',
       receiptQty: '10 Laptops (Verified)',
       invId: 'INV-2026-001',
-      invAmount: '$35,000.00',
+      invAmount: 'RS 35,000.00',
       status: 'Matched',
-      variance: 'None ($0.00 variance)',
+      variance: 'None (RS 0.00 variance)',
     },
   ]
 

@@ -11,6 +11,75 @@ import {
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
+export interface VendorRecord {
+  id: string
+  name: string
+  category: string
+  score: string
+  status: 'Active' | 'Under Review' | 'Inactive'
+  contactPerson?: string
+  email?: string
+  contactEmail?: string
+  phone?: string
+  taxId?: string
+  risk?: string
+}
+
+export const MASTER_VENDORS: VendorRecord[] = [
+  {
+    id: 'VND-HW-001',
+    name: 'Dell Technologies Enterprise',
+    category: 'IT Hardware',
+    score: '98.5%',
+    status: 'Active',
+    contactPerson: 'Rajesh Sharma',
+    email: 'orders@dell-enterprise.in',
+    contactEmail: 'orders@dell-enterprise.in',
+    phone: '+91 80 4123 4567',
+    taxId: '29AAAAA0000A1Z5',
+    risk: 'Low Risk',
+  },
+  {
+    id: 'VND-HW-002',
+    name: 'HP India Sales Pvt Ltd',
+    category: 'IT Hardware',
+    score: '95.2%',
+    status: 'Active',
+    contactPerson: 'Anita Verma',
+    email: 'commercial@hp.co.in',
+    contactEmail: 'commercial@hp.co.in',
+    phone: '+91 80 6789 0123',
+    taxId: '29BBBBB1111B2Z6',
+    risk: 'Low Risk',
+  },
+  {
+    id: 'VND-HW-003',
+    name: 'Lenovo Commercial Solutions',
+    category: 'IT Hardware',
+    score: '93.8%',
+    status: 'Active',
+    contactPerson: 'Suresh Kumar',
+    email: 'bids@lenovo.com',
+    contactEmail: 'bids@lenovo.com',
+    phone: '+91 80 5555 4444',
+    taxId: '29CCCCC2222C3Z7',
+    risk: 'Low Risk',
+  },
+  {
+    id: 'VND-SW-001',
+    name: 'Microsoft India Pvt Ltd',
+    category: 'Software & Licenses',
+    score: '99.1%',
+    status: 'Active',
+    contactPerson: 'Priya Sundaram',
+    email: 'licensing@microsoft.com',
+    contactEmail: 'licensing@microsoft.com',
+    phone: '+91 80 8888 9999',
+    taxId: '29DDDDD3333D4Z8',
+    risk: 'Low Risk',
+  },
+]
+
 // ─── VENDOR DASHBOARD ─────────────────────────────────────────────────────────
 
 export const VendorDashboard: React.FC = () => {
@@ -1019,3 +1088,8 @@ export const VendorQuotationsPage: React.FC = () => {
     </div>
   )
 }
+
+export const VendorCategoriesPage: React.FC = () => <VendorDashboard />
+export const VendorsInCategoryPage: React.FC = () => <VendorDashboard />
+export const VendorPaymentStatusPage: React.FC = VendorPaymentsPage
+export const VendorDocumentsPage: React.FC = VendorInvoicesPage

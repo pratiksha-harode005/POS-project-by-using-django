@@ -1,155 +1,331 @@
-/** Inline SVG hero illustration: laptop with dashboard UI, floating badges, and a small plant */
+/**
+ * Ultra-wide, low-profile (short height) SVG hero illustration:
+ * - Widescreen aspect ratio: 940px wide × 380px high
+ * - Expands across horizontal width without taking up excessive vertical screen height
+ */
 export default function DashboardIllustration() {
   return (
     <svg
-      viewBox="0 0 520 400"
+      viewBox="0 0 940 380"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="Dashboard illustration showing procurement analytics"
+      aria-label="Procurement OS dashboard hero illustration"
       role="img"
-      className="w-full max-w-lg mx-auto"
+      className="w-full max-w-4xl mx-auto drop-shadow-xl"
     >
-      {/* ── Laptop base / keyboard ── */}
-      <rect x="70" y="310" width="360" height="22" rx="6" fill="#CBD5E1" />
-      <rect x="80" y="310" width="340" height="4" rx="2" fill="#94A3B8" />
-      {/* trackpad */}
-      <rect x="215" y="316" width="70" height="12" rx="4" fill="#94A3B8" opacity="0.5" />
-
-      {/* ── Laptop lid / screen bezel ── */}
-      <rect x="90" y="70" width="320" height="242" rx="14" fill="#1E293B" />
-      {/* screen inner */}
-      <rect x="100" y="80" width="300" height="222" rx="8" fill="#F8FAFF" />
-
-      {/* ── Dashboard header bar ── */}
-      <rect x="100" y="80" width="300" height="36" rx="8" fill="#2563EB" />
-      {/* header dots */}
-      <circle cx="116" cy="98" r="4" fill="rgba(255,255,255,0.4)" />
-      <circle cx="128" cy="98" r="4" fill="rgba(255,255,255,0.4)" />
-      <circle cx="140" cy="98" r="4" fill="rgba(255,255,255,0.4)" />
-      {/* header title */}
-      <rect x="200" y="92" width="80" height="10" rx="3" fill="rgba(255,255,255,0.6)" />
-
-      {/* ── Left panel: bar chart ── */}
-      <text x="110" y="132" fontSize="8" fontWeight="600" fill="#64748B" fontFamily="Inter, sans-serif">Spend Overview</text>
-      {/* bars */}
-      {[
-        { x: 110, y: 200, h: 50, label: 'Jan', color: '#2563EB' },
-        { x: 128, y: 185, h: 65, label: 'Feb', color: '#60A5FA' },
-        { x: 146, y: 210, h: 40, label: 'Mar', color: '#2563EB' },
-        { x: 164, y: 175, h: 75, label: 'Apr', color: '#3B82F6' },
-        { x: 182, y: 195, h: 55, label: 'May', color: '#60A5FA' },
-        { x: 200, y: 165, h: 85, label: 'Jun', color: '#2563EB' },
-      ].map((b) => (
-        <g key={b.label}>
-          <rect x={b.x} y={b.y} width="14" height={b.h} rx="3" fill={b.color} opacity="0.85" />
-          <text x={b.x + 7} y={252} fontSize="6" fill="#94A3B8" textAnchor="middle" fontFamily="Inter, sans-serif">{b.label}</text>
-        </g>
-      ))}
-      {/* baseline */}
-      <line x1="108" y1="250" x2="218" y2="250" stroke="#E5E7EB" strokeWidth="1" />
-
-      {/* Horizontal separator between left and right panels */}
-      <line x1="230" y1="120" x2="230" y2="295" stroke="#E5E7EB" strokeWidth="1" />
-
-      {/* ── Right panel: Donut chart ── */}
-      <text x="240" y="132" fontSize="8" fontWeight="600" fill="#64748B" fontFamily="Inter, sans-serif">Category Split</text>
-
-      {/* Donut - drawn as arc paths */}
-      <g transform="translate(282, 185)">
-        {/* outer ring segments */}
-        <circle cx="0" cy="0" r="42" fill="none" stroke="#E5E7EB" strokeWidth="16" />
-        {/* segment 1 - 40% blue */}
-        <circle cx="0" cy="0" r="42" fill="none" stroke="#2563EB" strokeWidth="16"
-          strokeDasharray="105 159" strokeDashoffset="0" />
-        {/* segment 2 - 30% light blue */}
-        <circle cx="0" cy="0" r="42" fill="none" stroke="#60A5FA" strokeWidth="16"
-          strokeDasharray="79 185" strokeDashoffset="-105" />
-        {/* segment 3 - 20% purple */}
-        <circle cx="0" cy="0" r="42" fill="none" stroke="#7C3AED" strokeWidth="16"
-          strokeDasharray="53 211" strokeDashoffset="-184" />
-        {/* segment 4 - 10% teal */}
-        <circle cx="0" cy="0" r="42" fill="none" stroke="#0D9488" strokeWidth="16"
-          strokeDasharray="26 238" strokeDashoffset="-237" />
-        {/* center hole */}
-        <circle cx="0" cy="0" r="28" fill="#F8FAFF" />
-        {/* center label */}
-        <text x="0" y="-4" fontSize="9" fontWeight="700" fill="#0F172A" textAnchor="middle" fontFamily="Inter, sans-serif">$4.2M</text>
-        <text x="0" y="8" fontSize="6" fill="#64748B" textAnchor="middle" fontFamily="Inter, sans-serif">Total Spend</text>
-      </g>
-
-      {/* Donut legend */}
-      {[
-        { color: '#2563EB', label: 'IT Hardware', pct: '40%' },
-        { color: '#60A5FA', label: 'Software',   pct: '30%' },
-        { color: '#7C3AED', label: 'Services',   pct: '20%' },
-        { color: '#0D9488', label: 'Other',       pct: '10%' },
-      ].map((item, i) => (
-        <g key={item.label} transform={`translate(238, ${260 + i * 10})`}>
-          <rect width="6" height="6" rx="2" fill={item.color} />
-          <text x="10" y="6" fontSize="6" fill="#64748B" fontFamily="Inter, sans-serif">{item.label}</text>
-          <text x="90" y="6" fontSize="6" fill="#0F172A" fontWeight="600" fontFamily="Inter, sans-serif">{item.pct}</text>
-        </g>
-      ))}
-
-      {/* ── Mini stat cards (bottom strip) ── */}
-      {[
-        { x: 104, label: 'Open POs', val: '128', color: '#DBEAFE', text: '#2563EB' },
-        { x: 178, label: 'Pending', val: '34',  color: '#FEF3C7', text: '#D97706' },
-        { x: 252, label: 'Approved', val: '94', color: '#DCFCE7', text: '#16A34A' },
-      ].map((s) => (
-        <g key={s.label}>
-          <rect x={s.x} y={264} width="68" height="30" rx="5" fill={s.color} />
-          <text x={s.x + 34} y={274} fontSize="6" fill={s.text} textAnchor="middle" fontFamily="Inter, sans-serif">{s.label}</text>
-          <text x={s.x + 34} y={286} fontSize="9" fontWeight="700" fill={s.text} textAnchor="middle" fontFamily="Inter, sans-serif">{s.val}</text>
-        </g>
-      ))}
-
-      {/* ── Floating badge: Shopping Cart (orange) ── */}
-      <g transform="translate(56, 90)">
-        <rect width="40" height="40" rx="12" fill="#FFEDD5" filter="url(#shadow)" />
-        {/* cart icon */}
-        <circle cx="14" cy="29" r="2.2" fill="#D97706" />
-        <circle cx="24" cy="29" r="2.2" fill="#D97706" />
-        <path d="M9 13h3l2 8h10l2.5-6H13" stroke="#D97706" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        <path d="M9 13H7" stroke="#D97706" strokeWidth="1.8" strokeLinecap="round" fill="none" />
-      </g>
-
-      {/* ── Floating badge: Shield (blue) ── */}
-      <g transform="translate(418, 110)">
-        <rect width="40" height="40" rx="12" fill="#DBEAFE" />
-        <path d="M20 10 L10 14 L10 21 C10 26 15 30 20 32 C25 30 30 26 30 21 L30 14 Z" fill="none" stroke="#2563EB" strokeWidth="1.8" strokeLinejoin="round" />
-        <path d="M15 21 L18 24 L25 17" stroke="#2563EB" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </g>
-
-      {/* ── Floating badge: Bell (purple) ── */}
-      <g transform="translate(430, 200)">
-        <rect width="36" height="36" rx="10" fill="#EDE9FE" />
-        {/* bell */}
-        <path d="M18 8 C14 8 11 11 11 15 L11 22 L8 24 L28 24 L25 22 L25 15 C25 11 22 8 18 8 Z" fill="none" stroke="#7C3AED" strokeWidth="1.6" strokeLinejoin="round" />
-        <path d="M15 24 C15 25.7 16.3 27 18 27 C19.7 27 21 25.7 21 24" fill="none" stroke="#7C3AED" strokeWidth="1.6" />
-        <circle cx="22" cy="10" r="3.5" fill="#7C3AED" />
-      </g>
-
-      {/* ── Plant illustration (right of laptop) ── */}
-      {/* pot */}
-      <ellipse cx="460" cy="330" rx="22" ry="8" fill="#D97706" opacity="0.3" />
-      <path d="M440 310 Q442 325 448 330 L472 330 Q478 325 480 310 Z" fill="#B45309" opacity="0.7" />
-      {/* stem */}
-      <path d="M460 310 Q460 270 460 250" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round" fill="none" />
-      {/* leaves */}
-      <path d="M460 280 Q480 265 478 245 Q462 255 460 280" fill="#16A34A" opacity="0.85" />
-      <path d="M460 270 Q440 255 442 235 Q458 245 460 270" fill="#22C55E" opacity="0.8" />
-      <path d="M460 258 Q475 243 473 228 Q459 238 460 258" fill="#16A34A" opacity="0.7" />
-      <path d="M460 250 Q448 238 448 222 Q462 232 460 250" fill="#22C55E" opacity="0.65" />
-      {/* soil top */}
-      <ellipse cx="460" cy="310" rx="22" ry="6" fill="#92400E" opacity="0.4" />
-
-      {/* ── Drop shadow filter ── */}
       <defs>
-        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#0F172A" floodOpacity="0.12" />
+        {/* Ambient radial background glow */}
+        <radialGradient id="heroBgGlowWide" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.2" />
+          <stop offset="70%" stopColor="#93C5FD" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="#EFF6FF" stopOpacity="0" />
+        </radialGradient>
+
+        {/* Laptop metal base gradient */}
+        <linearGradient id="metalBaseWide" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#E2E8F0" />
+          <stop offset="50%" stopColor="#CBD5E1" />
+          <stop offset="100%" stopColor="#94A3B8" />
+        </linearGradient>
+
+        {/* Bar chart bar gradients */}
+        <linearGradient id="barGrad1Wide" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#3B82F6" />
+          <stop offset="100%" stopColor="#1D4ED8" />
+        </linearGradient>
+        <linearGradient id="barGrad2Wide" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#60A5FA" />
+          <stop offset="100%" stopColor="#2563EB" />
+        </linearGradient>
+        <linearGradient id="barGradActiveWide" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#6366F1" />
+          <stop offset="100%" stopColor="#4338CA" />
+        </linearGradient>
+
+        {/* Plant leaf gradient */}
+        <linearGradient id="leafGrad1Wide" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#4ADE80" />
+          <stop offset="100%" stopColor="#15803D" />
+        </linearGradient>
+        <linearGradient id="leafGrad2Wide" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#22C55E" />
+          <stop offset="100%" stopColor="#166534" />
+        </linearGradient>
+
+        {/* Card shadow */}
+        <filter id="heroCardShadowWide" x="-15%" y="-15%" width="130%" height="130%">
+          <feDropShadow dx="0" dy="3" stdDeviation="5" floodColor="#0F172A" floodOpacity="0.05" />
+        </filter>
+
+        {/* Laptop Shadow */}
+        <filter id="laptopShadowWide" x="-10%" y="-10%" width="120%" height="120%">
+          <feDropShadow dx="0" dy="12" stdDeviation="16" floodColor="#0F172A" floodOpacity="0.15" />
         </filter>
       </defs>
+
+      {/* ── Background soft blue ambient glow ── */}
+      <ellipse cx="470" cy="190" rx="420" ry="160" fill="url(#heroBgGlowWide)" />
+
+      {/* ── 1. HANDWRITTEN ANNOTATION & ARROW (Top-Left) ── */}
+      <g transform="translate(85, 22) rotate(-5)">
+        <text
+          x="0"
+          y="0"
+          fill="#2563EB"
+          fontSize="14"
+          fontWeight="700"
+          fontFamily="Comic Sans MS, Caveat, cursive, sans-serif"
+        >
+          Complete control
+        </text>
+        <text
+          x="-12"
+          y="16"
+          fill="#2563EB"
+          fontSize="14"
+          fontWeight="700"
+          fontFamily="Comic Sans MS, Caveat, cursive, sans-serif"
+        >
+          from request to delivery
+        </text>
+        {/* Curved arrow pointing down-right toward laptop */}
+        <path
+          d="M 65 24 Q 90 48 125 44"
+          stroke="#2563EB"
+          strokeWidth="2"
+          strokeLinecap="round"
+          fill="none"
+        />
+        {/* Arrowhead */}
+        <path
+          d="M 117 38 L 125 44 L 120 52"
+          stroke="#2563EB"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </g>
+
+      {/* ── 2. POTTED PLANT (Left Side) ── */}
+      <g transform="translate(95, 150)">
+        {/* Floor Shadow */}
+        <ellipse cx="40" cy="180" rx="35" ry="7" fill="#0F172A" opacity="0.08" />
+
+        {/* Ceramic Pot */}
+        <path d="M 18 135 L 25 175 Q 40 182 55 175 L 62 135 Z" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" />
+        <ellipse cx="40" cy="135" rx="22" ry="5" fill="#F8FAFC" stroke="#CBD5E1" strokeWidth="1" />
+        <ellipse cx="40" cy="135" rx="18" ry="3.5" fill="#78350F" opacity="0.8" />
+
+        {/* Leaves */}
+        <path d="M 40 135 Q 15 95 -10 98 Q 5 118 40 135" fill="url(#leafGrad1Wide)" />
+        <path d="M 40 135 Q 10 65 -30 60 Q -5 88 40 135" fill="url(#leafGrad2Wide)" />
+        <path d="M 40 135 Q 28 35 8 15 Q 24 50 40 135" fill="url(#leafGrad1Wide)" />
+        <path d="M 40 135 Q 52 30 44 8 Q 50 45 40 135" fill="url(#leafGrad2Wide)" />
+        <path d="M 40 135 Q 70 55 82 35 Q 70 78 40 135" fill="url(#leafGrad1Wide)" />
+        <path d="M 40 135 Q 82 88 102 94 Q 78 116 40 135" fill="url(#leafGrad2Wide)" />
+      </g>
+
+      {/* ── 3. ULTRA-WIDE LAPTOP MOCKUP (Center) ── */}
+      <g filter="url(#laptopShadowWide)">
+
+        {/* Outer Screen Bezel */}
+        <rect x="200" y="32" width="560" height="320" rx="16" fill="#0F172A" />
+        {/* Camera Lens */}
+        <circle cx="480" cy="41" r="2.5" fill="#334155" />
+        <circle cx="480" cy="41" r="1" fill="#60A5FA" />
+
+        {/* Inner Display Screen */}
+        <rect x="208" y="50" width="544" height="292" rx="4" fill="#F8FAFC" />
+
+        {/* ── INSIDE SCREEN: PROCUREMENT OS DASHBOARD ── */}
+
+        {/* A. Top Navigation Header */}
+        <rect x="208" y="50" width="544" height="38" fill="#FFFFFF" />
+        <line x1="208" y1="88" x2="752" y2="88" stroke="#E2E8F0" strokeWidth="1" />
+
+        {/* Logo Icon & Title */}
+        <rect x="220" y="59" width="20" height="20" rx="5" fill="#2563EB" />
+        <path d="M 224 64 H 228 L 230 72 H 235 L 237 68 H 229" stroke="#FFFFFF" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        <circle cx="231" cy="75" r="1.1" fill="#FFFFFF" />
+        <circle cx="234" cy="75" r="1.1" fill="#FFFFFF" />
+        <text x="246" y="73" fill="#0F172A" fontSize="11" fontWeight="800" fontFamily="Inter, sans-serif">
+          Procurement OS
+        </text>
+
+        {/* Search Bar Input */}
+        <rect x="390" y="58" width="160" height="20" rx="10" fill="#F1F5F9" />
+        <circle cx="402" cy="68" r="3" stroke="#94A3B8" strokeWidth="1" fill="none" />
+        <line x1="404" y1="70" x2="407" y2="73" stroke="#94A3B8" strokeWidth="1" strokeLinecap="round" />
+        <text x="412" y="71" fill="#94A3B8" fontSize="7.5" fontFamily="Inter, sans-serif">Search requests, purchase orders...</text>
+
+        {/* Header Right Icons */}
+        <circle cx="704" cy="69" r="10" fill="#F1F5F9" stroke="#E2E8F0" strokeWidth="1" />
+        <circle cx="708" cy="64" r="2" fill="#EF4444" />
+
+        {/* Profile Avatar */}
+        <circle cx="730" cy="69" r="10" fill="#DBEAFE" stroke="#BFDBFE" strokeWidth="1" />
+        <circle cx="730" cy="66" r="3.5" fill="#2563EB" />
+        <path d="M 724 76 Q 730 72 736 76" stroke="#2563EB" strokeWidth="1.2" fill="none" />
+
+        {/* B. Left Navigation Sidebar */}
+        <rect x="208" y="89" width="110" height="253" fill="#FFFFFF" />
+        <line x1="318" y1="89" x2="318" y2="342" stroke="#E2E8F0" strokeWidth="1" />
+
+        {/* Active Item: Dashboard */}
+        <rect x="214" y="97" width="98" height="22" rx="6" fill="#EFF6FF" />
+        <rect x="214" y="97" width="3" height="22" rx="1.5" fill="#2563EB" />
+        <path d="M 223 108 L 227 104 L 231 108 V 112 H 223 Z" fill="#2563EB" />
+        <text x="236" y="111" fill="#2563EB" fontSize="8.5" fontWeight="700" fontFamily="Inter, sans-serif">
+          Dashboard
+        </text>
+
+        {/* Other Sidebar Items */}
+        {[
+          { y: 125, label: 'Requests' },
+          { y: 147, label: 'Approvals' },
+          { y: 169, label: 'Purchase Orders' },
+          { y: 191, label: 'Vendors' },
+          { y: 213, label: 'Inventory' },
+          { y: 235, label: 'Analytics' },
+          { y: 257, label: 'Settings' },
+        ].map((item) => (
+          <g key={item.label}>
+            <circle cx="227" cy={item.y + 4} r="2.5" fill="#64748B" />
+            <text x="236" y={item.y + 7} fill="#64748B" fontSize="8" fontWeight="500" fontFamily="Inter, sans-serif">
+              {item.label}
+            </text>
+          </g>
+        ))}
+
+        {/* C. Main Dashboard Area */}
+
+        {/* 1. Metrics Cards Row Across Top */}
+        {[
+          { x: 328, width: 98, bg: '#EFF6FF', border: '#BFDBFE', title: 'Total Requests', val: '128', tag: '+14%', tagBg: '#DCFCE7', tagColor: '#16A34A', valColor: '#2563EB' },
+          { x: 432, width: 98, bg: '#FFF7ED', border: '#FED7AA', title: 'In Progress',    val: '34',  tag: 'Active', tagBg: '#FFEDD5', tagColor: '#D97706', valColor: '#EA580C' },
+          { x: 536, width: 98, bg: '#F0FDF4', border: '#BBF7D0', title: 'Approved',       val: '94',  tag: '98.2%', tagBg: '#DCFCE7', tagColor: '#16A34A', valColor: '#16A34A' },
+          { x: 640, width: 98, bg: '#FAF5FF', border: '#E9D5FF', title: 'Pending',        val: '12',  tag: 'Review', tagBg: '#F3E8FF', tagColor: '#7C3AED', valColor: '#9333EA' },
+        ].map((m) => (
+          <g key={m.title} filter="url(#heroCardShadowWide)">
+            <rect x={m.x} y={97} width={m.width} height="40" rx="7" fill={m.bg} stroke={m.border} strokeWidth="1" />
+            <text x={m.x + 8} y={110} fill="#64748B" fontSize="6.8" fontWeight="600" fontFamily="Inter, sans-serif">
+              {m.title}
+            </text>
+            <rect x={m.x + 64} y={103} width="26" height="10" rx="4" fill={m.tagBg} />
+            <text x={m.x + 77} y={110} fill={m.tagColor} fontSize="5.5" fontWeight="700" textAnchor="middle" fontFamily="Inter, sans-serif">{m.tag}</text>
+
+            <text x={m.x + 8} y={129} fill={m.valColor} fontSize="14" fontWeight="800" fontFamily="Inter, sans-serif">
+              {m.val}
+            </text>
+          </g>
+        ))}
+
+        {/* 2. Middle Row Left: Spend Overview Bar Chart Card */}
+        <g filter="url(#heroCardShadowWide)">
+          <rect x="328" y="145" width="204" height="188" rx="8" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
+          <text x="340" y="163" fill="#0F172A" fontSize="9" fontWeight="700" fontFamily="Inter, sans-serif">
+            Spend Overview
+          </text>
+          <text x="495" y="163" fill="#2563EB" fontSize="7.5" fontWeight="600" fontFamily="Inter, sans-serif">
+            2026 Q3
+          </text>
+
+          {/* Grid lines */}
+          <line x1="340" y1="182" x2="520" y2="182" stroke="#F1F5F9" strokeWidth="1" />
+          <line x1="340" y1="210" x2="520" y2="210" stroke="#F1F5F9" strokeWidth="1" />
+          <line x1="340" y1="238" x2="520" y2="238" stroke="#F1F5F9" strokeWidth="1" />
+
+          {/* Glowing Gradient Bar Columns */}
+          {[
+            { x: 345, h: 36, fill: 'url(#barGrad1Wide)' },
+            { x: 370, h: 56, fill: 'url(#barGrad2Wide)' },
+            { x: 395, h: 42, fill: 'url(#barGrad1Wide)' },
+            { x: 420, h: 72, fill: 'url(#barGradActiveWide)' },
+            { x: 445, h: 48, fill: 'url(#barGrad2Wide)' },
+            { x: 470, h: 80, fill: 'url(#barGrad1Wide)' },
+            { x: 495, h: 90, fill: 'url(#barGradActiveWide)' },
+          ].map((bar, i) => (
+            <rect
+              key={i}
+              x={bar.x}
+              y={260 - bar.h}
+              width="16"
+              height={bar.h}
+              rx="3"
+              fill={bar.fill}
+            />
+          ))}
+
+          {/* Card Footer: Total Spend Pill */}
+          <rect x="340" y="270" width="180" height="52" rx="7" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="1" />
+          <text x="350" y="291" fill="#0F172A" fontSize="13" fontWeight="800" fontFamily="Inter, sans-serif">
+            ₹ 4.2M
+          </text>
+          <text x="350" y="306" fill="#64748B" fontSize="7" fontWeight="500" fontFamily="Inter, sans-serif">
+            Total Spend (YTD)
+          </text>
+          <rect x="462" y="284" width="50" height="15" rx="7" fill="#DCFCE7" />
+          <text x="487" y="294" fill="#16A34A" fontSize="6.5" fontWeight="700" textAnchor="middle" fontFamily="Inter, sans-serif">On Budget</text>
+        </g>
+
+        {/* 3. Middle Row Right: Recent Activity Feed Card */}
+        <g filter="url(#heroCardShadowWide)">
+          <rect x="542" y="145" width="196" height="188" rx="8" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
+          <text x="554" y="163" fill="#0F172A" fontSize="9" fontWeight="700" fontFamily="Inter, sans-serif">
+            Recent Activity
+          </text>
+
+          {/* Activity items */}
+          {[
+            { y: 186, color: '#2563EB', text: 'PO #PO-2026-045 created', time: '2 hours ago' },
+            { y: 220, color: '#16A34A', text: 'Invoice received from Dell', time: '4 hours ago' },
+            { y: 254, color: '#EA580C', text: 'GRN #GRN-0032 approved', time: '6 hours ago' },
+            { y: 288, color: '#9333EA', text: 'New vendor added: Lenovo', time: '1 day ago' },
+          ].map((act) => (
+            <g key={act.text}>
+              <circle cx="564" cy={act.y - 2} r="5" fill={act.color} opacity="0.15" />
+              <circle cx="564" cy={act.y - 2} r="2.5" fill={act.color} />
+              <text x="576" y={act.y - 3} fill="#0F172A" fontSize="7.8" fontWeight="600" fontFamily="Inter, sans-serif">
+                {act.text}
+              </text>
+              <text x="576" y={act.y + 6} fill="#94A3B8" fontSize="6.8" fontWeight="400" fontFamily="Inter, sans-serif">
+                {act.time}
+              </text>
+            </g>
+          ))}
+        </g>
+
+        {/* Laptop Metal Hinge & Base Stand */}
+        <path d="M 200 352 L 760 352 L 778 365 Q 782 368 772 368 L 188 368 Q 178 368 182 365 Z" fill="url(#metalBaseWide)" />
+        <path d="M 200 352 L 760 352 L 764 354 H 196 Z" fill="#64748B" />
+        {/* Trackpad notch cutout */}
+        <path d="M 440 353 H 520 Q 518 358 510 358 H 450 Q 442 358 440 353 Z" fill="#64748B" opacity="0.5" />
+      </g>
+
+      {/* ── 4. STACKED CARDBOARD DELIVERY BOXES (Right Side) ── */}
+      <g transform="translate(760, 240)">
+        {/* Floor Shadow */}
+        <ellipse cx="45" cy="112" rx="42" ry="8" fill="#0F172A" opacity="0.1" />
+
+        {/* Bottom Large Box */}
+        <rect x="5" y="58" width="85" height="52" rx="3" fill="#D4B886" stroke="#B89762" strokeWidth="1" />
+        {/* Tape vertical */}
+        <rect x="42" y="58" width="12" height="52" fill="#E5D0AC" opacity="0.85" />
+        {/* Barcode Shipping Label */}
+        <rect x="62" y="78" width="20" height="24" rx="2" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="0.8" />
+        <line x1="66" y1="82" x2="66" y2="96" stroke="#0F172A" strokeWidth="1.5" />
+        <line x1="69" y1="82" x2="69" y2="96" stroke="#0F172A" strokeWidth="1" />
+        <line x1="72" y1="82" x2="72" y2="96" stroke="#0F172A" strokeWidth="2" />
+        <line x1="76" y1="82" x2="76" y2="96" stroke="#0F172A" strokeWidth="1" />
+
+        {/* Top Smaller Box */}
+        <rect x="15" y="16" width="62" height="42" rx="3" fill="#E5D0AC" stroke="#C4A484" strokeWidth="1" />
+        {/* Tape vertical */}
+        <rect x="41" y="16" width="10" height="42" fill="#D4B886" opacity="0.85" />
+        {/* Top flap crease */}
+        <line x1="15" y1="28" x2="77" y2="28" stroke="#C4A484" strokeWidth="1" />
+      </g>
     </svg>
   )
 }

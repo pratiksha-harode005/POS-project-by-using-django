@@ -27,8 +27,15 @@ export interface TrackingStepperProps {
   category?: string
   title?: string
   workflowType?: WorkflowType
+  flowType?: 'A' | 'B'
   financeStatus?: string
   paymentStatus?: string
+}
+
+export const isFlowBCategory = (cat?: string): boolean => {
+  if (!cat) return false
+  const c = cat.toLowerCase()
+  return c.includes('software') || c.includes('saas') || c.includes('license') || c.includes('cloud') || c.includes('subscription')
 }
 
 export const TrackingStepper: React.FC<TrackingStepperProps> = ({

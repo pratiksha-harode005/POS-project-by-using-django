@@ -15,7 +15,7 @@ export const AdminRecordsPage: React.FC = () => {
             <Package size={18} /> Purchase Orders
           </div>
           <p className="text-gray-500">Total Issued POs: <strong>14</strong></p>
-          <p className="text-gray-500">Active Procurement Value: <strong>$185,000.00</strong></p>
+          <p className="text-gray-500">Active Procurement Value: <strong>RS 185,000.00</strong></p>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-2">

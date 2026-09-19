@@ -69,6 +69,14 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
     navigate(`/portal/${targetRole.toLowerCase()}/dashboard`)
   }
 
+  const roleColors: Record<UserRole, { bg: string; text: string; border: string }> = {
+    TEAM_LEAD: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+    MANAGER: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+    FINANCE: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+    ADMIN: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+    VENDOR: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  }
+
   // Close profile and search dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import {
-  Bell, CheckCheck, Clock, ShieldAlert, CheckCircle
-} from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Bell, CheckCheck, Clock, ShieldAlert, ArrowRight, Settings, Check, X, Filter } from 'lucide-react'
+import { useProcurement, NotificationRecord } from '../../context/ProcurementContext'
+import { useAuth } from '../../context/AuthContext'
 
 export interface NotificationItem {
   id: number
@@ -10,7 +11,7 @@ export interface NotificationItem {
   timestamp: string
   date: string
   isRead: boolean
-  category: 'Approval' | 'RFQ' | 'Budget' | 'Logistics' | 'Payment' | 'Compliance'
+  category: string
   requestId?: string
   sender: string
 }
@@ -97,14 +98,14 @@ export const SharedNotificationsPage: React.FC = () => {
   const [notifications, setNotifications] = useState<NotificationItem[]>(ALL_NOTIFICATIONS)
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
 
-  const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
-  }
-
   const handleSelectMessage = (item: NotificationItem) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
     )
+  }
+
+  const markAllRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
   }
 
   const filtered = notifications.filter((n) => (filter === 'unread' ? !n.isRead : true))
@@ -127,7 +128,7 @@ export const SharedNotificationsPage: React.FC = () => {
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-semibold border border-indigo-200 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-semibold border border-indigo-200 transition-colors cursor-pointer"
             >
               <CheckCheck size={15} /> Mark All as Read
             </button>
@@ -140,7 +141,7 @@ export const SharedNotificationsPage: React.FC = () => {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               filter === 'all'
                 ? 'bg-slate-900 text-white'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -150,7 +151,7 @@ export const SharedNotificationsPage: React.FC = () => {
           </button>
           <button
             onClick={() => setFilter('unread')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               filter === 'unread'
                 ? 'bg-indigo-600 text-white'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -169,7 +170,7 @@ export const SharedNotificationsPage: React.FC = () => {
       <div className="space-y-2.5">
         {filtered.length === 0 ? (
           <div className="p-16 bg-white rounded-2xl border border-slate-200 text-center shadow-2xs text-slate-400 text-xs">
-            <CheckCircle size={36} className="mx-auto mb-2 text-emerald-400 opacity-80" />
+            <Clock size={36} className="mx-auto mb-2 text-emerald-400 opacity-80" />
             <p className="font-semibold text-slate-700 text-sm">No notifications found</p>
             <p className="text-slate-400 text-xs mt-0.5">You are completely up to date!</p>
           </div>
