@@ -165,7 +165,7 @@ export const CreateRequestPage: React.FC = () => {
     }
   })
 
-  const isCostRequired = isPhysicalCategory(formData.category)
+  const isCostRequired = false
   const isSaaSOrCloud =
     formData.category === 'Software & SaaS' ||
     formData.category === 'Cloud & Infrastructure' ||
@@ -203,12 +203,6 @@ export const CreateRequestPage: React.FC = () => {
 
   const handleFormSubmit = (e: React.FormEvent, isDraft = false) => {
     e.preventDefault()
-
-    // Rule #2: Cost is required for physical categories, optional for service/recurring
-    if (!isDraft && isCostRequired && (formData.estimatedCost === '' || costNumber <= 0)) {
-      alert(`Estimated Cost (USD) is required for physical hardware/equipment category '${formData.category}'.`)
-      return
-    }
 
     // Rule #5: Subscription/Service Needed is required for SaaS/Cloud
     if (!isDraft && isSaaSOrCloud && !formData.subscriptionServiceName.trim()) {
@@ -418,17 +412,16 @@ export const CreateRequestPage: React.FC = () => {
               />
             </div>
 
-            {/* Rule #2: Estimated Cost - required for physical, optional for service/recurring */}
+            {/* Estimated Cost - Optional */}
             <div>
               <label className="block font-bold text-gray-700 mb-1">
-                Estimated Cost (USD) {isCostRequired ? '*' : '(Optional)'}
+                Estimated Cost (USD) (Optional)
               </label>
               <input
                 type="number"
-                min={1}
+                min={0}
                 step="0.01"
-                required={isCostRequired}
-                placeholder={isCostRequired ? 'e.g. 5000.00' : 'Optional estimate'}
+                placeholder="Optional estimate e.g. 5000.00"
                 value={formData.estimatedCost}
                 onChange={(e) =>
                   setFormData({
@@ -439,7 +432,7 @@ export const CreateRequestPage: React.FC = () => {
                 className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-semibold text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
               <p className="text-[10px] text-gray-400 mt-0.5">
-                {isCostRequired ? 'Required for physical goods.' : 'Optional for subscription/service.'}
+                Optional estimated budget/cost.
               </p>
             </div>
 
