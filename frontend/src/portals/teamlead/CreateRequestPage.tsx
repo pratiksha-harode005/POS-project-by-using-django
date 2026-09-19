@@ -448,31 +448,7 @@ export const CreateRequestPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Live Inline Budget Hint */}
-          {formData.estimatedCost !== '' && (
-            <div
-              className={`p-3 rounded-xl border text-xs flex items-center gap-2 transition-all ${
-                costNumber <= 50000
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-amber-50 border-amber-200 text-amber-900'
-              }`}
-            >
-              {costNumber <= 50000 ? (
-                <Info size={16} className="text-emerald-600 flex-shrink-0" />
-              ) : (
-                <AlertTriangle size={16} className="text-amber-600 flex-shrink-0" />
-              )}
-              <span>
-                {costNumber <= 50000
-                  ? `✓ Estimated cost of RS {costNumber.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                    })} is within your Manager's approval limit (RS 50,000.00).`
-                  : `⚠️ Estimated cost of RS {costNumber.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                    })} exceeds Manager threshold (RS 50,000.00) — will require Finance & Admin approval.`}
-              </span>
-            </div>
-          )}
+
 
           {/* Rule #3: Expanded Department List & Rule #4: Category Filtered Preferred Vendor */}
           <div className="grid grid-cols-2 gap-4">
