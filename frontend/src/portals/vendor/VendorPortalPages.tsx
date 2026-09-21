@@ -1969,7 +1969,12 @@ export const VendorRFQsPage: React.FC = () => {
     apiClient.get('/rfq/').then(res => {
        const backendRfqs = Array.isArray(res.data) ? res.data : res.data?.results || [];
        const mappedRfqs = backendRfqs.filter((r: any) => {
-           return r.invited_vendors_detail?.some((iv: any) => iv.name === vendorName);
+           return r.invited_vendors_detail?.some((iv: any) => {
+               if (!iv.name || !vendorName) return false;
+               const v1 = iv.name.toLowerCase().trim();
+               const v2 = vendorName.toLowerCase().trim();
+               return v1 === v2 || v1.includes(v2) || v2.includes(v1);
+           });
        }).map((r: any) => ({
            id: r.rfq_id || `RFQ-${r.id}`,
            title: r.title,
@@ -1995,9 +2000,14 @@ export const VendorRFQsPage: React.FC = () => {
     setRfqActions(getStoredVendorRfqActions(vendorId))
   }, [vendorId])
 
-  const openRfqs = localRfqsList.filter(
-    (r) => r.status === 'Open' && rfqActions[r.id]?.status !== 'Declined' && new Date(r.deadline) >= new Date()
-  )
+  const openRfqs = localRfqsList.filter((r) => {
+    const st = (r.status || '').toLowerCase();
+    const isOpenStatus = st === 'open' || st === 'sent' || st === 'new';
+    const isNotDeclined = rfqActions[r.id]?.status !== 'Declined';
+    const deadlineDate = new Date(r.deadline);
+    deadlineDate.setHours(23, 59, 59, 999);
+    return isOpenStatus && isNotDeclined && deadlineDate >= new Date();
+  })
   const expiredRfqs = localRfqsList.filter(
     (r) => r.status === 'Expired' || new Date(r.deadline) < new Date()
   )

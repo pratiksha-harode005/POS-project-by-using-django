@@ -744,7 +744,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setVendors(rawVendors.map((v: any) => {
           let st = 'Pending Approval'
           const rawStatus = (v.status || '').toUpperCase()
-          if (rawStatus === 'APPROVED') st = 'Active'
+          if (rawStatus === 'APPROVED' || rawStatus === 'ACTIVE') st = 'Active'
           else if (rawStatus === 'SUSPENDED') st = 'Suspended'
           else if (rawStatus === 'REJECTED') st = 'Rejected'
           

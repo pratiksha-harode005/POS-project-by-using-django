@@ -197,9 +197,15 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
       return
     }
 
-    const matchedVendors = vendors.filter(v => v.category === selectedCategory && v.status === 'Active')
+    const matchedVendors = vendors.filter(v => {
+      if (v.status !== 'Active') return false
+      if (!v.category) return false
+      const vCat = v.category.toLowerCase().trim()
+      const sCat = selectedCategory.toLowerCase().trim()
+      return vCat === sCat || vCat.includes(sCat) || sCat.includes(vCat)
+    })
     if (matchedVendors.length === 0) {
-      setErrorMsg('No active vendors found in this category.')
+      setErrorMsg(`No active vendors found in category "${selectedCategory}".`)
       return
     }
 
