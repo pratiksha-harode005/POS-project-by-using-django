@@ -303,7 +303,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                {progression.workflowType === 'SOFTWARE' ? '6-STAGE SOFTWARE WORKFLOW' : '10-STAGE HARDWARE WORKFLOW'}
+                {progression.workflowType === 'SOFTWARE' ? `${progression.totalStages}-STAGE SOFTWARE WORKFLOW` : `${progression.totalStages}-STAGE HARDWARE WORKFLOW`}
               </span>
               <span className="font-mono text-xs text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
                 {request.id}
@@ -899,7 +899,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Lowest / Best Bid</span>
                   <span className="font-extrabold text-emerald-700">
                     {(() => {
-                      const quotes = matchedRfq.vendors.filter((v) => typeof v.quote === 'number').map((v) => v.quote as number)
+                      const quotes = (matchedRfq.vendors || []).filter((v) => typeof v.quote === 'number').map((v) => v.quote as number)
                       return quotes.length > 0 ? fmt(Math.min(...quotes)) : 'Pending'
                     })()}
                   </span>
@@ -907,7 +907,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Quotes Received</span>
                   <span className="font-extrabold text-emerald-700">
-                    {matchedRfq.vendors.filter((v) => v.response === 'Received').length} Bids
+                    {(matchedRfq.vendors || []).filter((v) => v.response === 'Received').length} Bids
                   </span>
                 </div>
                 <div>
@@ -931,12 +931,12 @@ export const FinanceRequestDetailsPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                    {matchedRfq.vendors.map((v) => {
+                    {(matchedRfq.vendors || []).map((v) => {
                       const isLowest =
                         v.quote &&
                         v.quote ===
                           Math.min(
-                            ...matchedRfq.vendors.filter((vnd) => vnd.quote).map((vnd) => vnd.quote as number)
+                            ...((matchedRfq.vendors || []).filter((vnd) => vnd.quote).map((vnd) => vnd.quote as number))
                           )
 
                       return (

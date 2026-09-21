@@ -1,5 +1,5 @@
 import React from 'react'
-import { DollarSign, TrendingUp, Search } from 'lucide-react'
+import { IndianRupee, TrendingUp, Search } from 'lucide-react'
 import { useState } from 'react'
 import { useManagerData } from '../../context/ManagerDataContext'
 
@@ -46,7 +46,7 @@ export const TotalRequestsPage: React.FC = () => {
     <div className="max-w-7xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <DollarSign className="text-blue-600" size={24} /> Total Request Value
+          <IndianRupee className="text-blue-600" size={24} /> Total Request Value
         </h1>
         <p className="text-xs text-gray-500 mt-0.5">All procurement requests and their combined value.</p>
       </div>

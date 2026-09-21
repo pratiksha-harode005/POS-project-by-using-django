@@ -127,7 +127,7 @@ export default function FeaturesPage() {
             <p
               style={{ color: '#64748B', fontSize: '16px', lineHeight: 1.7 }}
             >
-              Powerful features to simplify procurement, improve control and drive efficiency across your IT organisation. Click any feature card for details.
+              Powerful features to simplify procurement, improve control and drive efficiency across your IT organisation.
             </p>
           </div>
         </section>
@@ -141,21 +141,18 @@ export default function FeaturesPage() {
 
               {/* First 9 regular cards */}
               {features.slice(0, 9).map(({ slug, icon: Icon, title, desc, bg, color }) => (
-                <Link
+                <div
                   key={slug}
-                  to={`/features/${slug}`}
-                  className="feature-card block bg-white border border-[#E5E7EB] rounded-2xl p-6 cursor-pointer hover:border-blue-300 hover:shadow-lg transition-all duration-300 group text-left"
+                  id={slug}
+                  className="feature-card block bg-white border border-[#E5E7EB] rounded-2xl p-6 hover:border-blue-300 hover:shadow-lg transition-all duration-300 group text-left"
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div
-                      className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+                      className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105"
                       style={{ backgroundColor: bg }}
                     >
                       <Icon size={20} color={color} strokeWidth={2} />
                     </div>
-                    <span className="text-[11px] font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                      Explore Feature <ArrowRight size={12} />
-                    </span>
                   </div>
                   <h2
                     className="font-bold mb-2 group-hover:text-blue-600 transition-colors"
@@ -164,7 +161,7 @@ export default function FeaturesPage() {
                     {title}
                   </h2>
                   <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.6 }}>{desc}</p>
-                </Link>
+                </div>
               ))}
 
               {/* 10th card: Analytics */}
@@ -172,21 +169,18 @@ export default function FeaturesPage() {
                 const f10 = features[9]
                 const AnalyticsIcon = f10.icon
                 return (
-                  <Link
+                  <div
                     key={f10.slug}
-                    to={`/features/${f10.slug}`}
-                    className="feature-card block bg-white border border-[#E5E7EB] rounded-2xl p-6 cursor-pointer hover:border-blue-300 hover:shadow-lg transition-all duration-300 group text-left"
+                    id={f10.slug}
+                    className="feature-card block bg-white border border-[#E5E7EB] rounded-2xl p-6 hover:border-blue-300 hover:shadow-lg transition-all duration-300 group text-left"
                   >
                     <div className="flex items-center justify-between mb-4">
                       <div
-                        className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+                        className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105"
                         style={{ backgroundColor: f10.bg }}
                       >
                         <AnalyticsIcon size={20} color={f10.color} strokeWidth={2} />
                       </div>
-                      <span className="text-[11px] font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                        Explore Feature <ArrowRight size={12} />
-                      </span>
                     </div>
                     <h2
                       className="font-bold mb-2 group-hover:text-blue-600 transition-colors"
@@ -195,14 +189,13 @@ export default function FeaturesPage() {
                       {f10.title}
                     </h2>
                     <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.6 }}>{f10.desc}</p>
-                  </Link>
+                  </div>
                 )
               })()}
 
               {/* 11th special card: spans full row on large screen, dark navy */}
-              <Link
-                to="/features/complete-lifecycle"
-                className="feature-card block sm:col-span-2 lg:col-span-2 rounded-2xl p-8 cursor-pointer hover:border-blue-500 hover:shadow-xl transition-all text-left group"
+              <div
+                className="feature-card block sm:col-span-2 lg:col-span-2 rounded-2xl p-8 hover:border-blue-500 hover:shadow-xl transition-all text-left group"
                 style={{ backgroundColor: '#0F172A' }}
               >
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
@@ -220,16 +213,13 @@ export default function FeaturesPage() {
                       >
                         All Modules Work Together
                       </h2>
-                      <span className="text-xs font-semibold text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                        Explore Feature <ArrowRight size={14} />
-                      </span>
                     </div>
                     <p style={{ color: '#94A3B8', fontSize: '15px', lineHeight: 1.6 }}>
                       All modules work together for a seamless procurement experience — from the first purchase request to final payment reconciliation.
                     </p>
                   </div>
                 </div>
-              </Link>
+              </div>
 
             </div>
           </div>

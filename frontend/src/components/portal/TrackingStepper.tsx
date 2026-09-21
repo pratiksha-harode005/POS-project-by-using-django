@@ -61,20 +61,11 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
       title,
       paymentStatus,
       currentStage,
+      history,
+      workflowTypeOverride: explicitWorkflowType,
     })
-    if (explicitWorkflowType && explicitWorkflowType !== res.workflowType) {
-      // If caller explicitly overrode workflow type
-      const stgs = explicitWorkflowType === 'SOFTWARE' ? SOFTWARE_STAGES : HARDWARE_STAGES
-      return {
-        ...res,
-        workflowType: explicitWorkflowType,
-        stages: stgs,
-        totalStages: stgs.length,
-        currentStageIndex: Math.min(res.currentStageIndex, stgs.length - 1),
-      }
-    }
     return res
-  }, [status, financeStatus, category, title, paymentStatus, currentStage, explicitWorkflowType])
+  }, [status, financeStatus, category, title, paymentStatus, currentStage, explicitWorkflowType, history])
 
   const effectiveCurrentlyWith = currentlyWith || progression.currentlyWith
   const effectiveStageIdx = progression.currentStageIndex

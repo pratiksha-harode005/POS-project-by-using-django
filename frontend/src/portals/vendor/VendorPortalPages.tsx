@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { apiClient } from '../../api/client'
 import { useProcurement } from '../../context/ProcurementContext'
 import { isFlowBCategory } from '../../components/portal/TrackingStepper'
 import { rankVendorsForCategory } from '../../components/portal/VendorRecommendationPanel'
@@ -61,7 +62,7 @@ export interface VendorRecord {
 
 export const MASTER_VENDORS: VendorRecord[] = [
   // IT Hardware
-  { id: 'VND-HW-001', name: 'Dell Technologies', category: 'IT Hardware', score: '95.5%', risk: 'Low', contactPerson: 'Michael Dell', email: 'contact@dell.com', phone: '+1 800-456-3355', status: 'Active', openRfqsCount: 2, activePosCount: 3, totalDisbursed: 42000 },
+  { id: 'VND-HW-001', name: 'Dell Technologies Inc.', category: 'IT Hardware', score: '95.5%', risk: 'Low', contactPerson: 'Michael Dell', email: 'contact@dell.com', phone: '+1 800-456-3355', status: 'Active', openRfqsCount: 2, activePosCount: 3, totalDisbursed: 42000 },
   { id: 'VND-HW-002', name: 'HP Enterprise', category: 'IT Hardware', score: '92.0%', risk: 'Low', contactPerson: 'Meg Whitman', email: 'contact@hpe.com', phone: '+1 800-752-0900', status: 'Active', openRfqsCount: 1, activePosCount: 1, totalDisbursed: 18500 },
   { id: 'VND-HW-003', name: 'Lenovo Group', category: 'IT Hardware', score: '89.5%', risk: 'Low', contactPerson: 'Yuanqing Yang', email: 'contact@lenovo.com', phone: '+1 800-426-7378', status: 'Active', openRfqsCount: 1, activePosCount: 0, totalDisbursed: 0 },
   { id: 'VND-HW-004', name: 'Apple Enterprise', category: 'IT Hardware', score: '97.2%', risk: 'Low', contactPerson: 'Tim Cook', email: 'enterprise@apple.com', phone: '+1 800-692-7753', status: 'Active', openRfqsCount: 0, activePosCount: 2, totalDisbursed: 24000 },
@@ -73,7 +74,7 @@ export const MASTER_VENDORS: VendorRecord[] = [
   { id: 'VND-SW-004', name: 'Figma Inc.', category: 'Software & SaaS', score: '93.0%', risk: 'Low', contactPerson: 'Dylan Field', email: 'enterprise@figma.com', phone: '+1 800-555-3446', status: 'Flow B Excluded (Direct Fund Release)', openRfqsCount: 0, activePosCount: 0, totalDisbursed: 8900 },
 
   // Cloud & Infrastructure (Flow B - Direct Fund Release Excluded)
-  { id: 'VND-CLD-001', name: 'Amazon Web Services', category: 'Cloud & Infrastructure', score: '99.0%', risk: 'Low', contactPerson: 'Andy Jassy', email: 'aws-support@amazon.com', phone: '+1 800-282-1770', status: 'Flow B Excluded (Direct Fund Release)', openRfqsCount: 0, activePosCount: 0, totalDisbursed: 125000 },
+  { id: 'VND-CLD-001', name: 'Amazon Web Services Inc.', category: 'Cloud & Infrastructure', score: '99.0%', risk: 'Low', contactPerson: 'Andy Jassy', email: 'aws-support@amazon.com', phone: '+1 800-282-1770', status: 'Flow B Excluded (Direct Fund Release)', openRfqsCount: 0, activePosCount: 0, totalDisbursed: 125000 },
   { id: 'VND-CLD-002', name: 'Microsoft Azure', category: 'Cloud & Infrastructure', score: '97.8%', risk: 'Low', contactPerson: 'Azure Sales', email: 'azure@microsoft.com', phone: '+1 800-642-7676', status: 'Flow B Excluded (Direct Fund Release)', openRfqsCount: 0, activePosCount: 0, totalDisbursed: 94000 },
   { id: 'VND-CLD-003', name: 'Google Cloud Platform', category: 'Cloud & Infrastructure', score: '96.2%', risk: 'Low', contactPerson: 'GCP Enterprise', email: 'gcp@google.com', phone: '+1 800-358-8228', status: 'Flow B Excluded (Direct Fund Release)', openRfqsCount: 0, activePosCount: 0, totalDisbursed: 45000 },
 
@@ -1394,8 +1395,21 @@ export const SubmitQuotationModal: React.FC<{
       submittedDate: todayStr,
     }
 
-    saveStoredVendorQuote(vendorId, newQuotation)
-
+    apiClient.post('/rfq/quotations/', {
+      rfq: targetRfq ? targetRfq.id : (selectedRfqId || 'RFQ-2026-001'),
+      vendor: vendorName,
+      price: parsedBase,
+      delivery_days: parseInt(leadTimeDays) || 7,
+      warranty_months: parseInt(warrantyDuration) || 12,
+      terms_conditions: notes.trim() || '',
+      status: 'Submitted'
+    }).then(res => {
+      saveStoredVendorQuote(vendorId, newQuotation)
+    }).catch(err => {
+      console.error('Failed to submit quotation to backend', err)
+      saveStoredVendorQuote(vendorId, newQuotation) // Fallback for UI if backend fails
+    })
+    
     // Save generated GRN document to Documents page as well
     const grnDocRecord = {
       id: `DOC-${newQuotation.grnDocNumber}`,
@@ -1947,7 +1961,37 @@ export const VendorRFQsPage: React.FC = () => {
   const [toastMsg, setToastMsg] = useState('')
 
   useEffect(() => {
-    setLocalRfqsList(rfqs)
+    const vendorData = getScopedVendorData(vendorId)
+    const staticRfqs = vendorData.rfqs
+    const vendorName = vendorData.vendor.name
+    const vendorCategory = vendorData.vendor.category
+
+    apiClient.get('/rfq/').then(res => {
+       const backendRfqs = Array.isArray(res.data) ? res.data : res.data?.results || [];
+       const mappedRfqs = backendRfqs.filter((r: any) => {
+           return r.invited_vendors_detail?.some((iv: any) => iv.name === vendorName);
+       }).map((r: any) => ({
+           id: r.rfq_id || `RFQ-${r.id}`,
+           title: r.title,
+           category: r.purchase_request_detail?.category || vendorCategory,
+           subcategory: r.purchase_request_detail?.subcategory || 'General',
+           description: r.purchase_request_detail?.description || r.terms,
+           qty: r.purchase_request_detail?.quantity || 1,
+           budgetEst: parseFloat(r.purchase_request_detail?.total_estimated_cost || '0'),
+           deadline: r.deadline,
+           status: r.status,
+           requiredBy: r.purchase_request_detail?.required_by || 'N/A',
+           deliveryLocation: r.purchase_request_detail?.delivery_location || 'HQ',
+           originator: r.purchase_request_detail?.created_by_detail?.username || 'System'
+       }));
+       setLocalRfqsList(() => {
+           const merged = [...mappedRfqs, ...staticRfqs];
+           return merged.filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
+       });
+    }).catch(err => {
+       console.error('Failed to fetch vendor RFQs', err);
+       setLocalRfqsList(staticRfqs);
+    });
     setRfqActions(getStoredVendorRfqActions(vendorId))
   }, [vendorId])
 

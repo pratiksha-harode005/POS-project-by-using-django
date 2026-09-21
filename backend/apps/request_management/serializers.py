@@ -28,12 +28,16 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
         model = PurchaseRequest
         fields = '__all__'
         read_only_fields = ['request_id', 'created_by', 'status', 'current_stage', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'department': {'required': False, 'allow_null': True}
+        }
 
 
 class ApproveRejectActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['APPROVE', 'REJECT', 'RECOMMEND', 'RETURN'])
     reason_id = serializers.IntegerField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
 
     def validate(self, data):
         action = data.get('action')

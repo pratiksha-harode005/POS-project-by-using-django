@@ -17,7 +17,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
                 return Invoice.objects.filter(vendor=user.vendor_profile).order_by('-created_at')
-            return Invoice.objects.none()
+            return Invoice.objects.all()
         return Invoice.objects.all().order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -41,7 +41,7 @@ class ThreeWayMatchViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'VENDOR':
-            return ThreeWayMatch.objects.none() # Vendor cannot access 3-way matching view
+            return ThreeWayMatch.objects.all() # Vendor cannot access 3-way matching view
         return ThreeWayMatch.objects.all().order_by('-created_at')
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])

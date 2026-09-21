@@ -850,7 +850,9 @@ export const PaymentStatusPage: React.FC = () => {
               currentStage={stepperModalRequest.currentStage}
               status={stepperModalRequest.status}
               category={stepperModalRequest.category}
+              title={stepperModalRequest.title}
               flowType={stepperModalRequest.flowType}
+              history={(stepperModalRequest as any).history}
             />
 
             <div className="flex justify-end pt-4 border-t">

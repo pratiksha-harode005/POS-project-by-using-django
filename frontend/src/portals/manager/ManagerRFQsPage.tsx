@@ -8,7 +8,11 @@ import { useManagerData } from '../../context/ManagerDataContext'
 import type { RFQ, RFQStatus } from '../../context/ManagerDataContext'
 import { CreateRFQModal } from '../../components/portal/CreateRFQModal'
 
-const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+const fmt = (v?: number | string | null) => {
+  if (v === undefined || v === null) return '₹0'
+  const num = typeof v === 'string' ? parseFloat(v) : v
+  return isNaN(num) ? '₹0' : `₹${num.toLocaleString('en-IN')}`
+}
 
 const statusConfig: Record<RFQStatus, { label: string; color: string }> = {
   draft: { label: 'Draft', color: 'bg-gray-100 text-gray-700' },
@@ -17,6 +21,10 @@ const statusConfig: Record<RFQStatus, { label: string; color: string }> = {
   under_evaluation: { label: 'Under Evaluation', color: 'bg-amber-100 text-amber-800' },
   awarded: { label: 'Awarded', color: 'bg-green-100 text-green-800' },
   expired: { label: 'Expired', color: 'bg-red-100 text-red-800' },
+}
+
+const getStatusConf = (status: string) => {
+  return statusConfig[status as RFQStatus] || { label: (status || 'Unknown').toUpperCase(), color: 'bg-gray-100 text-gray-700' }
 }
 
 const vendorResponseColor = {
@@ -36,7 +44,7 @@ function RFQDetail({ rfq, onBack }: { rfq: RFQ; onBack: () => void }) {
     { key: 'comparison', label: 'Comparison', icon: BarChart2 },
   ]
 
-  const receivedQuotes = rfq.vendors.filter(v => v.response === 'Received' && v.quote)
+  const receivedQuotes = (rfq.vendors || []).filter(v => v.response === 'Received' && v.quote)
 
   return (
     <div className="space-y-4">
@@ -53,8 +61,8 @@ function RFQDetail({ rfq, onBack }: { rfq: RFQ; onBack: () => void }) {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded border border-blue-200">{rfq.id}</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${statusConfig[rfq.status].color}`}>
-                {statusConfig[rfq.status].label}
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${getStatusConf(rfq.status).color}`}>
+                {getStatusConf(rfq.status).label}
               </span>
             </div>
             <h2 className="text-xl font-bold text-gray-900">{rfq.title}</h2>
@@ -90,10 +98,10 @@ function RFQDetail({ rfq, onBack }: { rfq: RFQ; onBack: () => void }) {
         {tab === 'overview' && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
             {[
-              { label: 'Total Vendors Invited', value: rfq.vendors.length },
-              { label: 'Quotes Received', value: rfq.vendors.filter(v => v.response === 'Received').length },
-              { label: 'Quotes Pending', value: rfq.vendors.filter(v => v.response === 'Pending').length },
-              { label: 'Declined', value: rfq.vendors.filter(v => v.response === 'Declined').length },
+              { label: 'Total Vendors Invited', value: (rfq.vendors || []).length },
+              { label: 'Quotes Received', value: (rfq.vendors || []).filter(v => v.response === 'Received').length },
+              { label: 'Quotes Pending', value: (rfq.vendors || []).filter(v => v.response === 'Pending').length },
+              { label: 'Declined', value: (rfq.vendors || []).filter(v => v.response === 'Declined').length },
             ].map(c => (
               <div key={c.label} className="bg-gray-50 rounded-xl p-4 border border-gray-200 text-center">
                 <p className="text-2xl font-black text-gray-900">{c.value}</p>
@@ -132,8 +140,8 @@ function RFQDetail({ rfq, onBack }: { rfq: RFQ; onBack: () => void }) {
 
         {/* Vendors */}
         {tab === 'vendors' && (
-          <div className="space-y-2 text-xs">
-            {rfq.vendors.map((v, i) => (
+          <div className="space-y-3 text-xs">
+            {(rfq.vendors || []).map((v, i) => (
               <div key={i} className="flex flex-wrap items-center justify-between gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">{v.name[0]}</div>
@@ -336,7 +344,7 @@ export const ManagerRFQsPage: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {filtered.map(r => {
-                const received = r.vendors.filter(v => v.response === 'Received').length
+                const received = (r.vendors || []).filter(v => v.response === 'Received').length
                 return (
                   <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-4 py-3.5">
@@ -349,8 +357,8 @@ export const ManagerRFQsPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-3.5 text-slate-700 font-semibold">{r.department}</td>
                     <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-black text-slate-900">{r.vendors.length}</span>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-black text-slate-900">{(r.vendors || []).length}</span>
                         <span className="text-slate-500 font-medium">invited</span>
                         {received > 0 && (
                           <span className="text-[10px] bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.5 rounded-md font-bold">
@@ -365,8 +373,8 @@ export const ManagerRFQsPage: React.FC = () => {
                       <span>{r.deadline}</span>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border shadow-2xs ${statusConfig[r.status].color}`}>
-                        {statusConfig[r.status].label}
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border shadow-2xs ${getStatusConf(r.status).color}`}>
+                        {getStatusConf(r.status).label}
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-slate-700 font-medium">{r.createdBy}</td>
@@ -389,7 +397,7 @@ export const ManagerRFQsPage: React.FC = () => {
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onSuccess={(newRfq) => {
-          setToast(`✓ RFQ ${newRfq.id} created and dispatched to ${newRfq.vendors.length} vendors!`)
+          setToast(`✓ RFQ ${newRfq.id} created and dispatched to ${(newRfq.vendors || []).length} vendors!`)
           setTimeout(() => setToast(null), 4000)
         }}
       />

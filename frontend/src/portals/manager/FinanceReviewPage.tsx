@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import {
   Landmark, Send, CheckCircle, X, AlertTriangle, FileText,
   Download, Printer, ShieldCheck, Clock, Check, Paperclip,
-  Building, Calendar, DollarSign, User, ExternalLink, Sparkles
+  Building, Calendar, IndianRupee, User, ExternalLink, Sparkles
 } from 'lucide-react'
 import { useManagerData, ProcurementRequest } from '../../context/ManagerDataContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
@@ -387,7 +387,7 @@ export const FinanceReviewPage: React.FC = () => {
                 <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
                   <div className="bg-slate-100/80 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <DollarSign size={14} className="text-emerald-600" /> 2. Financial Valuation Ledger
+                      <IndianRupee size={14} className="text-emerald-600" /> 2. Financial Valuation Ledger
                     </span>
                     <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                       INR Ledger

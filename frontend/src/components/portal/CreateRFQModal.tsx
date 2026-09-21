@@ -12,9 +12,10 @@ export interface CreateRFQModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: (rfq: RFQ) => void
+  initialPrId?: string
 }
 
-export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose, onSuccess, initialPrId }) => {
   const { allRequests, myApprovals, vendors, addRFQ, rfqs } = useManagerData()
 
   // Generate next sequential RFQ ID
@@ -63,8 +64,13 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
     }
   ])
 
-  // Form State - Section C: Vendors
-  const [selectedVendorNames, setSelectedVendorNames] = useState<string[]>([])
+  // Form State - Section C: Vendor Category
+  const availableCategories = useMemo(() => {
+    const cats = new Set(vendors.map(v => v.category).filter(Boolean))
+    return Array.from(cats)
+  }, [vendors])
+
+  const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [errorMsg, setErrorMsg] = useState('')
 
   // Candidate PRs to link
@@ -83,46 +89,55 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
     const found = availablePrs.find(p => p.id === prId)
     if (found) {
       setTitle(`RFQ for ${found.title}`)
-      setDepartment(found.department || 'Engineering')
+      setDepartment(found.department)
       setCategory(found.category || 'Hardware')
-      setRequester(found.requester || 'Sarah Manager')
-      if (found.priority) setPriority(found.priority)
 
-      // Auto populate item
+      if (found.category && availableCategories.includes(found.category)) {
+        setSelectedCategory(found.category)
+      } else {
+        setSelectedCategory('')
+      }
+      setSubCategory(found.subcategory || found.category || 'General')
+      setRequester(found.requester)
+      setPriority(found.priority as 'Critical' | 'High' | 'Medium' | 'Low' || 'High')
+
+      const qty = found.quantity || 1
+      const totalAmount = found.amount || 50000
+      const unitPrice = qty > 0 ? Number((totalAmount / qty).toFixed(2)) : totalAmount
+
+      // Auto populate item with exact PR quantity & unit price
       setItems([
         {
           id: `item-${Date.now()}`,
           product: found.title,
           category: found.category || 'Hardware',
-          quantity: 1,
+          quantity: qty,
           uom: 'Units',
-          expectedPrice: found.amount || 50000,
+          expectedPrice: unitPrice,
           requiredBy: new Date(Date.now() + 21 * 86400000).toISOString().split('T')[0],
           specification: found.description || `Required for ${found.department} operations`
         }
       ])
-
-      // Auto select relevant vendors based on category
-      const matchedVendors = vendors
-        .filter(v => v.category?.toLowerCase() === found.category?.toLowerCase() || v.status === 'Active')
-        .slice(0, 3)
-        .map(v => v.name)
-      if (matchedVendors.length > 0) {
-        setSelectedVendorNames(matchedVendors)
-      }
     }
   }
 
-  // Prepopulate default vendors on mount
+  // Prepopulate PR on modal open
   useEffect(() => {
-    if (vendors.length > 0 && selectedVendorNames.length === 0) {
-      setSelectedVendorNames(vendors.slice(0, 3).map(v => v.name))
+    if (isOpen && availablePrs.length > 0) {
+      const targetPrId = initialPrId || availablePrs[0].id
+      if (targetPrId) {
+        handlePrChange(targetPrId)
+      }
     }
-  }, [vendors])
+  }, [isOpen, initialPrId, availablePrs.length])
 
   // Calculate total estimated amount
   const totalEstimatedAmount = useMemo(() => {
-    return items.reduce((sum, it) => sum + (it.quantity * it.expectedPrice), 0)
+    return Math.round(items.reduce((sum, it) => {
+      const q = typeof it.quantity === 'number' ? it.quantity : (parseFloat(String(it.quantity)) || 0)
+      const p = typeof it.expectedPrice === 'number' ? it.expectedPrice : (parseFloat(String(it.expectedPrice)) || 0)
+      return sum + (q * p)
+    }, 0))
   }, [items])
 
   if (!isOpen) return null
@@ -157,14 +172,6 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
     }))
   }
 
-  const toggleVendor = (vendorName: string) => {
-    setSelectedVendorNames(prev =>
-      prev.includes(vendorName)
-        ? prev.filter(v => v !== vendorName)
-        : [...prev, vendorName]
-    )
-  }
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg('')
@@ -185,13 +192,19 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
       return
     }
 
-    if (selectedVendorNames.length === 0) {
-      setErrorMsg('Please invite at least one vendor to submit quotations.')
+    if (!selectedCategory) {
+      setErrorMsg('Please select a vendor category to invite.')
       return
     }
 
-    const rfqVendors: RFQVendor[] = selectedVendorNames.map(vName => ({
-      name: vName,
+    const matchedVendors = vendors.filter(v => v.category === selectedCategory && v.status === 'Active')
+    if (matchedVendors.length === 0) {
+      setErrorMsg('No active vendors found in this category.')
+      return
+    }
+
+    const rfqVendors: RFQVendor[] = matchedVendors.map(v => ({
+      name: v.name,
       invitedOn: issueDate,
       response: 'Pending'
     }))
@@ -254,12 +267,7 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
-          {errorMsg && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-center gap-2">
-              <AlertCircle size={16} className="text-rose-600 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
+
 
           {/* Section A: Basic RFQ Details */}
           <div className="space-y-4">
@@ -501,7 +509,10 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
                           type="number"
                           min="1"
                           value={item.quantity}
-                          onChange={e => handleUpdateItem(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                          onChange={e => {
+                            const val = e.target.value === '' ? '' : (parseInt(e.target.value) || '')
+                            handleUpdateItem(item.id, 'quantity', val)
+                          }}
                           className="w-20 text-xs border border-slate-300 rounded-lg px-2 py-2 bg-white font-black text-right text-indigo-950 shadow-2xs"
                         />
                         <select
@@ -524,8 +535,12 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
                       <input
                         type="number"
                         min="1"
+                        step="any"
                         value={item.expectedPrice}
-                        onChange={e => handleUpdateItem(item.id, 'expectedPrice', parseFloat(e.target.value) || 0)}
+                        onChange={e => {
+                          const val = e.target.value === '' ? '' : (parseFloat(e.target.value) || '')
+                          handleUpdateItem(item.id, 'expectedPrice', val)
+                        }}
                         className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-2 bg-white font-black text-right text-emerald-800 shadow-2xs"
                         required
                       />
@@ -547,61 +562,39 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
                     <div className="text-right flex flex-col justify-end">
                       <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide">Est. Line Total</span>
                       <div className="inline-flex items-center justify-end px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm shadow-2xs mt-0.5">
-                        {fmt(item.quantity * item.expectedPrice)}
+                        {fmt(Math.round((Number(item.quantity) || 0) * (Number(item.expectedPrice) || 0)))}
                       </div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Section C: Vendor Invitation Pool */}
+          {/* Section C: Vendor Category Selection */}
           <div className="space-y-3 pt-2">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <div>
                 <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <CheckSquare size={14} className="text-blue-600" /> Section C: Vendor Invitation Pool ({selectedVendorNames.length} Selected)
+                  <CheckSquare size={14} className="text-blue-600" /> Section C: Target Vendor Category
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Select qualified vendors to receive notifications and submit quotes.
+                  Select a category. This RFQ will be sent to all active vendors in that category.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedVendorNames(vendors.map(v => v.name))}
-                className="text-[11px] font-bold text-blue-600 hover:underline"
-              >
-                Select All ({vendors.length})
-              </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto p-1">
-              {vendors.map(vendor => {
-                const isSelected = selectedVendorNames.includes(vendor.name)
-                return (
-                  <div
-                    key={vendor.id}
-                    onClick={() => toggleVendor(vendor.name)}
-                    className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-blue-50 border-blue-400 text-blue-900 shadow-2xs'
-                        : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {}}
-                      className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold truncate">{vendor.name}</p>
-                      <p className="text-[10px] text-slate-500 truncate">{vendor.category} • Rating {vendor.performanceScore}%</p>
-                    </div>
-                  </div>
-                )
-              })}
+            <div className="mt-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Vendor Category *</label>
+              <select
+                value={selectedCategory}
+                onChange={e => setSelectedCategory(e.target.value)}
+                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2.5 bg-slate-50/50 focus:bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium transition-all"
+                required
+              >
+                <option value="">Select a Category...</option>
+                {availableCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat} ({vendors.filter(v => v.category === cat && v.status === 'Active').length} Active Vendors)</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -614,8 +607,10 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Vendors Invited</span>
-                <span className="text-base font-bold text-blue-300">{selectedVendorNames.length} Qualified</span>
-              </div>
+                <span className="text-base font-bold text-blue-300">
+                  {selectedCategory ? vendors.filter(v => v.category === selectedCategory && v.status === 'Active').length : 0} Qualified
+                </span>
+              </div>              </div>
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Submission Deadline</span>
                 <span className="text-base font-bold text-amber-300">{quotationDueDate}</span>
@@ -628,20 +623,28 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all cursor-pointer"
-            >
-              <CheckCircle size={15} /> Create & Publish RFQ
-            </button>
+          <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 mt-2">
+            {errorMsg && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-center gap-2 mb-2 animate-in fade-in slide-in-from-bottom-2">
+                <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                <CheckCircle size={15} /> Create & Send to Vendor
+              </button>
+            </div>
           </div>
         </form>
       </div>

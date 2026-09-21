@@ -1,15 +1,21 @@
+import dj_database_url
+from decouple import config
 from .base import *
 
 DEBUG = True
 ALLOWED_HOSTS = ['*']
 
-# Use DATABASE_URL from .env
-import dj_database_url
-from decouple import config
+db_url = config('Database_URL', default='')
 
-DATABASES = {
-    'default': dj_database_url.parse(
-        config('Database_URL', default='sqlite:///db.sqlite3'),
-        conn_max_age=600
-    )
-}
+if db_url:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            db_url,
+            conn_max_age=600
+        )
+    }
+else:
+    raise ValueError("Database_URL environment variable is missing. Failing loudly as requested.")
+
+
+

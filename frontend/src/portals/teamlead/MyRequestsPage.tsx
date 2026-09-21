@@ -387,7 +387,7 @@ export const MyRequestsPage: React.FC = () => {
                   )}
                 </div>
 
-                <TrackingStepper currentStage={req.currentStage} status={req.status} category={req.category} flowType={req.flowType} />
+                <TrackingStepper currentStage={req.currentStage} status={req.status} category={req.category} title={req.title} flowType={req.flowType} history={req.history as any} />
 
                 {/* Flow A Linked Delivery Documents Panel (Visible at Stage 6+ Delivery/Invoice/Payment for Flow A) */}
                 {!isFlowBCategory(req.category) && req.currentStage >= 6 && (() => {

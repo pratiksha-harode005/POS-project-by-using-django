@@ -2,15 +2,16 @@ import React, { useState, useMemo } from 'react'
 import {
   ShoppingBag, Search, CheckCircle, Clock, Truck, FileText,
   ChevronDown, ChevronUp, Plus, Building, User, Calendar,
-  ShieldCheck, AlertCircle, ArrowRight, Layers, Tag, DollarSign,
+  ShieldCheck, AlertCircle, ArrowRight, Layers, Tag, IndianRupee,
   Package, MapPin, Check, SlidersHorizontal, RefreshCw, X,
   Laptop, Cpu, CheckCircle2, Sparkles, TrendingUp, ExternalLink,
   ArrowUpRight, RotateCcw, AlertTriangle, HelpCircle, Filter
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { TrackingStepper, StepHistoryItem } from '../../components/portal/TrackingStepper'
-import { detectWorkflowType } from '../../utils/workflowUtils'
+import { detectWorkflowType, getWorkflowProgression } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
+import { useManagerData } from '../../context/ManagerDataContext'
 
 export interface ManagerOrder {
   id: string
@@ -347,7 +348,54 @@ const INITIAL_ORDERS: ManagerOrder[] = [
 
 export const MyOrdersPage: React.FC = () => {
   const { user } = useAuth()
-  const [orders, setOrders] = useState<ManagerOrder[]>(INITIAL_ORDERS)
+  const { allRequests } = useManagerData()
+
+  const liveOrders = useMemo<ManagerOrder[]>(() => {
+    if (!allRequests || allRequests.length === 0) return []
+    return allRequests.map((req) => {
+      const isCompleted = (req.status as string) === 'completed' || req.status === 'delivered'
+      const isInProcurement = req.status === 'assigned_to_vendor' || req.status === 'vendor_accepted'
+      const isRejected = req.status === 'rejected' || req.status === 'finance_rejected' || req.status === 'vendor_rejected'
+      
+      let status: 'Pending' | 'Approved' | 'Rejected' | 'In Procurement' | 'Completed' = 'Pending'
+      if (isCompleted) status = 'Completed'
+      else if (isInProcurement) status = 'In Procurement'
+      else if (isRejected) status = 'Rejected'
+      else if (req.status === 'approved' || req.status === 'finance_review' || req.status === 'recommended_to_finance' || req.status === 'finance_approved') status = 'Approved'
+      else status = 'Pending'
+
+      const qty = req.quantity || 1
+      const totalCost = req.amount || req.approvalParams?.approvedAmount || 0
+      const unitPriceVal = qty > 0 ? Math.round(totalCost / qty) : totalCost
+      const deptClean = (req.department || 'IT').toUpperCase().replace(/\s+/g, '')
+
+      return {
+        id: req.id,
+        title: req.title,
+        description: req.description || req.justification || 'Purchase requisition',
+        category: req.category,
+        quantity: qty,
+        unit: 'Units',
+        estCost: `₹${totalCost.toLocaleString('en-IN')}`,
+        rawCost: totalCost,
+        unitPrice: qty > 1 ? `₹${unitPriceVal.toLocaleString('en-IN')} / unit` : `₹${totalCost.toLocaleString('en-IN')}`,
+        vendor: req.vendor || 'Approved Vendor',
+        deliveryLocation: 'Pune HQ',
+        budgetCode: req.costCenter || `CC-${deptClean}-2026-Q3`,
+        date: req.date,
+        time: '10:00 AM',
+        status: status,
+        currentStage: status === 'Approved' || status === 'In Procurement' ? 4 : (req.currentStage ? req.currentStage : (isCompleted ? 9 : 1)),
+        currentlyWith: status === 'Approved' || status === 'In Procurement' ? 'Procurement Sourcing Desk' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team',
+        lastUpdated: req.date,
+        department: req.department,
+        requester: req.requester,
+        priority: (req.priority as any) || 'Medium',
+      }
+    })
+  }, [allRequests])
+
+  const orders = liveOrders
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'In Procurement' | 'Completed'>('All')
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Hardware' | 'Software'>('All')
@@ -443,10 +491,10 @@ export const MyOrdersPage: React.FC = () => {
                 MANAGER REQUISITION DESK
               </span>
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-50 text-cyan-700 border border-cyan-200 flex items-center gap-1">
-                <Cpu size={11} /> Hardware (10 Stages)
+                <Cpu size={11} /> Hardware Workflow
               </span>
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
-                <Laptop size={11} /> Software (6 Stages)
+                <Laptop size={11} /> Software Workflow
               </span>
               <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
                 FY 2026-Q3 Cycle
@@ -718,7 +766,17 @@ export const MyOrdersPage: React.FC = () => {
           {filteredOrders.map((order) => {
             const isExpanded = expandedIds.has(order.id)
             const isSoftware = detectWorkflowType(order.category, order.title) === 'SOFTWARE'
-            const totalStages = isSoftware ? 6 : 10
+
+            const progression = getWorkflowProgression({
+              status: order.status,
+              financeStatus: (order as any).financeStatus,
+              paymentStatus: (order as any).paymentStatus,
+              category: order.category,
+              title: order.title,
+              currentStage: order.currentStage,
+              history: (order as any).history
+            })
+            const totalStages = progression.totalStages
 
             // Status Styling
             let statusBadge = 'bg-slate-100 text-slate-700 border-slate-200'
@@ -823,7 +881,7 @@ export const MyOrdersPage: React.FC = () => {
                             isExpanded ? 'bg-blue-700 text-blue-100' : 'bg-slate-200/80 text-slate-700'
                           }`}
                         >
-                          Stage {order.currentStage + 1}/{totalStages}
+                          Stage {progression.currentStageIndex + 1}/{totalStages}
                         </span>
                         <span>{isExpanded ? 'Hide Tracking' : 'Track Order'}</span>
                         {isExpanded ? (
@@ -856,7 +914,7 @@ export const MyOrdersPage: React.FC = () => {
                     {/* Total Estimated Cost */}
                     <div className="bg-slate-50/70 hover:bg-slate-50 p-3 rounded-xl border border-slate-100/90 transition-colors">
                       <div className="flex items-center gap-1.5 text-slate-400 mb-1">
-                        <DollarSign size={13} className="text-blue-600" />
+                        <IndianRupee size={13} className="text-blue-600" />
                         <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
                           Total Estimated Value
                         </span>
@@ -917,7 +975,7 @@ export const MyOrdersPage: React.FC = () => {
                           Order Tracking &amp; Workflow Stage Progression
                         </h3>
                         <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80">
-                          Stage {order.currentStage + 1} of {totalStages} ({isSoftware ? 'Software 6-Stage' : 'Hardware 10-Stage'})
+                          Stage {progression.currentStageIndex + 1} of {totalStages} ({isSoftware ? `Software ${totalStages}-Stage` : `Hardware ${totalStages}-Stage`})
                         </span>
                       </div>
 

@@ -152,7 +152,7 @@ export const CreateRequestPage: React.FC = () => {
       subcategory: initialSubcat,
       subscriptionServiceName: '', // Tool/service name for SaaS & Cloud
       description: '',
-      quantity: 1,
+      quantity: 1 as number | '',
       estimatedCost: '' as number | '',
       requiredBy: '',
       department: profile.department || 'IT & Infrastructure',
@@ -200,6 +200,7 @@ export const CreateRequestPage: React.FC = () => {
   }
 
   const costNumber = Number(formData.estimatedCost) || 0
+  const quantityNumber = typeof formData.quantity === 'number' ? formData.quantity : parseInt(String(formData.quantity), 10) || 1
 
   const handleFormSubmit = (e: React.FormEvent, isDraft = false) => {
     e.preventDefault()
@@ -218,7 +219,7 @@ export const CreateRequestPage: React.FC = () => {
         ? formData.subscriptionServiceName
         : formData.subcategory,
       description: formData.description,
-      quantity: formData.quantity,
+      quantity: quantityNumber,
       estimatedCost: costNumber,
       requiredBy: formData.requiredBy,
       department: formData.department,
@@ -407,7 +408,12 @@ export const CreateRequestPage: React.FC = () => {
                 min={1}
                 required
                 value={formData.quantity}
-                onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 1 })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    quantity: e.target.value === '' ? ('' as any) : parseInt(e.target.value, 10),
+                  })
+                }
                 className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
@@ -448,31 +454,7 @@ export const CreateRequestPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Live Inline Budget Hint */}
-          {formData.estimatedCost !== '' && (
-            <div
-              className={`p-3 rounded-xl border text-xs flex items-center gap-2 transition-all ${
-                costNumber <= 50000
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-amber-50 border-amber-200 text-amber-900'
-              }`}
-            >
-              {costNumber <= 50000 ? (
-                <Info size={16} className="text-emerald-600 flex-shrink-0" />
-              ) : (
-                <AlertTriangle size={16} className="text-amber-600 flex-shrink-0" />
-              )}
-              <span>
-                {costNumber <= 50000
-                  ? `✓ Estimated cost of RS {costNumber.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                    })} is within your Manager's approval limit (RS 50,000.00).`
-                  : `⚠️ Estimated cost of RS {costNumber.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                    })} exceeds Manager threshold (RS 50,000.00) — will require Finance & Admin approval.`}
-              </span>
-            </div>
-          )}
+
 
           {/* Rule #3: Expanded Department List & Rule #4: Category Filtered Preferred Vendor */}
           <div className="grid grid-cols-2 gap-4">

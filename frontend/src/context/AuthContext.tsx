@@ -27,27 +27,19 @@ interface AuthContextType {
   loading: boolean
 }
 
-const defaultUserForRole = (r: UserRole): UserProfile => {
-  switch (r) {
-    case 'TEAM_LEAD':
-      return { id: 1, username: 'teamlead', email: 'tl@procurementos.com', role: 'TEAM_LEAD', first_name: 'Team', last_name: 'Lead', job_title: 'Engineering Lead', work_location: 'Pune HQ', phone: '+91 98765 11111' }
-    case 'MANAGER':
-      return { id: 2, username: 'manager', email: 'mgr@procurementos.com', role: 'MANAGER', first_name: 'Sarah', last_name: 'Manager', job_title: 'IT Director', work_location: 'Pune HQ', phone: '+91 98765 22222' }
-    case 'FINANCE':
-      return { id: 3, username: 'finance', email: 'fin@procurementos.com', role: 'FINANCE', first_name: 'David', last_name: 'Finance', job_title: 'VP Finance', work_location: 'Pune HQ', phone: '+91 98765 33333' }
-    case 'ADMIN':
-      return { id: 4, username: 'admin', email: 'admin@procurementos.com', role: 'ADMIN', first_name: 'Priyanka', last_name: 'Sharma', job_title: 'System Administrator', work_location: 'Pune HQ', phone: '+91 98765 44444' }
-    case 'VENDOR':
-      return { id: 5, username: 'vendor_dell', email: 'contact@dell.com', role: 'VENDOR', first_name: 'Michael', last_name: 'Dell', vendor_id_code: 'VND-HW-001', job_title: 'Key Account Manager', work_location: 'Bengaluru', phone: '+91 98765 55555' }
-  }
-}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(() => {
-    const savedRole = localStorage.getItem('user_role') as UserRole
-    if (savedRole) return defaultUserForRole(savedRole)
+    const savedUser = localStorage.getItem('user_profile')
+    if (savedUser) {
+      try {
+        return JSON.parse(savedUser)
+      } catch (e) {
+        return null
+      }
+    }
     return null
   })
   const [role, setRole] = useState<UserRole | null>(() => {
@@ -58,10 +50,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   })
   const [loading, setLoading] = useState(false)
 
-  const login = async (usernameOrEmail: string, pass: string, targetRole?: UserRole): Promise<boolean> => {
+  const login = async (usernameOrEmail: string, pass: string): Promise<boolean> => {
     setLoading(true)
     try {
-      // Try real DRF JWT login
       const res = await apiClient.post('/auth/login/', {
         username: usernameOrEmail,
         password: pass,
@@ -73,23 +64,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('access_token', access)
       localStorage.setItem('refresh_token', refresh)
       localStorage.setItem('user_role', userObj.role)
+      localStorage.setItem('user_profile', JSON.stringify(userObj))
 
       setToken(access)
       setUser(userObj)
       setRole(userObj.role)
       setLoading(false)
       return true
-    } catch {
-      // Fallback for seamless demo/quick portal select
-      const activeRole = targetRole || 'TEAM_LEAD'
-      const mockUser = defaultUserForRole(activeRole)
-      localStorage.setItem('access_token', 'demo-jwt-token')
-      localStorage.setItem('user_role', activeRole)
-      setToken('demo-jwt-token')
-      setUser(mockUser)
-      setRole(activeRole)
+    } catch (err) {
+      console.error('Login failed', err)
       setLoading(false)
-      return true
+      return false
     }
   }
 
@@ -97,16 +82,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('user_role')
+    localStorage.removeItem('user_profile')
     setToken(null)
     setUser(null)
     setRole(null)
   }
 
   const switchRolePortal = (newRole: UserRole) => {
-    const mockUser = defaultUserForRole(newRole)
-    localStorage.setItem('user_role', newRole)
-    setRole(newRole)
-    setUser(mockUser)
+    // Deprecated. Strict role binding applies.
+    console.warn("switchRolePortal is deprecated. Use real authentication.")
   }
 
   return (

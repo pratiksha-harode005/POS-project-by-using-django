@@ -818,6 +818,7 @@ export const AdminRequestsPage: React.FC = () => {
                 financeStatus={trackingReq.financeStatus}
                 paymentStatus={trackingReq.paymentStatus}
                 lastUpdated={trackingReq.date}
+                history={trackingReq.history}
               />
 
               {/* Product-Level Tracking & Multi-Receipt Lifecycle */}

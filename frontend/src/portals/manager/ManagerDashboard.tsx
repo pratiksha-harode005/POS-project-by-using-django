@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  CheckCircle, XCircle, Landmark, DollarSign,
+  CheckCircle, XCircle, Landmark, IndianRupee,
   ArrowUpRight, Clock, AlertCircle, Check, X,
   ArrowRight, AlertTriangle
 } from 'lucide-react'
@@ -148,7 +148,7 @@ export const ManagerDashboard: React.FC = () => {
       subtext: 'Active requests',
       badge: 'Active Total',
       badgeColor: 'text-slate-700 bg-slate-100 border-slate-200',
-      icon: DollarSign,
+      icon: IndianRupee,
       path: '/portal/manager/total-requests',
     },
   ]
