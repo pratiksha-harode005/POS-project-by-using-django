@@ -1004,7 +1004,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         title: rfqData.title,
         deadline: rfqData.deadline,
         terms: rfqData.remarks,
-        status: rfqData.status === 'draft' ? 'New' : (rfqData.status === 'sent' ? 'Open' : 'New'),
+        status: 'Open',
         purchase_request: rfqData.remarks?.includes('Mapped from Approved PR: ') 
             ? rfqData.remarks.split('Mapped from Approved PR: ')[1]
             : null,

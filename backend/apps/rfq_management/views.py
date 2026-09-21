@@ -50,25 +50,43 @@ class RFQViewSet(viewsets.ModelViewSet):
                     data['purchase_request'] = pr.id
                 except PurchaseRequest.DoesNotExist:
                     data['purchase_request'] = None
+        
+        # Force status to 'Open' so vendors can see the RFQ immediately
+        if 'status' not in data or data.get('status') in ('New', '', None):
+            data['status'] = 'Open'
                     
-        # Map invited vendors names to PKs
+        # Map invited vendor names to PKs — always prefer canonical VND-* records
         if 'invited_vendors' in data:
             vendor_names = data.get('invited_vendors', [])
+            if isinstance(vendor_names, str):
+                vendor_names = [vendor_names]
             if vendor_names:
                 vendor_ids = []
                 for vname in vendor_names:
-                    from apps.vendor_management.models import VendorCategory
-                    default_cat = VendorCategory.objects.first()
-                    v, _ = Vendor.objects.get_or_create(
-                        name=vname,
-                        defaults={
-                            'category': default_cat,
-                            'unique_vendor_id': f"V-TEMP-{vname.replace(' ', '')[:6].upper()}-{hash(vname) % 1000}"
-                        }
-                    )
+                    vname = vname.strip()
+                    if not vname:
+                        continue
+                    # Priority 1: exact name + canonical VND- prefix
+                    v = Vendor.objects.filter(name__iexact=vname, unique_vendor_id__startswith='VND-').first()
+                    # Priority 2: any record with this name
+                    if not v:
+                        v = Vendor.objects.filter(name__iexact=vname).first()
+                    # Priority 3: create a new one (should be rare after DB is clean)
+                    if not v:
+                        from apps.vendor_management.models import VendorCategory
+                        default_cat = VendorCategory.objects.first()
+                        safe_uid = f"V-AUTO-{vname.replace(' ', '')[:8].upper()}-{abs(hash(vname)) % 9999}"
+                        v = Vendor.objects.create(
+                            name=vname,
+                            category=default_cat,
+                            unique_vendor_id=safe_uid
+                        )
                     vendor_ids.append(v.id)
-                vendors = vendor_ids
-                data.setlist('invited_vendors', list(vendors)) if hasattr(data, 'setlist') else data.update({'invited_vendors': list(vendors)})
+                
+                if hasattr(data, 'setlist'):
+                    data.setlist('invited_vendors', vendor_ids)
+                else:
+                    data['invited_vendors'] = vendor_ids
             else:
                 if hasattr(data, 'setlist'):
                     data.setlist('invited_vendors', [])
@@ -91,6 +109,7 @@ class RFQViewSet(viewsets.ModelViewSet):
                 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
 
 
 class QuotationViewSet(viewsets.ModelViewSet):
