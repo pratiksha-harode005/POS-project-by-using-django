@@ -1954,7 +1954,7 @@ export const VendorRFQsPage: React.FC = () => {
 
   const [showSubmitModal, setShowSubmitModal] = useState(false)
   const [selectedRfqId, setSelectedRfqId] = useState('')
-  const [localRfqsList, setLocalRfqsList] = useState(rfqs)
+  const [localRfqsList, setLocalRfqsList] = useState<any[]>([])
   const [rfqActions, setRfqActions] = useState<Record<string, VendorRfqAction>>({})
   const [expandedRfqIds, setExpandedRfqIds] = useState<Record<string, boolean>>({})
   const [declineModalRfq, setDeclineModalRfq] = useState<any | null>(null)
@@ -1962,7 +1962,6 @@ export const VendorRFQsPage: React.FC = () => {
 
   useEffect(() => {
     const vendorData = getScopedVendorData(vendorId)
-    const staticRfqs = vendorData.rfqs
     const vendorName = vendorData.vendor.name
     const vendorCategory = vendorData.vendor.category
 
@@ -1989,13 +1988,10 @@ export const VendorRFQsPage: React.FC = () => {
            deliveryLocation: r.purchase_request_detail?.delivery_location || 'HQ',
            originator: r.purchase_request_detail?.created_by_detail?.username || 'System'
        }));
-       setLocalRfqsList(() => {
-           const merged = [...mappedRfqs, ...staticRfqs];
-           return merged.filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
-       });
+       setLocalRfqsList(mappedRfqs);
     }).catch(err => {
        console.error('Failed to fetch vendor RFQs', err);
-       setLocalRfqsList(staticRfqs);
+       setLocalRfqsList([]);
     });
     setRfqActions(getStoredVendorRfqActions(vendorId))
   }, [vendorId])

@@ -56,42 +56,49 @@ class RFQViewSet(viewsets.ModelViewSet):
             data['status'] = 'Open'
                     
         # Map invited vendor names to PKs — always prefer canonical VND-* records
+        vendor_ids = []
         if 'invited_vendors' in data:
             vendor_names = data.get('invited_vendors', [])
             if isinstance(vendor_names, str):
                 vendor_names = [vendor_names]
-            if vendor_names:
-                vendor_ids = []
-                for vname in vendor_names:
-                    vname = vname.strip()
-                    if not vname:
-                        continue
-                    # Priority 1: exact name + canonical VND- prefix
-                    v = Vendor.objects.filter(name__iexact=vname, unique_vendor_id__startswith='VND-').first()
-                    # Priority 2: any record with this name
-                    if not v:
-                        v = Vendor.objects.filter(name__iexact=vname).first()
-                    # Priority 3: create a new one (should be rare after DB is clean)
-                    if not v:
-                        from apps.vendor_management.models import VendorCategory
-                        default_cat = VendorCategory.objects.first()
-                        safe_uid = f"V-AUTO-{vname.replace(' ', '')[:8].upper()}-{abs(hash(vname)) % 9999}"
-                        v = Vendor.objects.create(
-                            name=vname,
-                            category=default_cat,
-                            unique_vendor_id=safe_uid
-                        )
+            for vname in vendor_names:
+                vname = str(vname).strip()
+                if not vname:
+                    continue
+                v = Vendor.objects.filter(name__iexact=vname, unique_vendor_id__startswith='VND-').first()
+                if not v:
+                    v = Vendor.objects.filter(name__iexact=vname).first()
+                if not v:
+                    from apps.vendor_management.models import VendorCategory
+                    default_cat = VendorCategory.objects.first()
+                    safe_uid = f"V-AUTO-{vname.replace(' ', '')[:8].upper()}-{abs(hash(vname)) % 9999}"
+                    v = Vendor.objects.create(
+                        name=vname,
+                        category=default_cat,
+                        unique_vendor_id=safe_uid
+                    )
+                if v and v.id not in vendor_ids:
                     vendor_ids.append(v.id)
-                
-                if hasattr(data, 'setlist'):
-                    data.setlist('invited_vendors', vendor_ids)
-                else:
-                    data['invited_vendors'] = vendor_ids
-            else:
-                if hasattr(data, 'setlist'):
-                    data.setlist('invited_vendors', [])
-                else:
-                    data['invited_vendors'] = []
+
+        # Ensure ALL active vendors in the category of the purchase request are invited
+        if data.get('purchase_request'):
+            try:
+                pr_obj = PurchaseRequest.objects.get(id=data['purchase_request'])
+                if pr_obj.category:
+                    cat_name = pr_obj.category.strip()
+                    cat_vendors = Vendor.objects.filter(
+                        category__name__icontains=cat_name
+                    ).values_list('id', flat=True)
+                    for cv_id in cat_vendors:
+                        if cv_id not in vendor_ids:
+                            vendor_ids.append(cv_id)
+            except PurchaseRequest.DoesNotExist:
+                pass
+
+        if hasattr(data, 'setlist'):
+            data.setlist('invited_vendors', vendor_ids)
+        else:
+            data['invited_vendors'] = vendor_ids
                     
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
