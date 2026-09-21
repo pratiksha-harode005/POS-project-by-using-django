@@ -1961,14 +1961,19 @@ export const VendorRFQsPage: React.FC = () => {
   const [toastMsg, setToastMsg] = useState('')
 
   useEffect(() => {
+    const vendorData = getScopedVendorData(vendorId)
+    const staticRfqs = vendorData.rfqs
+    const vendorName = vendorData.vendor.name
+    const vendorCategory = vendorData.vendor.category
+
     apiClient.get('/rfq/').then(res => {
        const backendRfqs = Array.isArray(res.data) ? res.data : res.data?.results || [];
        const mappedRfqs = backendRfqs.filter((r: any) => {
-           return r.invited_vendors_detail?.some((iv: any) => iv.name === vendor.name);
+           return r.invited_vendors_detail?.some((iv: any) => iv.name === vendorName);
        }).map((r: any) => ({
            id: r.rfq_id || `RFQ-${r.id}`,
            title: r.title,
-           category: r.purchase_request_detail?.category || vendor.category,
+           category: r.purchase_request_detail?.category || vendorCategory,
            subcategory: r.purchase_request_detail?.subcategory || 'General',
            description: r.purchase_request_detail?.description || r.terms,
            qty: r.purchase_request_detail?.quantity || 1,
@@ -1979,16 +1984,16 @@ export const VendorRFQsPage: React.FC = () => {
            deliveryLocation: r.purchase_request_detail?.delivery_location || 'HQ',
            originator: r.purchase_request_detail?.created_by_detail?.username || 'System'
        }));
-       setLocalRfqsList((prev: any[]) => {
-           const merged = [...mappedRfqs, ...rfqs];
+       setLocalRfqsList(() => {
+           const merged = [...mappedRfqs, ...staticRfqs];
            return merged.filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
        });
     }).catch(err => {
        console.error('Failed to fetch vendor RFQs', err);
-       setLocalRfqsList(rfqs);
+       setLocalRfqsList(staticRfqs);
     });
     setRfqActions(getStoredVendorRfqActions(vendorId))
-  }, [vendorId, vendor, rfqs])
+  }, [vendorId])
 
   const openRfqs = localRfqsList.filter(
     (r) => r.status === 'Open' && rfqActions[r.id]?.status !== 'Declined' && new Date(r.deadline) >= new Date()
