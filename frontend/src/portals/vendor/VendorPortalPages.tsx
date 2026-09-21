@@ -361,240 +361,43 @@ export function getScopedVendorData(vendorId: string) {
   // Derive integer seed from vendorId characters
   const seed = vendorId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
 
-  // RFQs scoped to this vendorId
-  const rfqs = [
-    {
-      id: `RFQ-2026-${(seed % 90) + 10}`,
-      title: `${vendor.name} - ${vendor.category} Procurement Requirement`,
-      category: vendor.category,
-      subcategory: vendor.category === 'IT Hardware' ? 'Enterprise Laptops & Workstations' :
-                   vendor.category === 'Software & SaaS' ? 'Cloud Collaboration Suite' :
-                   vendor.category === 'Office Accessories' ? 'Ergonomic Workstations & Seating' :
-                   vendor.category === 'Networking & Telecom' ? 'Core Switches & Fiber Routers' :
-                   'General Equipment & Hardware',
-      qty: `${(seed % 35) + 15} Units`,
-      deadline: '2026-09-28',
-      deliveryLocation: 'Pune HQ, Main Facility',
-      budgetEst: (seed * 350) % 50000 + 10000,
-      description: `Official enterprise procurement requirement for ${vendor.category}. Vendor is requested to supply line-item pricing, technical SLA commitment, and standard OEM warranty coverage.`,
-      attachments: ['Technical_Specification_Doc_v2.pdf', 'RF_Requirements_Compliance.docx'],
-      requiredBy: '2026-10-15',
-      status: 'Open',
-    },
-    {
-      id: `RFQ-2026-${(seed % 90) + 25}`,
-      title: `Supplemental ${vendor.category} Upgrade Package`,
-      category: vendor.category,
-      subcategory: vendor.category === 'IT Hardware' ? 'Server Storage Arrays & Displays' :
-                   vendor.category === 'Software & SaaS' ? 'SaaS Enterprise Tier Licenses' :
-                   vendor.category === 'Office Accessories' ? 'Executive Desk Systems' :
-                   vendor.category === 'Networking & Telecom' ? 'Wireless Access Points & Optics' :
-                   'Peripheral Accessories',
-      qty: `${(seed % 20) + 10} Units`,
-      deadline: '2026-10-05',
-      deliveryLocation: 'Bengaluru Tech Center',
-      budgetEst: (seed * 180) % 30000 + 5000,
-      description: `Supplemental upgrade package for ${vendor.category} facility deployment. Requires fast turnaround and compliance certificate upon delivery.`,
-      attachments: ['Upgrade_Deployment_Scope.pdf'],
-      requiredBy: '2026-10-20',
-      status: 'Open',
-    },
-    {
-      id: `RFQ-2025-${(seed % 90) + 60}`,
-      title: `Legacy ${vendor.category} Refresh & Maintenance`,
-      category: vendor.category,
-      subcategory: 'Legacy Infrastructure',
-      qty: '5 Units',
-      deadline: '2025-11-20',
-      deliveryLocation: 'Mumbai Data Hub',
-      budgetEst: (seed * 120) % 20000 + 4000,
-      description: 'Annual legacy refresh maintenance contract.',
-      attachments: ['Legacy_Maintenance_Contract.pdf'],
-      requiredBy: '2025-12-01',
-      status: 'Expired',
-    },
-    {
-      id: `RFQ-2025-${(seed % 90) + 75}`,
-      title: `Historical ${vendor.category} Infrastructure Contract`,
-      category: vendor.category,
-      subcategory: 'Infrastructure Hardware',
-      qty: '12 Units',
-      deadline: '2025-12-10',
-      deliveryLocation: 'Pune HQ, Annex Facility',
-      budgetEst: (seed * 220) % 28000 + 6000,
-      description: 'Historical infrastructure supply contract.',
-      attachments: ['Historical_Annex_Specs.pdf'],
-      requiredBy: '2025-12-25',
-      status: 'Expired',
-    },
-  ]
+  // RFQs scoped to this vendorId (Dynamic from API only)
+  const rfqs: any[] = []
 
   // Quotations scoped to this vendorId (merged with user submitted quotes)
   const userQuotes = getStoredVendorQuotes(vendorId)
-  const defaultQuotations = [
-    {
-      id: `QUO-${vendorId.replace(/[^A-Z0-9]/g, '')}-001`,
-      rfqRef: rfqs[0].id,
-      quotedPrice: (seed * 340) % 48000 + 9500,
-      leadTime: `${(seed % 10) + 3} Days`,
-      status: 'Selected',
-      submittedDate: '2026-09-08',
-    },
-    {
-      id: `QUO-${vendorId.replace(/[^A-Z0-9]/g, '')}-002`,
-      rfqRef: rfqs[1].id,
-      quotedPrice: (seed * 170) % 29000 + 4800,
-      leadTime: `${(seed % 7) + 5} Days`,
-      status: 'Submitted',
-      submittedDate: '2026-09-10',
-    },
-    {
-      id: `QUO-${vendorId.replace(/[^A-Z0-9]/g, '')}-003`,
-      rfqRef: rfqs[2].id,
-      quotedPrice: (seed * 210) % 22000 + 5200,
-      leadTime: `${(seed % 5) + 10} Days`,
-      status: 'Rejected',
-      submittedDate: '2025-11-18',
-    },
-  ]
-
+  const defaultQuotations: any[] = []
   const quotations = [...userQuotes, ...defaultQuotations]
 
   // POs scoped to this vendorId
-  const pos = [
-    {
-      id: `PO-${vendorId.replace(/[^A-Z0-9]/g, '')}-${(seed % 80) + 10}`,
-      requestRef: `REQ-${(seed % 8000) + 1000}`,
-      rfqRef: rfqs[0].id,
-      title: `${vendor.category} Order for ${vendor.name}`,
-      amount: quotations[0].quotedPrice,
-      issueDate: '2026-09-09',
-      deliveryDueDate: '2026-09-26',
-      status: 'Confirmed',
-    },
-  ]
+  const pos: any[] = []
 
   // Deliveries scoped to this vendorId
-  const deliveries = [
-    {
-      id: `TRK-${vendorId.replace(/[^A-Z0-9]/g, '')}-${(seed % 800) + 100}`,
-      poRef: pos[0].id,
-      item: pos[0].title,
-      courier: `Logistics Express (#EX-${seed * 4})`,
-      dispatchDate: '2026-09-11',
-      expectedDate: '2026-09-24',
-      destination: 'Pune HQ, Main Facility',
-      status: 'In Transit',
-    },
-  ]
+  const deliveries: any[] = []
 
   // Receipts scoped to this vendorId (merged with user-added receipts)
-  const defaultReceipts = [
-    {
-      id: `GRN-${vendorId.replace(/[^A-Z0-9]/g, '')}-${(seed % 80) + 10}`,
-      poRef: pos[0].id,
-      title: pos[0].title,
-      receivedBy: 'Team Lead Inspection',
-      receivedDate: '2026-09-12',
-      quantityReceived: '100% Verified',
-      amount: pos[0].amount,
-      status: 'Verified GRN',
-    },
-  ]
+  const defaultReceipts: any[] = []
   const userReceipts = getStoredVendorReceipts(vendorId)
   const receipts = [...userReceipts, ...defaultReceipts]
 
   // Invoices scoped to this vendorId (merged with user submitted invoices)
-  const defaultInvoices = [
-    {
-      id: `INV-${vendorId.replace(/[^A-Z0-9]/g, '')}-${(seed % 80) + 100}`,
-      poRef: pos[0].id,
-      title: pos[0].title,
-      amount: pos[0].amount,
-      invoiceDate: '2026-09-11',
-      dueDate: '2026-10-11',
-      status: 'Approved',
-    },
-  ]
-
+  const defaultInvoices: any[] = []
   const userInvoices = getStoredVendorInvoices(vendorId)
   const invoices = [...userInvoices, ...defaultInvoices]
 
   // Payments scoped to this vendorId
-  const payments = [
-    {
-      id: `PAY-${vendorId.replace(/[^A-Z0-9]/g, '')}-01`,
-      invoiceRef: invoices[0].id,
-      poRef: pos[0].id,
-      amount: invoices[0].amount,
-      disbursedDate: 'Scheduled 2026-09-30',
-      transferRef: `TXN-${seed * 112}`,
-      bankName: 'Corporate Settlement Account',
-      status: 'Scheduled',
-    },
-  ]
+  const payments: any[] = []
 
   // Derived win rate
-  const winRate = `${(82.0 + (seed % 14.5)).toFixed(1)}%`
+  const winRate = `100.0%`
 
   // Documents scoped to this vendorId (merged with user uploaded docs)
-  const defaultDocuments = [
-    {
-      id: `DOC-${vendorId}-GST`,
-      name: `${vendor.name} GST & Tax ID Certificate`,
-      category: 'Compliance & Tax',
-      uploadedDate: '2024-01-15',
-      expiryDate: '2027-12-31',
-      status: 'Verified',
-      fileSize: '1.4 MB',
-    },
-    {
-      id: `DOC-${vendorId}-NDA`,
-      name: `${vendor.name} Master Non-Disclosure Agreement (NDA)`,
-      category: 'Contracts & NDA',
-      uploadedDate: '2024-02-01',
-      expiryDate: '2026-10-15',
-      status: 'Expiring Soon',
-      fileSize: '2.1 MB',
-    },
-    {
-      id: `DOC-${vendorId}-CERT`,
-      name: `${vendor.name} ISO-9001 Quality Management Certificate`,
-      category: 'Certifications',
-      uploadedDate: '2024-03-10',
-      expiryDate: '2027-03-10',
-      status: 'Verified',
-      fileSize: '890 KB',
-    },
-  ]
-
+  const defaultDocuments: any[] = []
   const userDocs = getStoredVendorDocuments(vendorId)
   const documents = [...userDocs, ...defaultDocuments]
 
-  // Vendor Notifications (Latest 3)
-  const notifications = [
-    {
-      id: `NOTIF-${vendorId}-01`,
-      title: `⭐ Top Ranked Category Choice`,
-      message: `${vendor.name} is currently the #1 auto-recommended vendor for ${vendor.category} with ${vendor.score} score.`,
-      timestamp: '15 mins ago',
-      type: 'Recommendation',
-    },
-    {
-      id: `NOTIF-${vendorId}-02`,
-      title: `📦 Purchase Order Issued`,
-      message: `Purchase Order ${pos[0]?.id || 'PO-2026-089'} confirmed. Delivery expected by ${pos[0]?.deliveryDueDate || '2026-09-26'}.`,
-      timestamp: '2 hours ago',
-      type: 'PO Update',
-    },
-    {
-      id: `NOTIF-${vendorId}-03`,
-      title: `💳 Disbursement Scheduled`,
-      message: `Payment transfer of RS {vendor.totalDisbursed.toLocaleString()} scheduled for corporate account release.`,
-      timestamp: '1 day ago',
-      type: 'Payment',
-    },
-  ]
+  // Vendor Notifications (Dynamic)
+  const notifications: any[] = []
 
   return {
     vendor: { ...vendor, winRate },
@@ -1055,33 +858,39 @@ export const VendorDashboard: React.FC = () => {
             </button>
           </div>
           <div className="space-y-3 text-xs">
-            {localRfqs.map((r) => {
-              const urgency = getRFQDeadlineUrgency(r.deadline)
-              return (
-                <div key={r.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex flex-wrap justify-between items-center gap-2">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-blue-600">{r.id}</span>
-                      {isTopRecommended && (
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white flex items-center gap-1 shadow-xs">
-                          <Star size={10} className="fill-white" /> ⭐ RECOMMENDED VENDOR
-                        </span>
-                      )}
-                      {urgency && (
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] border ${urgency.style}`}>
-                          {urgency.label}
-                        </span>
-                      )}
+            {localRfqs.length === 0 ? (
+              <div className="p-6 text-center text-gray-500 text-xs bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                No open RFQs currently available for bidding.
+              </div>
+            ) : (
+              localRfqs.map((r) => {
+                const urgency = getRFQDeadlineUrgency(r.deadline)
+                return (
+                  <div key={r.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex flex-wrap justify-between items-center gap-2">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-blue-600">{r.id}</span>
+                        {isTopRecommended && (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white flex items-center gap-1 shadow-xs">
+                            <Star size={10} className="fill-white" /> ⭐ RECOMMENDED VENDOR
+                          </span>
+                        )}
+                        {urgency && (
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] border ${urgency.style}`}>
+                            {urgency.label}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-bold text-gray-900 mt-1">{r.title}</h4>
+                      <p className="text-gray-500 mt-0.5">Deadline: {r.deadline} • Location: {r.deliveryLocation}</p>
                     </div>
-                    <h4 className="font-bold text-gray-900 mt-1">{r.title}</h4>
-                    <p className="text-gray-500 mt-0.5">Deadline: {r.deadline} • Location: {r.deliveryLocation}</p>
+                    <span className="font-black text-gray-900 bg-white px-2.5 py-1 rounded border shadow-xs">
+                      RS {r.budgetEst.toLocaleString()}
+                    </span>
                   </div>
-                  <span className="font-black text-gray-900 bg-white px-2.5 py-1 rounded border shadow-xs">
-                    RS {r.budgetEst.toLocaleString()}
-                  </span>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
         </div>
 
@@ -1099,18 +908,24 @@ export const VendorDashboard: React.FC = () => {
             </button>
           </div>
           <div className="space-y-3 text-xs">
-            {pos.map((p) => (
-              <div key={p.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex justify-between items-center gap-2">
-                <div>
-                  <span className="font-bold text-blue-600">{p.id}</span>
-                  <h4 className="font-bold text-gray-900 mt-0.5">{p.title}</h4>
-                  <p className="text-gray-500 mt-0.5">Issue Date: {p.issueDate} • Due: {p.deliveryDueDate}</p>
-                </div>
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
-                  {p.status}
-                </span>
+            {pos.length === 0 ? (
+              <div className="p-6 text-center text-gray-500 text-xs bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                No purchase orders issued yet.
               </div>
-            ))}
+            ) : (
+              pos.map((p) => (
+                <div key={p.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex justify-between items-center gap-2">
+                  <div>
+                    <span className="font-bold text-blue-600">{p.id}</span>
+                    <h4 className="font-bold text-gray-900 mt-0.5">{p.title}</h4>
+                    <p className="text-gray-500 mt-0.5">Issue Date: {p.issueDate} • Due: {p.deliveryDueDate}</p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                    {p.status}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -1131,25 +946,31 @@ export const VendorDashboard: React.FC = () => {
             </button>
           </div>
           <div className="space-y-3 text-xs">
-            {deliveries.map((d) => (
-              <div key={d.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex flex-wrap justify-between items-center gap-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-purple-700 bg-purple-100/70 px-2 py-0.5 rounded text-[10px]">
-                      {d.poRef}
-                    </span>
-                    <span className="text-xs font-bold text-gray-900">{d.item}</span>
-                  </div>
-                  <p className="text-gray-500 mt-1">
-                    Expected: <strong className="text-gray-800">{d.expectedDate}</strong> • Location: {d.destination}
-                  </p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Carrier: {d.courier}</p>
-                </div>
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                  {d.status}
-                </span>
+            {deliveries.length === 0 ? (
+              <div className="p-6 text-center text-gray-500 text-xs bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                No upcoming deliveries scheduled.
               </div>
-            ))}
+            ) : (
+              deliveries.map((d) => (
+                <div key={d.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex flex-wrap justify-between items-center gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-purple-700 bg-purple-100/70 px-2 py-0.5 rounded text-[10px]">
+                        {d.poRef}
+                      </span>
+                      <span className="text-xs font-bold text-gray-900">{d.item}</span>
+                    </div>
+                    <p className="text-gray-500 mt-1">
+                      Expected: <strong className="text-gray-800">{d.expectedDate}</strong> • Location: {d.destination}
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Carrier: {d.courier}</p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                    {d.status}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -1157,25 +978,31 @@ export const VendorDashboard: React.FC = () => {
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-              <Bell size={16} className="text-blue-600" /> Recent Notifications (Latest 3)
+              <Bell size={16} className="text-blue-600" /> Recent Notifications
             </h3>
             <span className="text-xs font-bold text-gray-400">Vendor Activity Log</span>
           </div>
           <div className="space-y-3 text-xs">
-            {notifications.slice(0, 3).map((n) => (
-              <div key={n.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center shrink-0 mt-0.5">
-                  <Bell size={15} />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-gray-900 text-xs">{n.title}</h4>
-                    <span className="text-[10px] text-gray-400 font-medium">{n.timestamp}</span>
-                  </div>
-                  <p className="text-gray-600 mt-0.5 text-[11px] leading-snug">{n.message}</p>
-                </div>
+            {notifications.length === 0 ? (
+              <div className="p-6 text-center text-gray-500 text-xs bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                No recent notifications.
               </div>
-            ))}
+            ) : (
+              notifications.slice(0, 3).map((n) => (
+                <div key={n.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center shrink-0 mt-0.5">
+                    <Bell size={15} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-gray-900 text-xs">{n.title}</h4>
+                      <span className="text-[10px] text-gray-400 font-medium">{n.timestamp}</span>
+                    </div>
+                    <p className="text-gray-600 mt-0.5 text-[11px] leading-snug">{n.message}</p>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
