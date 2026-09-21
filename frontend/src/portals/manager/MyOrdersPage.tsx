@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { TrackingStepper, StepHistoryItem } from '../../components/portal/TrackingStepper'
-import { detectWorkflowType } from '../../utils/workflowUtils'
+import { detectWorkflowType, getWorkflowProgression } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
 import { useManagerData } from '../../context/ManagerDataContext'
 
@@ -491,10 +491,10 @@ export const MyOrdersPage: React.FC = () => {
                 MANAGER REQUISITION DESK
               </span>
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-50 text-cyan-700 border border-cyan-200 flex items-center gap-1">
-                <Cpu size={11} /> Hardware (10 Stages)
+                <Cpu size={11} /> Hardware Workflow
               </span>
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
-                <Laptop size={11} /> Software (6 Stages)
+                <Laptop size={11} /> Software Workflow
               </span>
               <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
                 FY 2026-Q3 Cycle
@@ -766,7 +766,17 @@ export const MyOrdersPage: React.FC = () => {
           {filteredOrders.map((order) => {
             const isExpanded = expandedIds.has(order.id)
             const isSoftware = detectWorkflowType(order.category, order.title) === 'SOFTWARE'
-            const totalStages = isSoftware ? 6 : 10
+
+            const progression = getWorkflowProgression({
+              status: order.status,
+              financeStatus: (order as any).financeStatus,
+              paymentStatus: (order as any).paymentStatus,
+              category: order.category,
+              title: order.title,
+              currentStage: order.currentStage,
+              history: (order as any).history
+            })
+            const totalStages = progression.totalStages
 
             // Status Styling
             let statusBadge = 'bg-slate-100 text-slate-700 border-slate-200'
@@ -871,7 +881,7 @@ export const MyOrdersPage: React.FC = () => {
                             isExpanded ? 'bg-blue-700 text-blue-100' : 'bg-slate-200/80 text-slate-700'
                           }`}
                         >
-                          Stage {order.currentStage + 1}/{totalStages}
+                          Stage {progression.currentStageIndex + 1}/{totalStages}
                         </span>
                         <span>{isExpanded ? 'Hide Tracking' : 'Track Order'}</span>
                         {isExpanded ? (
@@ -965,7 +975,7 @@ export const MyOrdersPage: React.FC = () => {
                           Order Tracking &amp; Workflow Stage Progression
                         </h3>
                         <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80">
-                          Stage {order.currentStage + 1} of {totalStages} ({isSoftware ? 'Software 6-Stage' : 'Hardware 10-Stage'})
+                          Stage {progression.currentStageIndex + 1} of {totalStages} ({isSoftware ? `Software ${totalStages}-Stage` : `Hardware ${totalStages}-Stage`})
                         </span>
                       </div>
 

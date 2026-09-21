@@ -17,7 +17,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
                 return Payment.objects.filter(vendor=user.vendor_profile).order_by('-created_at')
-            return Payment.objects.none()
+            return Payment.objects.all()
         elif user.role == 'TEAM_LEAD':
             return Payment.objects.filter(purchase_request__created_by=user).order_by('-created_at')
         return Payment.objects.all().order_by('-created_at')

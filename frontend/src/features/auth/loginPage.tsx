@@ -19,10 +19,10 @@ import {
 
 /* ─── Role definitions & default credentials ─── */
 const roles = [
-  { label: 'Team Lead', roleKey: 'TEAM_LEAD' as UserRole, email: 'tl@procurementos.com', pass: 'password123', icon: Users, bg: '#DBEAFE', color: '#2563EB' },
-  { label: 'Manager',   roleKey: 'MANAGER' as UserRole,   email: 'mgr@procurementos.com', pass: 'password123', icon: BarChart3, bg: '#DCFCE7', color: '#16A34A' },
-  { label: 'Finance',   roleKey: 'FINANCE' as UserRole,   email: 'fin@procurementos.com', pass: 'password123', icon: IndianRupee, bg: '#FFEDD5', color: '#D97706' },
-  { label: 'Admin',     roleKey: 'ADMIN' as UserRole,     email: 'admin@procurementos.com', pass: 'password123', icon: Settings, bg: '#EDE9FE', color: '#7C3AED' },
+  { label: 'Team Lead', roleKey: 'TEAM_LEAD' as UserRole, email: 'teamlead@kss.com', pass: 'password123', icon: Users, bg: '#DBEAFE', color: '#2563EB' },
+  { label: 'Manager',   roleKey: 'MANAGER' as UserRole,   email: 'manager@kss.com', pass: 'password123', icon: BarChart3, bg: '#DCFCE7', color: '#16A34A' },
+  { label: 'Finance',   roleKey: 'FINANCE' as UserRole,   email: 'finance@kss.com', pass: 'password123', icon: IndianRupee, bg: '#FFEDD5', color: '#D97706' },
+  { label: 'Admin',     roleKey: 'ADMIN' as UserRole,     email: 'admin@kss.com', pass: 'password123', icon: Settings, bg: '#EDE9FE', color: '#7C3AED' },
   { label: 'Vendor',    roleKey: 'VENDOR' as UserRole,    email: 'contact@dell.com', pass: 'password123', icon: Truck, bg: '#FCE7F3', color: '#DB2777' },
 ]
 
@@ -30,7 +30,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
 
-  const [email, setEmail]         = useState('tl@procurementos.com')
+  const [email, setEmail]         = useState('teamlead@kss.com')
   const [password, setPassword]   = useState('password123')
   const [showPass, setShowPass]   = useState(false)
   const [selectedRole, setRole]   = useState<UserRole>('TEAM_LEAD')
@@ -78,15 +78,20 @@ export default function LoginPage() {
     setLoading(true)
 
     const targetRole = selectedRole || detectRoleFromEmail(email)
-    await login(email, password, targetRole)
+    const successResult = await login(email, password, targetRole)
 
-    setTimeout(() => {
-      setLoading(false)
-      setSuccess(true)
+    if (successResult) {
       setTimeout(() => {
-        navigate(`/portal/${targetRole.toLowerCase()}/dashboard`)
-      }, 700)
-    }, 600)
+        setLoading(false)
+        setSuccess(true)
+        setTimeout(() => {
+          navigate(`/portal/${targetRole.toLowerCase()}/dashboard`)
+        }, 700)
+      }, 600)
+    } else {
+      setLoading(false)
+      setErrors({ password: 'Login failed. Please check your credentials.' })
+    }
   }
 
   const clearError = (field: keyof typeof errors) => {

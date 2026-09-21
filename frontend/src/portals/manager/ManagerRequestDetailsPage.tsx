@@ -106,6 +106,7 @@ export const ManagerRequestDetailsPage: React.FC = () => {
         financeStatus={req.financeStatus}
         paymentStatus={req.paymentStatus}
         lastUpdated={req.date}
+        history={req.history}
       />
 
       {/* Request Details Card */}

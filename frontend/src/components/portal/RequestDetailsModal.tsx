@@ -31,54 +31,16 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
 }) => {
   if (!isOpen || !request) return null
 
-  // Derive subcategory
-  const getSubcategory = () => {
-    const t = (request.title + ' ' + (request.category || '')).toLowerCase()
-    if (t.includes('laptop') || t.includes('macbook')) return 'Laptops'
-    if (t.includes('server')) return 'Rack Servers'
-    if (t.includes('monitor') || t.includes('display')) return 'Monitors'
-    if (t.includes('cloud') || t.includes('aws') || t.includes('azure')) return 'Cloud Infrastructure'
-    if (t.includes('software') || t.includes('saas') || t.includes('license')) return 'Enterprise Software'
-    if (t.includes('chair') || t.includes('furniture') || t.includes('desk')) return 'Office Furniture'
-    if (t.includes('steel') || t.includes('raw')) return 'Raw Materials'
-    return 'Office Equipment'
-  }
+  const subcategory = request.subcategory || 'Office Equipment'
+  const warranty = '1 Year' // or derived from request if there was a warranty field
 
-  // Derive warranty period
-  const getWarranty = () => {
-    const t = (request.title + ' ' + (request.category || '')).toLowerCase()
-    if (t.includes('cloud') || t.includes('software') || t.includes('renewal')) return '1 Year'
-    if (t.includes('macbook') || t.includes('laptop')) return '3 Years'
-    if (t.includes('server')) return '5 Years'
-    if (t.includes('chair') || t.includes('furniture')) return '5 Years'
-    return '1 Year'
-  }
+  const quantity = request.quantity || 1
+  const requiredByDate = request.requiredBy || '2026-09-30'
 
-  const subcategory = getSubcategory()
-  const warranty = getWarranty()
-
-  // Derive quantity from title / amount
-  const quantity = request.title.toLowerCase().includes('laptop')
-    ? 10
-    : request.title.toLowerCase().includes('monitor')
-    ? 25
-    : request.title.toLowerCase().includes('chair')
-    ? 50
-    : 1
-
-  // Format required by date
-  const requiredByDate = request.date
-    ? (() => {
-        const d = new Date(request.date)
-        d.setDate(d.getDate() + 20)
-        return d.toISOString().split('T')[0]
-      })()
-    : '2026-09-30'
-
-  const deliveryLocation = 'Pune HQ, 4th Floor'
-  const preferredVendor = request.vendor || (request.category?.toLowerCase().includes('software') ? 'Amazon Web Services' : 'Dell Technologies')
-  const justification = request.justification || `${request.title} is required to maintain business continuity, sprint deliverables, and departmental operational goals.`
-  const description = request.description || `${request.title} required by ${request.requester} for ${request.department}. Includes enterprise delivery, compliance certifications, and SLA support.`
+  const deliveryLocation = request.deliveryLocation || 'Pune HQ, 4th Floor'
+  const preferredVendor = (request as any).preferredVendor || request.vendor || 'Dell Technologies'
+  const justification = request.justification || 'Required for operational continuity.'
+  const description = request.description || request.title
 
   // Product specifications breakdown
   const getProductDetails = () => {

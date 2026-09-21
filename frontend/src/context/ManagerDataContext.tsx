@@ -21,7 +21,9 @@ import {
   recommendToFinanceApi,
   sendToFinanceApi,
   getBudgets,
-  getRFQs
+  getRFQs,
+  createRFQApi,
+  apiClient
 } from '../api/managerApi'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -70,8 +72,11 @@ export interface ProcurementRequest {
   requester: string
   department: string
   category: string
+  subcategory?: string
   amount: number
   quantity?: number
+  requiredBy?: string
+  deliveryLocation?: string
   currentStage?: number
   date: string
   status: RequestStatus
@@ -80,11 +85,14 @@ export interface ProcurementRequest {
   costCenter?: string
   description?: string
   justification?: string
+  flowType?: string
+  extraFields?: Record<string, any>
   approvalParams?: ApprovalParameters
   rejectionReason?: string
   rejectedBy?: string
   rejectedDate?: string
   recommendationReason?: string
+  history?: any[]
   recommendedBy?: string
   recommendedDate?: string
   approvedBy?: string
@@ -595,6 +603,9 @@ const MOCK_QUOTATIONS: QuotationItem[] = []
 
 const ManagerDataContext = createContext<ManagerDataContextType | undefined>(undefined)
 
+// Force HMR update
+console.log("ManagerDataContext loaded with real API integration!")
+
 export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [arrivedRequests, setArrivedRequests] = useState<ProcurementRequest[]>(MOCK_ARRIVED)
   const [pendingApprovals, setPendingApprovals] = useState<ProcurementRequest[]>(MOCK_PENDING_APPROVALS)
@@ -604,7 +615,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [recommendedToFinance, setRecommendedToFinance] = useState<ProcurementRequest[]>(MOCK_RECOMMENDED)
   const [recommendedToAdmin, setRecommendedToAdmin] = useState<ProcurementRequest[]>(MOCK_RECOMMENDED_TO_ADMIN)
   const [rfqs, setRfqs] = useState<RFQ[]>(MOCK_RFQS)
-  const [budgets] = useState<BudgetDepartment[]>(MOCK_BUDGETS)
+  const [budgets, setBudgets] = useState<BudgetDepartment[]>([])
   const [tickets, setTickets] = useState<RaiseTicket[]>(MOCK_TICKETS)
   const [payments, setPayments] = useState<PaymentRecord[]>(MOCK_PAYMENTS)
   const [complaints, setComplaints] = useState<Complaint[]>(MOCK_COMPLAINTS)
@@ -636,8 +647,11 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           requester: item.created_by_detail?.first_name ? `${item.created_by_detail.first_name} ${item.created_by_detail.last_name}` : (existing?.requester || 'Team Lead'),
           department: item.department_detail?.name || existing?.department || 'IT',
           category: item.category || existing?.category || 'General',
+          subcategory: item.subcategory || existing?.subcategory || 'Office Equipment',
           amount: effectiveAmount,
           quantity: item.quantity || existing?.quantity || 1,
+          requiredBy: item.required_by || existing?.requiredBy,
+          deliveryLocation: item.delivery_location || existing?.deliveryLocation,
           currentStage: item.current_stage || existing?.currentStage || 1,
           costCenter: item.cost_center || item.budget_code || existing?.costCenter,
           date: item.created_at ? item.created_at.split('T')[0] : (existing?.date || new Date().toISOString().split('T')[0]),
@@ -646,13 +660,115 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           vendor: item.preferred_vendor || existing?.vendor || 'Preferred Vendor',
           description: item.description || existing?.description,
           justification: item.justification || existing?.justification,
+          flowType: item.flow_type || existing?.flowType || 'A',
+          extraFields: item.extra_fields || existing?.extraFields || {},
           approvalParams: existing?.approvalParams,
+          history: Array.isArray(item.approval_steps)
+            ? item.approval_steps.map((s: any) => ({
+                date: s.created_at || '',
+                actorRole: s.role || 'User',
+                actorName: s.actor_detail ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : 'Unknown',
+                action: s.decision || '',
+                remark: s.notes || s.reason_detail?.text || '',
+              }))
+            : existing?.history || [],
         }
       })
       setPendingApprovals(mapped.filter(r => r.status === 'pending_approval'))
       setMyApprovals(mapped.filter(r => r.status === 'approved'))
       setRejectedRequests(mapped.filter(r => r.status === 'rejected'))
       setFinanceReview(mapped.filter(r => r.status === 'finance_review'))
+
+      // Fetch other core data
+      try {
+        const [budgetsRes, rfqsRes, vendorsRes, posRes, invRes, payRes] = await Promise.all([
+          apiClient.get('/budgets/'),
+          apiClient.get('/rfq/'),
+          apiClient.get('/vendors/'),
+          apiClient.get('/procurement/purchase-orders/'),
+          apiClient.get('/invoices/'),
+          apiClient.get('/payments/')
+        ])
+        setBudgets(Array.isArray(budgetsRes.data) ? budgetsRes.data : budgetsRes.data?.results || [])
+        const rawRfqs = Array.isArray(rfqsRes.data) ? rfqsRes.data : rfqsRes.data?.results || []
+          
+          // Sync purchase request stages from RFQs
+          rawRfqs.forEach((backendRfq: any) => {
+              if (backendRfq.purchase_request_detail) {
+                  const pr = backendRfq.purchase_request_detail;
+                  const updateReq = (r: ProcurementRequest) => r.id === pr.request_id ? { ...r, currentStage: pr.current_stage, status: pr.current_stage === 5 ? 'quotes_received' : r.status } : r;
+                  setMyApprovals((prev: any) => prev.map(updateReq));
+                  setPendingApprovals((prev: any) => prev.map(updateReq));
+                  setArrivedRequests((prev: any) => prev.map(updateReq));
+                  setFinanceReview((prev: any) => prev.map(updateReq));
+              }
+          })
+        setRfqs(rawRfqs.map((r: any) => {
+          const vendors = (r.invited_vendors_detail || []).map((iv: any) => {
+            const q = (r.quotations || []).find((qt: any) => qt.vendor === iv.id || qt.vendor_detail?.id === iv.id)
+            return {
+              name: iv.name,
+              invitedOn: (r.created_at || '').split('T')[0] || r.deadline,
+              response: q ? 'Received' : 'Pending',
+              quote: q ? Number(q.price) : undefined,
+              deliveryDays: q ? q.delivery_days : undefined,
+              warranty: q ? `${q.warranty_months} months` : undefined,
+              paymentTerms: q ? q.terms_conditions : undefined
+            }
+          })
+          
+          let st = 'draft'
+          const rawStatus = (r.status || '').toUpperCase()
+          if (rawStatus === 'OPEN') {
+            st = vendors.some((v: any) => v.response === 'Received') ? 'quotes_received' : 'sent'
+          } else if (rawStatus === 'CLOSED') {
+            st = 'awarded'
+          } else if (rawStatus === 'EXPIRED') {
+            st = 'expired'
+          }
+
+          const cb = r.purchase_request_detail?.created_by_detail
+          const createdByStr = cb ? `${cb.first_name || ''} ${cb.last_name || ''}`.trim() || cb.username : 'System'
+
+          return {
+            ...r,
+            id: r.rfq_id || r.id,
+            status: st,
+            department: r.purchase_request_detail?.department_detail?.name || 'IT',
+            createdBy: createdByStr,
+            vendors,
+            estimatedAmount: r.estimatedAmount || r.purchase_request_detail?.total_estimated_cost || r.estimated_amount || 0
+          }
+        }))
+        const rawVendors = Array.isArray(vendorsRes.data) ? vendorsRes.data : vendorsRes.data?.results || []
+        setVendors(rawVendors.map((v: any) => {
+          let st = 'Pending Approval'
+          const rawStatus = (v.status || '').toUpperCase()
+          if (rawStatus === 'APPROVED') st = 'Active'
+          else if (rawStatus === 'SUSPENDED') st = 'Suspended'
+          else if (rawStatus === 'REJECTED') st = 'Rejected'
+          
+          return {
+            ...v,
+            id: v.unique_vendor_id || v.id,
+            name: v.name,
+            company: v.name,
+            contactPerson: v.contact_person || 'N/A',
+            email: v.email,
+            phone: v.phone,
+            category: v.category_detail?.name || (typeof v.category === 'string' ? v.category : 'General'),
+            status: st,
+            riskLevel: v.risk_rating || 'Low',
+            performanceScore: parseFloat(v.performance_score) || 90
+          }
+        }))
+        setPurchaseOrders(Array.isArray(posRes.data) ? posRes.data : posRes.data?.results || [])
+        setInvoices(Array.isArray(invRes.data) ? invRes.data : invRes.data?.results || [])
+        setPayments(Array.isArray(payRes.data) ? payRes.data : payRes.data?.results || [])
+      } catch (err) {
+        console.warn('Failed fetching secondary data in manager context:', err)
+      }
+
     } catch (e) {
       console.warn('Backend manager fetch fallback:', e)
     }
@@ -878,9 +994,43 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setFinanceReview(prev => [approvedReq, ...prev.filter(r => r.id !== id)])
   }, [pendingApprovals, arrivedRequests])
 
-  const addRFQ = useCallback((rfqData: RFQ) => {
-    setRfqs(prev => [rfqData, ...prev])
-  }, [])
+  const addRFQ = useCallback(async (rfqData: RFQ) => {
+    try {
+      // Optimitically add it locally so it appears immediately
+      setRfqs(prev => [rfqData, ...prev])
+      
+      // Submit to backend
+      const payload = {
+        title: rfqData.title,
+        deadline: rfqData.deadline,
+        terms: rfqData.remarks,
+        status: rfqData.status === 'draft' ? 'New' : (rfqData.status === 'sent' ? 'Open' : 'New'),
+        purchase_request: rfqData.remarks?.includes('Mapped from Approved PR: ') 
+            ? rfqData.remarks.split('Mapped from Approved PR: ')[1]
+            : null,
+        invited_vendors: rfqData.vendors.map(v => v.name)
+      }
+      const response = await createRFQApi(payload)
+      
+      // Update local PR stage to show tracking progress
+      if (payload.purchase_request) {
+          const prId = payload.purchase_request
+          const updateReq = (r: ProcurementRequest) => r.id === prId ? { ...r, status: 'rfq_sent' as RequestStatus, currentStage: 4 } : r
+          setMyApprovals(prev => prev.map(updateReq))
+          setPendingApprovals(prev => prev.map(updateReq))
+          setArrivedRequests(prev => prev.map(updateReq))
+          setFinanceReview(prev => prev.map(updateReq))
+      }
+      
+      // Force a re-fetch to ensure data is perfectly in sync with the backend
+      refreshManagerBackendData()
+    } catch (error: any) {
+      console.error("Failed to save RFQ to backend:", error)
+      window.alert("Failed to save RFQ! Error: " + (error.message || error.toString()))
+      // On failure, we might want to revert the optimistic update or show an error
+      refreshManagerBackendData() // re-fetch to restore state
+    }
+  }, [refreshManagerBackendData])
 
   const selectVendorQuotation = useCallback((quoteId: string, rfqId: string, product: string, notes?: string) => {
     const now = new Date().toISOString()

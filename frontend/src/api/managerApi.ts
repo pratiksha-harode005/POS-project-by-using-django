@@ -21,7 +21,7 @@ export interface ApiRequestParams {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const simulateDelay = (ms = 400) => new Promise(res => setTimeout(res, ms))
+
 
 // ─── API Functions ────────────────────────────────────────────────────────────
 
@@ -116,37 +116,64 @@ export const verifyDocumentApi = async (
   verifiedBy: string,
   productId?: string
 ) => {
-  // return apiClient.post(`/manager/tickets/${ticketId}/verify/`, { doc_type: docType, verified_by: verifiedBy, product_id: productId }).then(r => r.data)
-  await simulateDelay(500)
-  return { success: true }
+  try {
+    const res = await apiClient.post(`/procurement/goods-receipts/`, {
+      purchase_order: ticketId,
+      status: 'Verified',
+      notes: `Verified by ${verifiedBy}`
+    })
+    return res.data
+  } catch (err) {
+    throw err
+  }
 }
 
 /** POST /api/manager/tickets/{id}/submit/ */
 export const submitTicketApi = async (ticketId: string, submittedBy: string, productId?: string) => {
-  // return apiClient.post(`/manager/tickets/${ticketId}/submit/`, { submitted_by: submittedBy, product_id: productId }).then(r => r.data)
-  await simulateDelay(800)
-  return { success: true, ticketId, productId }
+  try {
+    const res = await apiClient.post(`/requests/${ticketId}/process_approval/`, {
+      action: 'APPROVE',
+      notes: `Submitted by ${submittedBy}`
+    })
+    return res.data
+  } catch (err) {
+    throw err
+  }
 }
 
 /** GET /api/manager/payments/?period=weekly|monthly|yearly */
 export const getPaymentData = async (period: 'weekly' | 'monthly' | 'yearly') => {
-  // return apiClient.get('/manager/payments/', { params: { period } }).then(r => r.data)
-  await simulateDelay()
-  return []
+  try {
+    const res = await apiClient.get('/payments/', { params: { period } })
+    return res.data
+  } catch (err) {
+    return { results: [], count: 0 }
+  }
 }
 
 /** POST /api/manager/rfqs/ */
 export const createRFQApi = async (rfqData: any) => {
-  // return apiClient.post('/manager/rfqs/', rfqData).then(r => r.data)
-  await simulateDelay(600)
-  return { success: true, data: rfqData }
+  try {
+    const res = await apiClient.post('/rfq/', rfqData)
+    return res.data
+  } catch (err) {
+    throw err
+  }
 }
 
 /** POST /api/manager/quotations/{id}/select/ */
 export const selectVendorQuotationApi = async (quoteId: string, rfqId: string, product: string, notes?: string) => {
-  // return apiClient.post(`/manager/quotations/${quoteId}/select/`, { rfqId, product, notes }).then(r => r.data)
-  await simulateDelay(500)
-  return { success: true, quoteId, rfqId, product }
+  try {
+    const res = await apiClient.patch(`/rfq/${rfqId}/`, {
+      status: 'Closed'
+    })
+    const quoteRes = await apiClient.patch(`/rfq-quotations/${quoteId}/`, {
+      status: 'Selected'
+    })
+    return { success: true, rfq: res.data, quote: quoteRes.data }
+  } catch (err) {
+    throw err
+  }
 }
 
 export { apiClient }

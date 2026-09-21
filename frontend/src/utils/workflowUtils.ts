@@ -116,6 +116,8 @@ export interface RequestWorkflowInput {
   title?: string
   paymentStatus?: string
   currentStage?: number
+  history?: any[]
+  workflowTypeOverride?: WorkflowType
 }
 
 /**
@@ -123,7 +125,7 @@ export interface RequestWorkflowInput {
  * for a request according to its workflow type.
  */
 export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgression {
-  const workflowType = detectWorkflowType(req.category, req.title)
+  const workflowType = req.workflowTypeOverride || detectWorkflowType(req.category, req.title)
   const isSoftware = workflowType === 'SOFTWARE'
   const stages = isSoftware ? SOFTWARE_STAGES : HARDWARE_STAGES
   const totalStages = stages.length
@@ -148,25 +150,46 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     st === 'returned' ||
     fst.includes('return')
 
-  let stageIndex = 0
+  let currentStageName: string = stages[0]
   let currentlyWith = 'Requester'
 
+  const wentToFinance =
+    (req.history || []).some(
+      (h: any) =>
+        (h.actorRole && h.actorRole.toLowerCase().includes('finance')) ||
+        (h.stageName && h.stageName.toLowerCase().includes('finance'))
+    ) ||
+    st.includes('finance') ||
+    fst.includes('finance') ||
+    fst === 'recommended to finance'
+
+  const wentToAdmin =
+    (req.history || []).some(
+      (h: any) =>
+        (h.actorRole && h.actorRole.toLowerCase().includes('admin')) ||
+        (h.stageName && h.stageName.toLowerCase().includes('admin'))
+    ) ||
+    st.includes('admin') ||
+    fst.includes('admin')
+
+  let dynamicStages = [...stages]
+  if (!wentToFinance) {
+    dynamicStages = dynamicStages.filter((s) => s !== 'Finance Approval')
+  }
+  if (!wentToAdmin) {
+    dynamicStages = dynamicStages.filter((s) => s !== 'Admin Approval')
+  }
+
   if (isCompleted) {
-    stageIndex = totalStages - 1
+    currentStageName = 'Payment'
     currentlyWith = 'Completed & Archived'
   } else if (isSoftware) {
-    // Software Stages:
-    // 0: Create Request
-    // 1: Manager Approval
-    // 2: Finance Approval
-    // 3: Admin Approval
-    // 4: Verification and Order Complete
-    // 5: Payment
+    // Software Stages
     if (st === 'pending_arrival' || st === 'draft') {
-      stageIndex = 0
+      currentStageName = 'Create Request'
       currentlyWith = 'Team Lead / Requester'
     } else if (st === 'pending_approval') {
-      stageIndex = 1
+      currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
     } else if (
       st === 'finance_review' ||
@@ -175,57 +198,52 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       st === 'finance_on_hold' ||
       st === 'clarification_requested'
     ) {
-      stageIndex = 2
+      currentStageName = 'Finance Approval'
       currentlyWith = 'Finance — Mark Finance Officer'
-    } else if (
-      st === 'recommended_to_admin' ||
-      fst === 'recommended to admin'
-    ) {
-      stageIndex = 3
+    } else if (st === 'recommended_to_admin' || fst === 'recommended to admin') {
+      currentStageName = 'Admin Approval'
       currentlyWith = 'Admin — Executive Authority'
-    } else if (st === 'approved' || st === 'assigned_to_vendor' || st === 'vendor_assigned' || st === 'in_procurement') {
-      stageIndex = 4
+    } else if (
+      st === 'approved' ||
+      st === 'assigned_to_vendor' ||
+      st === 'vendor_assigned' ||
+      st === 'in_procurement'
+    ) {
+      currentStageName = 'Verification and Order Complete'
       currentlyWith = 'IT Operations & Provisioning'
     } else if (st === 'vendor_accepted') {
-      stageIndex = 4
+      currentStageName = 'Verification and Order Complete'
       currentlyWith = 'Vendor Partner (Provisioning & Verification)'
     } else if (st === 'vendor_rejected') {
-      stageIndex = 3
+      currentStageName = 'Admin Approval'
       currentlyWith = 'Vendor Declined — Reassignment Required'
     } else if (st === 'verified' || st === 'order_complete' || st === 'finance_approved') {
-      stageIndex = 4
+      currentStageName = 'Verification and Order Complete'
       currentlyWith = 'IT Operations & Provisioning Verification'
-    } else if (st === 'completed' || st === 'payment' || st === 'payment_pending' || pst === 'pending' || pst === 'processing' || pst === 'paid') {
-      stageIndex = 5
+    } else if (
+      st === 'completed' ||
+      st === 'payment' ||
+      st === 'payment_pending' ||
+      pst === 'pending' ||
+      pst === 'processing' ||
+      pst === 'paid'
+    ) {
+      currentStageName = 'Payment'
       currentlyWith = 'Accounts & Treasury (Payment)'
     } else {
-      stageIndex = typeof req.currentStage === 'number' ? Math.min(req.currentStage, totalStages - 1) : 1
+      currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
     }
   } else {
-    // Hardware Stages:
-    // 0: Create Request
-    // 1: Manager Approval
-    // 2: Finance Approval
-    // 3: Admin Approval
-    // 4: RFQ Sent
-    // 5: Vendor Quotes Received
-    // 6: Delivery
-    // 7: Invoice
-    // 8: Verification and Order Complete
-    // 9: Payment
+    // Hardware Stages
     if (st === 'pending_arrival' || st === 'draft') {
-      stageIndex = 0
+      currentStageName = 'Create Request'
       currentlyWith = 'Team Lead / Requester'
     } else if (st === 'pending_approval') {
-      stageIndex = 1
+      currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
-    } else if (
-      st === 'approved' ||
-      st === 'rfq_sent' ||
-      st === 'in_procurement'
-    ) {
-      stageIndex = 4
+    } else if (st === 'approved') {
+      currentStageName = 'RFQ Sent'
       currentlyWith = 'Sourcing Team (RFQ Sent)'
     } else if (
       st === 'finance_review' ||
@@ -234,71 +252,83 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       st === 'finance_on_hold' ||
       st === 'clarification_requested'
     ) {
-      stageIndex = 2
+      currentStageName = 'Finance Approval'
       currentlyWith = 'Finance — Mark Finance Officer'
-    } else if (
-      st === 'recommended_to_admin' ||
-      fst === 'recommended to admin'
-    ) {
-      stageIndex = 3
+    } else if (st === 'recommended_to_admin' || fst === 'recommended to admin') {
+      currentStageName = 'Admin Approval'
       currentlyWith = 'Admin — Executive Authority'
-    } else if (st === 'quotes_received' || st === 'assigned_to_vendor' || st === 'vendor_assigned') {
-      stageIndex = 5
+    } else if (st === 'quotes_received' || st === 'assigned_to_vendor' || st === 'vendor_assigned' || st === 'rfq_sent' || st === 'in_procurement') {
+      currentStageName = 'Vendor Quotes Received'
       currentlyWith = 'Selected Vendor (Awaiting Acceptance)'
     } else if (st === 'vendor_accepted') {
-      stageIndex = 6 // Delivery stage
+      currentStageName = 'Delivery'
       currentlyWith = 'Vendor Partner (Delivery in Progress)'
     } else if (st === 'vendor_rejected') {
-      stageIndex = 5
+      currentStageName = 'Vendor Quotes Received'
       currentlyWith = 'Vendor Declined — Reassignment Required'
     } else if (st === 'delivered' || st === 'delivery') {
-      stageIndex = 7 // Invoice & Verification stage
+      currentStageName = 'Invoice'
       currentlyWith = 'Accounts & Dock (Invoice & GRN Verification)'
     } else if (st === 'invoiced' || st === 'invoice') {
-      stageIndex = 8 // Verification and Order Complete
+      currentStageName = 'Verification and Order Complete'
       currentlyWith = 'Procurement Audit & Raise Ticket Verification'
-    } else if (st === 'verified' || st === 'order_complete' || st === 'finance_approved' || st === 'product_order') {
+    } else if (
+      st === 'verified' ||
+      st === 'order_complete' ||
+      st === 'finance_approved' ||
+      st === 'product_order'
+    ) {
+      currentStageName = 'Delivery'
       if (typeof req.currentStage === 'number' && req.currentStage >= 4) {
-        stageIndex = Math.min(req.currentStage, totalStages - 1)
-      } else {
-        stageIndex = 6 // Delivery
+        // Find best match if stage known
       }
       currentlyWith = 'Logistics & Receiving Dock'
-    } else if (st === 'completed' || st === 'payment' || st === 'payment_pending' || pst === 'pending' || pst === 'processing' || pst === 'paid') {
-      stageIndex = 9 // Payment
+    } else if (
+      st === 'completed' ||
+      st === 'payment' ||
+      st === 'payment_pending' ||
+      pst === 'pending' ||
+      pst === 'processing' ||
+      pst === 'paid'
+    ) {
+      currentStageName = 'Payment'
       currentlyWith = 'Finance Treasury & Disbursement'
     } else {
-      stageIndex = typeof req.currentStage === 'number' ? Math.min(req.currentStage, totalStages - 1) : 1
+      currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
     }
   }
 
-  // If currentStage was explicitly passed and status is generic, align when suitable
-  if (typeof req.currentStage === 'number' && req.currentStage >= 0 && req.currentStage < totalStages) {
-    if (st === 'approved' || st === 'in_procurement' || st === 'pending') {
-      stageIndex = req.currentStage
+  let stageIndex = dynamicStages.indexOf(currentStageName as any)
+  if (stageIndex === -1) {
+    // Fallback if somehow not found (e.g. filtered out)
+    if (currentStageName === 'Admin Approval') {
+      stageIndex = dynamicStages.indexOf('Finance Approval') !== -1 ? dynamicStages.indexOf('Finance Approval') : 1
+    } else {
+      stageIndex = 1
     }
   }
 
-  const currentStageName = stages[stageIndex] || stages[0]
+  currentStageName = dynamicStages[stageIndex] || dynamicStages[0]
 
   // Status badge label
   let statusBadge = ''
+  const actualTotalStages = dynamicStages.length
   if (isCompleted) {
     statusBadge = '100% Completed / Paid'
   } else if (isRejected) {
-    statusBadge = `Rejected (Stage ${stageIndex + 1}/${totalStages})`
+    statusBadge = `Rejected (Stage ${stageIndex + 1}/${actualTotalStages})`
   } else if (isReturned) {
-    statusBadge = `Returned (Stage ${stageIndex + 1}/${totalStages})`
+    statusBadge = `Returned (Stage ${stageIndex + 1}/${actualTotalStages})`
   } else {
-    statusBadge = `${currentStageName} (Stage ${stageIndex + 1}/${totalStages})`
+    statusBadge = `${currentStageName} (Stage ${stageIndex + 1}/${actualTotalStages})`
   }
 
   return {
     workflowType,
-    stages,
+    stages: dynamicStages,
     currentStageIndex: stageIndex,
-    totalStages,
+    totalStages: dynamicStages.length,
     currentStageName,
     statusBadge,
     isCompleted,

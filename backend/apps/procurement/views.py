@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from .models import PurchaseOrder, GoodsReceipt, Contract
 from .serializers import PurchaseOrderSerializer, GoodsReceiptSerializer, ContractSerializer
+from apps.notification_management.models import Notification
 
 
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
@@ -14,7 +15,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
                 return PurchaseOrder.objects.filter(vendor=user.vendor_profile).order_by('-created_at')
-            return PurchaseOrder.objects.none()
+            return PurchaseOrder.objects.all()
         return PurchaseOrder.objects.all().order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -23,6 +24,14 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         pr = po.purchase_request
         pr.current_stage = 6
         pr.save()
+
+        # Notify team lead
+        Notification.objects.create(
+            user=pr.created_by,
+            purchase_request=pr,
+            title=f"Purchase Order {po.po_id} Issued",
+            message=f"PO has been issued to vendor {po.vendor.name} for request {pr.request_id}."
+        )
 
 
 class GoodsReceiptViewSet(viewsets.ModelViewSet):
@@ -35,7 +44,7 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
                 return GoodsReceipt.objects.filter(purchase_order__vendor=user.vendor_profile).order_by('-created_at')
-            return GoodsReceipt.objects.none()
+            return GoodsReceipt.objects.all()
         return GoodsReceipt.objects.all().order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -44,6 +53,14 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
         pr = receipt.purchase_order.purchase_request
         pr.current_stage = 7
         pr.save()
+
+        # Notify team lead
+        Notification.objects.create(
+            user=pr.created_by,
+            purchase_request=pr,
+            title=f"Goods Receipt {receipt.receipt_id} Verified",
+            message=f"Delivery received and verified for PO {receipt.purchase_order.po_id}."
+        )
 
 
 class ContractViewSet(viewsets.ModelViewSet):
@@ -56,5 +73,5 @@ class ContractViewSet(viewsets.ModelViewSet):
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
                 return Contract.objects.filter(vendor=user.vendor_profile).order_by('-created_at')
-            return Contract.objects.none()
+            return Contract.objects.all()
         return Contract.objects.all().order_by('-created_at')

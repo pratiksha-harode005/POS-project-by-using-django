@@ -25,7 +25,12 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = PurchaseRequest.objects.all().order_by('-created_at')
+        queryset = PurchaseRequest.objects.select_related(
+            'created_by',
+            'department'
+        ).prefetch_related(
+            'approval_steps'
+        ).all().order_by('-created_at')
 
         if not user or user.is_anonymous:
             return queryset
@@ -124,15 +129,27 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         # Update request state
         if act == 'APPROVE':
             pr.status = 'In Procurement'
-            if pr.current_stage <= 2:
-                pr.current_stage = 4
-            elif pr.current_stage == 3:
-                pr.current_stage = 5
+            
+            if pr.flow_type == 'B':
+                # Flow B: Funds released directly to Team Lead (Stages 0-6)
+                if pr.current_stage <= 2:
+                    pr.current_stage = 4 # Skip Admin approval if Manager/Finance approves directly
+                else:
+                    pr.current_stage = min(pr.current_stage + 1, 6)
+                    
+                if pr.current_stage >= 6:
+                    pr.status = 'Completed'
             else:
-                pr.current_stage = min(pr.current_stage + 1, 9)
+                # Flow A: Full vendor procurement cycle (Stages 0-9)
+                if pr.current_stage <= 2:
+                    pr.current_stage = 4
+                elif pr.current_stage == 3:
+                    pr.current_stage = 5
+                else:
+                    pr.current_stage = min(pr.current_stage + 1, 9)
 
-            if pr.current_stage == 9:
-                pr.status = 'Completed'
+                if pr.current_stage >= 9:
+                    pr.status = 'Completed'
 
         elif act == 'REJECT':
             pr.status = 'Rejected'
@@ -157,6 +174,17 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         for step_item in ApprovalStep.objects.filter(request=pr).select_related('actor'):
             if step_item.actor:
                 recipients.add(step_item.actor)
+
+        if act == 'RECOMMEND':
+            from apps.users.models import User
+            if pr.current_stage == 2:
+                finance_users = User.objects.filter(role='FINANCE')
+                for f_u in finance_users:
+                    recipients.add(f_u)
+            elif pr.current_stage == 3:
+                admin_users = User.objects.filter(role='ADMIN')
+                for a_u in admin_users:
+                    recipients.add(a_u)
 
         username_display = getattr(request.user, 'username', 'Manager') if request.user else 'Manager'
         msg = f"Request {pr.request_id} ({pr.title}) updated to '{pr.status}' by {username_display} ({act})"

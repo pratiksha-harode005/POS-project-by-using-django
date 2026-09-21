@@ -156,59 +156,22 @@ const INITIAL_PROFILE: ExtendedProfile = {
 const ProcurementContext = createContext<ProcurementContextType | undefined>(undefined)
 
 export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [requests, setRequests] = useState<PurchaseRequest[]>(() => {
-    const saved = localStorage.getItem('kss_tl_requests')
-    return saved ? JSON.parse(saved) : INITIAL_REQUESTS
+  const [requests, setRequests] = useState<PurchaseRequest[]>([])
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([])
+  const [profile, setProfile] = useState<ExtendedProfile>(INITIAL_PROFILE)
+  const [notificationPreferences, setNotificationPreferences] = useState<Record<string, boolean>>({
+    inAppApprovals: true,
+    inAppStatus: true,
+    inAppPayments: true,
+    inAppVendor: true,
+    emailApprovals: true,
+    emailStatus: true,
+    emailPayments: true,
+    emailVendor: false,
   })
 
-  const [payments, setPayments] = useState<PaymentRecord[]>(() => {
-    const saved = localStorage.getItem('kss_tl_payments')
-    return saved ? JSON.parse(saved) : INITIAL_PAYMENTS
-  })
-
-  const [notifications, setNotifications] = useState<NotificationRecord[]>(() => {
-    const saved = localStorage.getItem('kss_tl_notifications')
-    return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS
-  })
-
-  const [profile, setProfile] = useState<ExtendedProfile>(() => {
-    const saved = localStorage.getItem('kss_tl_profile')
-    return saved ? JSON.parse(saved) : INITIAL_PROFILE
-  })
-
-  const [notificationPreferences, setNotificationPreferences] = useState<Record<string, boolean>>(() => {
-    const saved = localStorage.getItem('kss_tl_notif_prefs')
-    return saved ? JSON.parse(saved) : {
-      inAppApprovals: true,
-      inAppStatus: true,
-      inAppPayments: true,
-      inAppVendor: true,
-      emailApprovals: true,
-      emailStatus: true,
-      emailPayments: true,
-      emailVendor: false,
-    }
-  })
-
-  useEffect(() => {
-    localStorage.setItem('kss_tl_requests', JSON.stringify(requests))
-  }, [requests])
-
-  useEffect(() => {
-    localStorage.setItem('kss_tl_payments', JSON.stringify(payments))
-  }, [payments])
-
-  useEffect(() => {
-    localStorage.setItem('kss_tl_notifications', JSON.stringify(notifications))
-  }, [notifications])
-
-  useEffect(() => {
-    localStorage.setItem('kss_tl_profile', JSON.stringify(profile))
-  }, [profile])
-
-  useEffect(() => {
-    localStorage.setItem('kss_tl_notif_prefs', JSON.stringify(notificationPreferences))
-  }, [notificationPreferences])
+  // No longer syncing to localStorage
 
   // Dynamic fetch from Django REST API backend
   const refreshBackendRequests = async () => {
@@ -248,6 +211,14 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           : [],
       }))
       setRequests(mapped)
+
+      try {
+        const { apiClient } = await import('../api/client')
+        const payRes = await apiClient.get('/payments/')
+        setPayments(Array.isArray(payRes.data) ? payRes.data : payRes.data?.results || [])
+      } catch (payErr) {
+        console.warn('Failed to fetch payments in ProcurementContext', payErr)
+      }
     } catch (e) {
       console.warn('Backend requests fetch fallback:', e)
     }

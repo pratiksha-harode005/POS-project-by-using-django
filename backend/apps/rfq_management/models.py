@@ -13,7 +13,7 @@ class RFQ(TimeStampedModel):
     )
 
     rfq_id = models.CharField(max_length=50, unique=True, editable=False)
-    purchase_request = models.ForeignKey(PurchaseRequest, on_delete=models.CASCADE, related_name='rfqs')
+    purchase_request = models.ForeignKey(PurchaseRequest, on_delete=models.CASCADE, related_name='rfqs', null=True, blank=True)
     title = models.CharField(max_length=200)
     deadline = models.DateField()
     terms = models.TextField(blank=True)

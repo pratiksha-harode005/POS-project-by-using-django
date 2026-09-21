@@ -13,6 +13,7 @@ import { PortalLayout } from '../components/portal/PortalLayout'
 import { SharedProfilePage } from '../components/portal/SharedProfilePage'
 import { SharedNotificationsPage } from '../components/portal/SharedNotificationsPage'
 import { ProcurementProvider } from '../context/ProcurementContext'
+import { RoleGuard } from '../components/common/RoleGuard'
 
 // Team Lead Portal Pages
 import { TeamLeadDashboard } from '../portals/teamlead/TeamLeadDashboard'
@@ -105,19 +106,19 @@ export default function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
 
       {/* ── 1. TEAM LEAD PORTAL ── */}
-      <Route path="/portal/team_lead/*" element={<PortalLayout><TeamLeadRoutes /></PortalLayout>} />
+      <Route path="/portal/team_lead/*" element={<RoleGuard allowedRoles={['TEAM_LEAD', 'ADMIN']}><PortalLayout><TeamLeadRoutes /></PortalLayout></RoleGuard>} />
 
       {/* ── 2. MANAGER PORTAL ── */}
-      <Route path="/portal/manager/*" element={<PortalLayout><ManagerRoutes /></PortalLayout>} />
+      <Route path="/portal/manager/*" element={<RoleGuard allowedRoles={['MANAGER', 'ADMIN']}><PortalLayout><ManagerRoutes /></PortalLayout></RoleGuard>} />
 
       {/* ── 3. FINANCE PORTAL ── */}
-      <Route path="/portal/finance/*" element={<PortalLayout><FinanceRoutes /></PortalLayout>} />
+      <Route path="/portal/finance/*" element={<RoleGuard allowedRoles={['FINANCE', 'ADMIN']}><PortalLayout><FinanceRoutes /></PortalLayout></RoleGuard>} />
 
       {/* ── 4. ADMIN PORTAL ── */}
-      <Route path="/portal/admin/*" element={<PortalLayout><AdminRoutes /></PortalLayout>} />
+      <Route path="/portal/admin/*" element={<RoleGuard allowedRoles={['ADMIN']}><PortalLayout><AdminRoutes /></PortalLayout></RoleGuard>} />
 
       {/* ── 5. VENDOR PORTAL ── */}
-      <Route path="/portal/vendor/*" element={<PortalLayout><VendorRoutes /></PortalLayout>} />
+      <Route path="/portal/vendor/*" element={<RoleGuard allowedRoles={['VENDOR', 'ADMIN']}><PortalLayout><VendorRoutes /></PortalLayout></RoleGuard>} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

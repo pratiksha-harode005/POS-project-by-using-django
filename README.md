@@ -18,7 +18,7 @@ KSS-PROCUREMENT-OS/
 
 ### Backend
 - **Framework:** Python 3.10+ / Django / Django REST Framework (DRF)
-- **Database:** PostgreSQL (Production / Shared) / SQLite (Local Dev)
+- **Database:** PostgreSQL (Primary Database)
 - **Background Tasks:** Celery
 - **Authentication:** Token / JWT Authentication & Role-Based Access Control (RBAC)
 

@@ -1548,6 +1548,7 @@ export const AdminDashboard: React.FC = () => {
                 category={trackingReq.category}
                 title={trackingReq.title}
                 lastUpdated={trackingReq.date}
+                history={trackingReq.history}
               />
             </div>
 

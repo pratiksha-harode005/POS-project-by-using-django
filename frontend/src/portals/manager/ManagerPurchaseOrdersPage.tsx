@@ -263,10 +263,10 @@ export const ManagerPurchaseOrdersPage: React.FC = () => {
                 PURCHASE ORDER &amp; INVOICE DESK
               </span>
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-50 text-cyan-700 border border-cyan-200 flex items-center gap-1">
-                <Cpu size={11} /> Hardware (10 Stages)
+                <Cpu size={11} /> Hardware Workflow
               </span>
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
-                <Laptop size={11} /> Software (6 Stages)
+                <Laptop size={11} /> Software Workflow
               </span>
             </div>
             
