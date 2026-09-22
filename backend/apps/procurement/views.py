@@ -12,11 +12,27 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        qs = PurchaseOrder.objects.select_related(
+            'vendor',
+            'vendor__category',
+            'vendor__user',
+            'purchase_request',
+            'purchase_request__created_by',
+            'purchase_request__department',
+            'purchase_request__assigned_team_lead',
+            'purchase_request__assigned_manager'
+        ).prefetch_related(
+            'goods_receipts',
+            'purchase_request__approval_steps__actor',
+            'purchase_request__approval_steps__reason',
+            'purchase_request__approval_history__performed_by'
+        ).order_by('-created_at')
+
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
-                return PurchaseOrder.objects.filter(vendor=user.vendor_profile).order_by('-created_at')
-            return PurchaseOrder.objects.all()
-        return PurchaseOrder.objects.all().order_by('-created_at')
+                return qs.filter(vendor=user.vendor_profile)
+            return qs
+        return qs
 
     def perform_create(self, serializer):
         po = serializer.save()
@@ -41,11 +57,17 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        qs = GoodsReceipt.objects.select_related(
+            'received_by',
+            'purchase_order',
+            'purchase_order__vendor',
+            'purchase_order__vendor__category'
+        ).order_by('-created_at')
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
-                return GoodsReceipt.objects.filter(purchase_order__vendor=user.vendor_profile).order_by('-created_at')
-            return GoodsReceipt.objects.all()
-        return GoodsReceipt.objects.all().order_by('-created_at')
+                return qs.filter(purchase_order__vendor=user.vendor_profile)
+            return qs
+        return qs
 
     def perform_create(self, serializer):
         receipt = serializer.save(received_by=self.request.user)

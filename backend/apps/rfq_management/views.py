@@ -21,14 +21,18 @@ class RFQViewSet(viewsets.ModelViewSet):
         qs = RFQ.objects.select_related(
             'purchase_request',
             'purchase_request__created_by',
-            'purchase_request__department'
+            'purchase_request__department',
+            'purchase_request__assigned_team_lead',
+            'purchase_request__assigned_manager'
         ).prefetch_related(
             'invited_vendors',
             'invited_vendors__category',
             'quotations',
             'quotations__vendor',
             'quotations__vendor__category',
-            'purchase_request__approval_steps'
+            'purchase_request__approval_steps__actor',
+            'purchase_request__approval_steps__reason',
+            'purchase_request__approval_history__performed_by'
         ).all()
         
         if user.role == 'VENDOR':

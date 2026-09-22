@@ -29,8 +29,8 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   // 1. Requested Amount (read-only)
   const requestedAmount = request.amount
 
-  // 2. Approved Amount (editable)
-  const [approvedAmount, setApprovedAmount] = useState<number | string>(request.amount || '')
+  // 2. Approved Amount (editable) — default to the request amount if > 0, otherwise leave blank so user enters it
+  const [approvedAmount, setApprovedAmount] = useState<number | string>(request.amount > 0 ? request.amount : '')
 
   // 3. Budget Available
   const [budgetAvailable, setBudgetAvailable] = useState<'Yes' | 'No'>('Yes')
@@ -69,7 +69,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   // Reset form when request changes
   useEffect(() => {
     if (request) {
-      setApprovedAmount(request.amount || '')
+      setApprovedAmount(request.amount > 0 ? request.amount : '')
       setBudgetAvailable('Yes')
       setCostCenter(request.costCenter || `CC-${(request.department || 'ENG').toUpperCase().slice(0, 3)}-2026-Q3`)
       setVendor(request.vendor || 'Dell Technologies Enterprise')
@@ -80,7 +80,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
       setApprovalComments('Specifications verified against approved OPEX/CAPEX allocation. Approved for PO generation.')
       setValidationError('')
     }
-  }, [request])
+  }, [request?.id])
 
   const handleConfirm = (e: React.FormEvent) => {
     e.preventDefault()

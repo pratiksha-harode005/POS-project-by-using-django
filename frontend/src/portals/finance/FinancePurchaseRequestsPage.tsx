@@ -6,13 +6,17 @@ import {
 } from 'lucide-react'
 import { useFinanceData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
 export const FinancePurchaseRequestsPage: React.FC = () => {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { allRequests, approveFinanceRequest } = useFinanceData()
   const [searchParams] = useSearchParams()
+
+  const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
 
   // State
   const [search, setSearch] = useState(searchParams.get('search') || '')
@@ -32,8 +36,8 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
     if (!approveModalReq) return
     approveFinanceRequest(
       approveModalReq.id,
-      params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
-      'Mark Finance Officer'
+      params.approvalComments || 'Verified within budget allocation. Authorized for PO release.',
+      actorName
     )
     showToast(`✓ Request ${approveModalReq.id} approved! Forwarded for PO release.`, 'success')
     setApproveModalReq(null)
@@ -488,7 +492,7 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
         isOpen={!!approveModalReq}
         request={approveModalReq}
         portalType="FINANCE"
-        approverName="Mark Finance Officer"
+        approverName={actorName}
         onClose={() => setApproveModalReq(null)}
         onConfirm={handleConfirmApproval}
       />

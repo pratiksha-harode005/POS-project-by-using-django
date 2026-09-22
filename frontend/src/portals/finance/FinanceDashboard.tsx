@@ -537,42 +537,49 @@ export const FinanceDashboard: React.FC = () => {
               </span>
             </div>
 
-            <div className="space-y-3">
-              {payments.slice(0, 3).map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => navigate('/portal/finance/payments')}
-                  className="p-3.5 rounded-xl border border-slate-100 hover:border-slate-300 hover:bg-slate-50/60 transition-all cursor-pointer flex items-center justify-between gap-4"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                        {p.id}
-                      </span>
-                      <span className="text-[10px] text-slate-500">{p.vendor}</span>
+            {payments.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                <CheckCircle size={28} className="mx-auto mb-2 text-emerald-500" />
+                No pending disbursements in the settlement queue.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {payments.slice(0, 3).map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => navigate('/portal/finance/payments')}
+                    className="p-3.5 rounded-xl border border-slate-100 hover:border-slate-300 hover:bg-slate-50/60 transition-all cursor-pointer flex items-center justify-between gap-4"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                          {p.id}
+                        </span>
+                        <span className="text-[10px] text-slate-500">{p.vendor}</span>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 line-clamp-1">{p.requestTitle}</h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Due: {p.dueDate}</p>
                     </div>
-                    <h4 className="text-xs font-bold text-slate-900 line-clamp-1">{p.requestTitle}</h4>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Due: {p.dueDate}</p>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-extrabold text-slate-900">{fmt(p.amount)}</p>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          p.status === 'Paid'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : p.status === 'Processing'
+                            ? 'bg-blue-50 text-blue-700'
+                            : p.status === 'On Hold'
+                            ? 'bg-rose-50 text-rose-700'
+                            : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {p.status}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-extrabold text-slate-900">{fmt(p.amount)}</p>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                        p.status === 'Paid'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : p.status === 'Processing'
-                          ? 'bg-blue-50 text-blue-700'
-                          : p.status === 'On Hold'
-                          ? 'bg-rose-50 text-rose-700'
-                          : 'bg-amber-50 text-amber-700'
-                      }`}
-                    >
-                      {p.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <button

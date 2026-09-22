@@ -14,13 +14,26 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        qs = Payment.objects.select_related(
+            'vendor',
+            'vendor__category',
+            'vendor__user',
+            'invoice',
+            'invoice__vendor',
+            'invoice__purchase_order',
+            'invoice__purchase_order__vendor',
+            'invoice__purchase_order__purchase_request',
+            'invoice__purchase_order__purchase_request__department',
+            'invoice__purchase_order__purchase_request__created_by',
+        ).order_by('-created_at')
+
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
-                return Payment.objects.filter(vendor=user.vendor_profile).order_by('-created_at')
-            return Payment.objects.all()
+                return qs.filter(vendor=user.vendor_profile)
+            return qs
         elif user.role == 'TEAM_LEAD':
-            return Payment.objects.filter(purchase_request__created_by=user).order_by('-created_at')
-        return Payment.objects.all().order_by('-created_at')
+            return qs.filter(purchase_request__created_by=user)
+        return qs
 
     def perform_create(self, serializer):
         payment = serializer.save()

@@ -17,53 +17,6 @@ interface RecentComplaint {
   exchangeRequested?: boolean
 }
 
-const INITIAL_COMPLAINTS: RecentComplaint[] = [
-  {
-    id: 'CMP-2026-00124',
-    product: 'Laptop',
-    type: 'Defective',
-    status: 'Under Review',
-    date: '12 Sep 2025',
-    defectiveQty: 5,
-    exchangeRequested: true
-  },
-  {
-    id: 'CMP-2026-00123',
-    product: 'Monitor',
-    type: 'Damaged',
-    status: 'Open',
-    date: '10 Sep 2025',
-    defectiveQty: 2,
-    exchangeRequested: true
-  },
-  {
-    id: 'CMP-2026-00122',
-    product: 'Headphones',
-    type: 'Wrong Product',
-    status: 'Resolved',
-    date: '08 Sep 2025',
-    defectiveQty: 10,
-    exchangeRequested: false
-  },
-  {
-    id: 'CMP-2026-00121',
-    product: 'Keyboard',
-    type: 'Missing Parts',
-    status: 'In Progress',
-    date: '05 Sep 2025',
-    defectiveQty: 4,
-    exchangeRequested: false
-  },
-  {
-    id: 'CMP-2026-00120',
-    product: 'Mouse',
-    type: 'Quality Issue',
-    status: 'Closed',
-    date: '02 Sep 2025',
-    defectiveQty: 1,
-    exchangeRequested: false
-  },
-]
 
 const COMMON_COMPLAINT_TYPES = [
   'Damaged Product',
@@ -98,31 +51,28 @@ export const RaiseComplaintPage: React.FC = () => {
 
   const [complaintType, setComplaintType] = useState('Defective Product')
   const [issueDescription, setIssueDescription] = useState('')
-  const [defectiveQuantity, setDefectiveQuantity] = useState('5')
-  const [severity, setSeverity] = useState('High')
+  const [defectiveQuantity, setDefectiveQuantity] = useState('')
+  const [severity, setSeverity] = useState('Medium')
   const [discoveryDate, setDiscoveryDate] = useState(new Date().toISOString().split('T')[0])
 
   // Defective Pieces Exchange Section States
   const [exchangeType, setExchangeType] = useState('1-to-1 Unit Swap (Direct Defective Piece Replacement)')
   const [defectClassification, setDefectClassification] = useState('DOA (Dead on Arrival) - Zero Power')
-  const [exchangeUnits, setExchangeUnits] = useState('5')
-  const [defectiveSerials, setDefectiveSerials] = useState('SN-DL-849201, SN-DL-849202, SN-DL-849203, SN-DL-849204, SN-DL-849205')
+  const [exchangeUnits, setExchangeUnits] = useState('')
+  const [defectiveSerials, setDefectiveSerials] = useState('')
   const [pickupMethod, setPickupMethod] = useState('Vendor Field Engineer On-site Pickup')
   const [replacementSla, setReplacementSla] = useState('Immediate Express (24–48 Hours Advance Dispatch)')
-  const [reverseContact, setReverseContact] = useState('Rajesh Sharma - Warehouse Manager (+91 98400 12345)')
-  const [gatePassReq, setGatePassReq] = useState(true)
+  const [reverseContact, setReverseContact] = useState('')
+  const [gatePassReq, setGatePassReq] = useState(false)
 
   // Attachments
   const [docsChecklist, setDocsChecklist] = useState({
-    invoice: true,
-    grn: true,
+    invoice: false,
+    grn: false,
     deliveryChallan: false,
     other: false,
   })
-  const [uploadedFiles, setUploadedFiles] = useState<string[]>([
-    'defect_evidence_photo_1.jpg',
-    'damaged_unit_chassis.png',
-  ])
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
 
   // Resolution
   const [resolutionType, setResolutionType] = useState('Defective Pieces Exchange & Immediate Replacement')

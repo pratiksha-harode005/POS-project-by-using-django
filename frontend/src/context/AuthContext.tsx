@@ -21,7 +21,7 @@ interface AuthContextType {
   user: UserProfile | null
   role: UserRole | null
   token: string | null
-  login: (usernameOrEmail: string, pass: string, targetRole?: UserRole) => Promise<boolean>
+  login: (usernameOrEmail: string, pass: string, targetRole?: UserRole) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   switchRolePortal: (newRole: UserRole) => void
   loading: boolean
@@ -50,7 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   })
   const [loading, setLoading] = useState(false)
 
-  const login = async (usernameOrEmail: string, pass: string): Promise<boolean> => {
+  const login = async (usernameOrEmail: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     setLoading(true)
     try {
       const res = await apiClient.post('/auth/login/', {
@@ -70,11 +70,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(userObj)
       setRole(userObj.role)
       setLoading(false)
-      return true
-    } catch (err) {
+      return { success: true }
+    } catch (err: any) {
       console.error('Login failed', err)
       setLoading(false)
-      return false
+      let errorMessage = 'Login failed. Please check your credentials.'
+      if (err.code === 'ERR_NETWORK' || !err.response) {
+        errorMessage = 'Unable to connect to backend server. Please verify Django backend is running on port 8000.'
+      } else if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail
+      } else if (err.response?.data?.non_field_errors) {
+        errorMessage = Array.isArray(err.response.data.non_field_errors)
+          ? err.response.data.non_field_errors.join(' ')
+          : String(err.response.data.non_field_errors)
+      }
+      return { success: false, error: errorMessage }
     }
   }
 
@@ -89,8 +99,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const switchRolePortal = (newRole: UserRole) => {
-    // Deprecated. Strict role binding applies.
-    console.warn("switchRolePortal is deprecated. Use real authentication.")
+    setRole(newRole)
+    localStorage.setItem('user_role', newRole)
+    if (user) {
+      const updatedUser = { ...user, role: newRole }
+      setUser(updatedUser)
+      localStorage.setItem('user_profile', JSON.stringify(updatedUser))
+    }
   }
 
   return (

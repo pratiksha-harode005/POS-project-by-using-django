@@ -19,12 +19,24 @@ import {
   approveRequestApi,
   rejectRequestApi,
   recommendToFinanceApi,
+  sendBackRequestApi,
+  forwardToFinanceApi,
   sendToFinanceApi,
   getBudgets,
   getRFQs,
   createRFQApi,
   apiClient
 } from '../api/managerApi'
+import {
+  approveFinanceRequestApi,
+  rejectFinanceRequestApi,
+  sendBackFinanceRequestApi
+} from '../api/financeApi'
+import {
+  approveAdminRequestApi,
+  rejectAdminRequestApi,
+  sendBackAdminRequestApi
+} from '../api/adminApi'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -183,7 +195,8 @@ export interface PaymentDataPoint {
 
 export interface TicketDocument {
   id: string
-  vendor: string
+  name?: string
+  vendor?: string
   date?: string
   invoiceDate?: string
   receivedDate?: string
@@ -288,7 +301,7 @@ export interface FinanceAuditItem {
   requestId: string
   requestTitle: string
   actor: string
-  action: 'APPROVED' | 'REJECTED' | 'PUT_ON_HOLD' | 'CLARIFICATION_REQUESTED' | 'RECOMMENDED_TO_ADMIN'
+  action: 'APPROVED' | 'REJECTED' | 'PUT_ON_HOLD' | 'CLARIFICATION_REQUESTED' | 'RECOMMENDED_TO_ADMIN' | 'SENT_BACK'
   timestamp: string
   reason?: string
   comment?: string
@@ -523,6 +536,7 @@ interface ManagerDataContextType {
   // Finance Actions
   approveFinanceRequest: (id: string, comment?: string, actor?: string) => void
   rejectFinanceRequest: (id: string, reason: string, comment?: string, actor?: string) => void
+  sendBackFinanceRequest: (id: string, comments: string, actor?: string) => void
   holdFinanceRequest: (id: string, reason: string, actor?: string) => void
   requestClarification: (id: string, message: string, actor?: string) => void
   recommendToHigherAuthority: (id: string, reason: string, comment?: string, actor?: string) => void
@@ -572,137 +586,165 @@ interface ManagerDataContextType {
   loading: boolean
 }
 
-// ─── Mock Data (Empty defaults for dynamic PostgreSQL database backend) ───────
-
-const MOCK_ARRIVED: ProcurementRequest[] = []
-const MOCK_PENDING_APPROVALS: ProcurementRequest[] = []
-const MOCK_MY_APPROVALS: ProcurementRequest[] = []
-const MOCK_REJECTED: ProcurementRequest[] = []
-const MOCK_FINANCE_REVIEW: ProcurementRequest[] = []
-const MOCK_RECOMMENDED: ProcurementRequest[] = []
-const MOCK_RECOMMENDED_TO_ADMIN: ProcurementRequest[] = []
-const MOCK_BUDGETS: BudgetDepartment[] = []
-const MOCK_RFQS: RFQ[] = []
-const MOCK_PAYMENT_DATA = {
-  weekly: [],
-  monthly: [],
-  yearly: [],
-}
-const MOCK_TICKETS: RaiseTicket[] = []
-const MOCK_PAYMENTS: PaymentRecord[] = []
-const MOCK_COMPLAINTS: Complaint[] = []
-const MOCK_FINANCE_AUDIT: FinanceAuditItem[] = []
-const MOCK_VENDORS: VendorItem[] = []
-const MOCK_PURCHASE_ORDERS: PurchaseOrderItem[] = []
-const MOCK_INVOICES: VendorInvoice[] = []
-const MOCK_GOODS_RECEIPTS: GoodsReceiptItem[] = []
-const MOCK_CONTRACTS: ContractItem[] = []
-const MOCK_QUOTATIONS: QuotationItem[] = []
-
 // ─── Context & Provider ───────────────────────────────────────────────────────
 
 const ManagerDataContext = createContext<ManagerDataContextType | undefined>(undefined)
 
-// Force HMR update
-console.log("ManagerDataContext loaded with real API integration!")
-
 export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [arrivedRequests, setArrivedRequests] = useState<ProcurementRequest[]>(MOCK_ARRIVED)
-  const [pendingApprovals, setPendingApprovals] = useState<ProcurementRequest[]>(MOCK_PENDING_APPROVALS)
-  const [myApprovals, setMyApprovals] = useState<ProcurementRequest[]>(MOCK_MY_APPROVALS)
-  const [rejectedRequests, setRejectedRequests] = useState<ProcurementRequest[]>(MOCK_REJECTED)
-  const [financeReview, setFinanceReview] = useState<ProcurementRequest[]>(MOCK_FINANCE_REVIEW)
-  const [recommendedToFinance, setRecommendedToFinance] = useState<ProcurementRequest[]>(MOCK_RECOMMENDED)
-  const [recommendedToAdmin, setRecommendedToAdmin] = useState<ProcurementRequest[]>(MOCK_RECOMMENDED_TO_ADMIN)
-  const [rfqs, setRfqs] = useState<RFQ[]>(MOCK_RFQS)
+  const [arrivedRequests, setArrivedRequests] = useState<ProcurementRequest[]>([])
+  const [pendingApprovals, setPendingApprovals] = useState<ProcurementRequest[]>([])
+  const [myApprovals, setMyApprovals] = useState<ProcurementRequest[]>([])
+  const [rejectedRequests, setRejectedRequests] = useState<ProcurementRequest[]>([])
+  const [financeReview, setFinanceReview] = useState<ProcurementRequest[]>([])
+  const [recommendedToFinance, setRecommendedToFinance] = useState<ProcurementRequest[]>([])
+  const [recommendedToAdmin, setRecommendedToAdmin] = useState<ProcurementRequest[]>([])
+  const [rfqs, setRfqs] = useState<RFQ[]>([])
   const [budgets, setBudgets] = useState<BudgetDepartment[]>([])
-  const [tickets, setTickets] = useState<RaiseTicket[]>(MOCK_TICKETS)
-  const [payments, setPayments] = useState<PaymentRecord[]>(MOCK_PAYMENTS)
-  const [complaints, setComplaints] = useState<Complaint[]>(MOCK_COMPLAINTS)
-  const [financeAuditHistory, setFinanceAuditHistory] = useState<FinanceAuditItem[]>(MOCK_FINANCE_AUDIT)
-  const [vendors, setVendors] = useState<VendorItem[]>(MOCK_VENDORS)
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderItem[]>(MOCK_PURCHASE_ORDERS)
-  const [invoices, setInvoices] = useState<VendorInvoice[]>(MOCK_INVOICES)
-  const [receipts, setReceipts] = useState<GoodsReceiptItem[]>(MOCK_GOODS_RECEIPTS)
-  const [contracts, setContracts] = useState<ContractItem[]>(MOCK_CONTRACTS)
-  const [quotations, setQuotations] = useState<QuotationItem[]>(MOCK_QUOTATIONS)
+  const [tickets, setTickets] = useState<RaiseTicket[]>([])
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
+  const [complaints, setComplaints] = useState<Complaint[]>([])
+  const [financeAuditHistory, setFinanceAuditHistory] = useState<FinanceAuditItem[]>([])
+  const [vendors, setVendors] = useState<VendorItem[]>([])
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderItem[]>([])
+  const [invoices, setInvoices] = useState<VendorInvoice[]>([])
+  const [receipts, setReceipts] = useState<GoodsReceiptItem[]>([])
+  const [contracts, setContracts] = useState<ContractItem[]>([])
+  const [quotations, setQuotations] = useState<QuotationItem[]>([])
   const [loading] = useState(false)
+
+  const isFetchingRef = React.useRef(false)
 
   // Dynamic fetch from Django REST API backend
   const refreshManagerBackendData = async () => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return // Don't fetch if not logged in
+    if (isFetchingRef.current) return
+    isFetchingRef.current = true
+
     try {
-      const res = await getDashboardStats()
-      const list = Array.isArray(res) ? res : res?.results || []
-      const existingMap = new Map(allRequestsRef.current.map(r => [r.id, r]))
+      const [requestsRes, budgetsRes, rfqsRes, vendorsRes, posRes, invRes, payRes] = await Promise.allSettled([
+        getDashboardStats(),
+        apiClient.get('/budgets/allocations/'),
+        apiClient.get('/rfq/'),
+        apiClient.get('/vendors/'),
+        apiClient.get('/procurement/purchase-orders/'),
+        apiClient.get('/invoices/'),
+        apiClient.get('/payments/')
+      ])
 
-      const mapped: ProcurementRequest[] = list.map((item: any) => {
-        const reqId = item.request_id || item.id
-        const existing = existingMap.get(reqId)
-        const backendAmount = Number(item.total_estimated_cost) || 0
-        const effectiveAmount = backendAmount > 0 ? backendAmount : (existing?.amount || existing?.approvalParams?.approvedAmount || 0)
+      if (requestsRes.status === 'fulfilled' && requestsRes.value) {
+        const res = requestsRes.value
+        const list = Array.isArray(res) ? res : res?.results || []
+        const existingMap = new Map(allRequestsRef.current.map(r => [r.id, r]))
 
-        return {
-          id: reqId,
-          title: item.title,
-          requester: item.created_by_detail?.first_name ? `${item.created_by_detail.first_name} ${item.created_by_detail.last_name}` : (existing?.requester || 'Team Lead'),
-          department: item.department_detail?.name || existing?.department || 'IT',
-          category: item.category || existing?.category || 'General',
-          subcategory: item.subcategory || existing?.subcategory || 'Office Equipment',
-          amount: effectiveAmount,
-          quantity: item.quantity || existing?.quantity || 1,
-          requiredBy: item.required_by || existing?.requiredBy,
-          deliveryLocation: item.delivery_location || existing?.deliveryLocation,
-          currentStage: item.current_stage || existing?.currentStage || 1,
-          costCenter: item.cost_center || item.budget_code || existing?.costCenter,
-          date: item.created_at ? item.created_at.split('T')[0] : (existing?.date || new Date().toISOString().split('T')[0]),
-          status: item.status === 'Pending' ? 'pending_approval' : item.status === 'Approved' ? 'approved' : item.status === 'Rejected' ? 'rejected' : 'finance_review',
-          priority: item.priority || existing?.priority || 'Medium',
-          vendor: item.preferred_vendor || existing?.vendor || 'Preferred Vendor',
-          description: item.description || existing?.description,
-          justification: item.justification || existing?.justification,
-          flowType: item.flow_type || existing?.flowType || 'A',
-          extraFields: item.extra_fields || existing?.extraFields || {},
-          approvalParams: existing?.approvalParams,
-          history: Array.isArray(item.approval_steps)
-            ? item.approval_steps.map((s: any) => ({
-                date: s.created_at || '',
-                actorRole: s.role || 'User',
-                actorName: s.actor_detail ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : 'Unknown',
-                action: s.decision || '',
-                remark: s.notes || s.reason_detail?.text || '',
-              }))
-            : existing?.history || [],
-        }
-      })
-      setPendingApprovals(mapped.filter(r => r.status === 'pending_approval'))
-      setMyApprovals(mapped.filter(r => r.status === 'approved'))
-      setRejectedRequests(mapped.filter(r => r.status === 'rejected'))
-      setFinanceReview(mapped.filter(r => r.status === 'finance_review'))
+        const mapped: ProcurementRequest[] = list.map((item: any) => {
+          const reqId = item.request_id || item.id
+          const existing = existingMap.get(reqId)
+          const backendAmount = Number(item.approved_amount || item.total_estimated_cost || item.requested_amount) || 0
+          const effectiveAmount = backendAmount > 0 ? backendAmount : (existing?.amount || existing?.approvalParams?.approvedAmount || 0)
 
-      // Fetch other core data
-      try {
-        const [budgetsRes, rfqsRes, vendorsRes, posRes, invRes, payRes] = await Promise.all([
-          apiClient.get('/budgets/'),
-          apiClient.get('/rfq/'),
-          apiClient.get('/vendors/'),
-          apiClient.get('/procurement/purchase-orders/'),
-          apiClient.get('/invoices/'),
-          apiClient.get('/payments/')
-        ])
-        setBudgets(Array.isArray(budgetsRes.data) ? budgetsRes.data : budgetsRes.data?.results || [])
-        const rawRfqs = Array.isArray(rfqsRes.data) ? rfqsRes.data : rfqsRes.data?.results || []
-          
-          // Sync purchase request stages from RFQs
-          rawRfqs.forEach((backendRfq: any) => {
-              if (backendRfq.purchase_request_detail) {
-                  const pr = backendRfq.purchase_request_detail;
-                  const updateReq = (r: ProcurementRequest) => r.id === pr.request_id ? { ...r, currentStage: pr.current_stage, status: pr.current_stage === 5 ? 'quotes_received' : r.status } : r;
-                  setMyApprovals((prev: any) => prev.map(updateReq));
-                  setPendingApprovals((prev: any) => prev.map(updateReq));
-                  setArrivedRequests((prev: any) => prev.map(updateReq));
-                  setFinanceReview((prev: any) => prev.map(updateReq));
-              }
-          })
+          return {
+            id: reqId,
+            title: item.title,
+            requester: item.created_by_detail?.first_name ? `${item.created_by_detail.first_name} ${item.created_by_detail.last_name}` : (existing?.requester || 'Team Lead'),
+            department: item.department_detail?.name || existing?.department || 'IT',
+            category: item.category || existing?.category || 'General',
+            subcategory: item.subcategory || existing?.subcategory || 'Office Equipment',
+            amount: effectiveAmount,
+            quantity: item.quantity || existing?.quantity || 1,
+            requiredBy: item.required_by || existing?.requiredBy,
+            deliveryLocation: item.delivery_location || existing?.deliveryLocation,
+            currentStage: item.current_stage || existing?.currentStage || 1,
+            costCenter: item.cost_center || item.budget_code || existing?.costCenter,
+            date: item.created_at ? item.created_at.split('T')[0] : (existing?.date || new Date().toISOString().split('T')[0]),
+            status: (() => {
+              const bs = (item.status || '').toUpperCase()
+              if (bs === 'MANAGER_REVIEW' || bs === 'TEAM_LEAD_REVIEW' || bs === 'PENDING') return 'pending_approval'
+              if (bs === 'MANAGER_APPROVED') return 'approved'
+              if (bs === 'FINANCE_REVIEW' || bs === 'FINANCE_RECOMMENDED' || bs === 'RECOMMENDED') return 'finance_review'
+              if (bs === 'FINANCE_APPROVED') return 'finance_approved'
+              if (bs === 'FINANCE_REJECTED') return 'finance_rejected'
+              if (bs === 'SENT_BACK' || bs === 'RETURNED') return 'clarification_requested'
+              if (bs === 'REJECTED') return 'rejected'
+              if (bs === 'APPROVED') return 'approved'
+              if (bs === 'IN PROCUREMENT') return 'assigned_to_vendor'
+              if (bs === 'COMPLETED') return 'completed'
+              return 'pending_approval'
+            })(),
+            priority: item.priority || existing?.priority || 'Medium',
+            vendor: item.preferred_vendor || existing?.vendor || 'Preferred Vendor',
+            description: item.description || existing?.description,
+            justification: item.justification || existing?.justification,
+            flowType: item.flow_type || existing?.flowType || 'A',
+            extraFields: item.extra_fields || existing?.extraFields || {},
+            approvalParams: existing?.approvalParams,
+            recommendationReason: item.recommendation_reason || item.extra_fields?.recommendation_reason || existing?.recommendationReason,
+            recommendedBy: item.recommended_by || item.extra_fields?.recommended_by || existing?.recommendedBy,
+            recommendedDate: item.recommended_date || item.extra_fields?.recommended_date || existing?.recommendedDate,
+            financeStatus: item.finance_status || (
+              item.status === 'FINANCE_APPROVED' ? 'Approved' :
+              item.status === 'FINANCE_REJECTED' ? 'Rejected' :
+              (item.status === 'FINANCE_REVIEW' || item.status === 'FINANCE_RECOMMENDED' || item.status === 'Recommended') ? 'Awaiting Finance Action' :
+              item.status === 'SENT_BACK' ? 'Sent Back' :
+              existing?.financeStatus
+            ),
+            financeApprovedBy: item.finance_approved_by || existing?.financeApprovedBy,
+            financeComment: item.finance_comment || existing?.financeComment,
+            history: Array.isArray(item.approval_history) && item.approval_history.length > 0
+              ? item.approval_history.map((h: any) => ({
+                  date: h.created_at || h.timestamp || '',
+                  actorRole: h.user_role || 'User',
+                  actorName: h.performed_by_detail ? `${h.performed_by_detail.first_name} ${h.performed_by_detail.last_name}` : (h.performed_by_detail?.username || h.user_role || 'User'),
+                  action: h.action || 'Updated',
+                  remark: h.comments || '',
+                }))
+              : Array.isArray(item.approval_steps)
+              ? item.approval_steps.map((s: any) => ({
+                  date: s.created_at || '',
+                  actorRole: s.role || 'User',
+                  actorName: s.actor_detail ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : 'Unknown',
+                  action: s.decision || '',
+                  remark: s.notes || s.reason_detail?.text || '',
+                }))
+              : existing?.history || [],
+          }
+        })
+        setPendingApprovals(mapped.filter(r => r.status === 'pending_approval'))
+        setMyApprovals(mapped.filter(r => r.status === 'approved' || r.status === 'finance_review' || r.status === 'finance_approved' || r.status === 'assigned_to_vendor' || r.status === 'completed'))
+        setRejectedRequests(mapped.filter(r => r.status === 'rejected' || r.status === 'finance_rejected'))
+        setFinanceReview(mapped.filter(r => r.status === 'finance_review' || r.status === 'recommended_to_finance'))
+        setRecommendedToFinance(mapped.filter(r => r.status === 'recommended_to_finance' || r.status === 'finance_review'))
+        setRecommendedToAdmin(mapped.filter(r => r.status === 'recommended_to_admin' || r.status === 'finance_approved'))
+      }
+
+      // Budgets
+      if (budgetsRes.status === 'fulfilled' && budgetsRes.value?.data) {
+        const rawBudgets = Array.isArray(budgetsRes.value.data) ? budgetsRes.value.data : (budgetsRes.value.data?.results || [])
+        setBudgets(rawBudgets.map((b: any) => ({
+          department: b.department_detail?.name || 'Department',
+          category: b.department_detail?.description || 'Operational Allocation',
+          totalBudget: Number(b.total_allocated) || 0,
+          allocated: Number(b.total_allocated) || 0,
+          committed: Number(b.committed_amount) || 0,
+          spent: Number(b.spent_amount) || 0,
+          available: Number(b.available_amount) || 0,
+          pending: Number(b.committed_amount) || 0
+        })))
+      }
+
+      // RFQs
+      if (rfqsRes.status === 'fulfilled' && rfqsRes.value?.data) {
+        const rawRfqs = Array.isArray(rfqsRes.value.data) ? rfqsRes.value.data : rfqsRes.value.data?.results || []
+        rawRfqs.forEach((backendRfq: any) => {
+          if (backendRfq.purchase_request_detail) {
+            const pr = backendRfq.purchase_request_detail
+            const updateReq = (r: ProcurementRequest) => r.id === pr.request_id ? { ...r, currentStage: pr.current_stage, status: pr.current_stage === 5 ? 'quotes_received' : r.status } : r
+            setMyApprovals((prev: any) => prev.map(updateReq))
+            setPendingApprovals((prev: any) => prev.map(updateReq))
+            setArrivedRequests((prev: any) => prev.map(updateReq))
+            setFinanceReview((prev: any) => prev.map(updateReq))
+          }
+        })
         setRfqs(rawRfqs.map((r: any) => {
           const vendors = (r.invited_vendors_detail || []).map((iv: any) => {
             const q = (r.quotations || []).find((qt: any) => qt.vendor === iv.id || qt.vendor_detail?.id === iv.id)
@@ -716,7 +758,6 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
               paymentTerms: q ? q.terms_conditions : undefined
             }
           })
-          
           let st = 'draft'
           const rawStatus = (r.status || '').toUpperCase()
           if (rawStatus === 'OPEN') {
@@ -726,10 +767,8 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           } else if (rawStatus === 'EXPIRED') {
             st = 'expired'
           }
-
           const cb = r.purchase_request_detail?.created_by_detail
           const createdByStr = cb ? `${cb.first_name || ''} ${cb.last_name || ''}`.trim() || cb.username : 'System'
-
           return {
             ...r,
             id: r.rfq_id || r.id,
@@ -740,14 +779,17 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
             estimatedAmount: r.estimatedAmount || r.purchase_request_detail?.total_estimated_cost || r.estimated_amount || 0
           }
         }))
-        const rawVendors = Array.isArray(vendorsRes.data) ? vendorsRes.data : vendorsRes.data?.results || []
+      }
+
+      // Vendors
+      if (vendorsRes.status === 'fulfilled' && vendorsRes.value?.data) {
+        const rawVendors = Array.isArray(vendorsRes.value.data) ? vendorsRes.value.data : vendorsRes.value.data?.results || []
         setVendors(rawVendors.map((v: any) => {
           let st = 'Pending Approval'
           const rawStatus = (v.status || '').toUpperCase()
           if (rawStatus === 'APPROVED') st = 'Active'
           else if (rawStatus === 'SUSPENDED') st = 'Suspended'
           else if (rawStatus === 'REJECTED') st = 'Rejected'
-          
           return {
             ...v,
             id: v.unique_vendor_id || v.id,
@@ -762,15 +804,106 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
             performanceScore: parseFloat(v.performance_score) || 90
           }
         }))
-        setPurchaseOrders(Array.isArray(posRes.data) ? posRes.data : posRes.data?.results || [])
-        setInvoices(Array.isArray(invRes.data) ? invRes.data : invRes.data?.results || [])
-        setPayments(Array.isArray(payRes.data) ? payRes.data : payRes.data?.results || [])
-      } catch (err) {
-        console.warn('Failed fetching secondary data in manager context:', err)
+      }
+
+      // Purchase Orders
+      if (posRes.status === 'fulfilled' && posRes.value?.data) {
+        const rawPos = Array.isArray(posRes.value.data) ? posRes.value.data : posRes.value.data?.results || []
+        setPurchaseOrders(rawPos)
+        if (rawPos.length > 0) {
+          setTickets(prev => {
+            const list = [...prev]
+            rawPos.forEach((po: any, idx: number) => {
+              const ticketId = `TCK-${po.po_id || po.id}`
+              if (!list.some(t => t.id === ticketId)) {
+                const amount = Number(po.total_amount) || 0
+                const docId = po.po_id || `PO-2026-${String(idx + 1).padStart(3, '0')}`
+                const vendorName = po.vendor_detail?.name || (typeof po.vendor === 'string' ? po.vendor : 'Vendor')
+                const title = po.purchase_request_detail?.title || `Hardware & Procurement Package - ${docId}`
+                list.push({
+                  id: ticketId,
+                  requestId: po.purchase_request_detail?.request_id || po.purchase_request || `REQ-${docId}`,
+                  requestTitle: title,
+                  requestAmount: amount,
+                  department: po.purchase_request_detail?.department_detail?.name || 'Engineering',
+                  createdDate: po.order_date || new Date().toISOString().split('T')[0],
+                  products: [
+                    {
+                      id: `PROD-${docId}-1`,
+                      name: title,
+                      category: 'Hardware',
+                      quantity: 1,
+                      unit: 'Units',
+                      vendor: vendorName,
+                      pricePerUnit: amount,
+                      totalAmount: amount,
+                      productOrder: { id: docId, name: `${docId}_Official_PO.pdf`, verified: true, verifiedBy: 'Procurement Officer' },
+                      goodsReceipt: { id: `GRN-${docId}`, name: `GRN_${docId}_Delivery.pdf`, verified: false },
+                      invoice: { id: `INV-${docId}`, name: `Tax_Invoice_${docId}.pdf`, verified: false, amount, taxAmount: Math.round(amount * 0.18) },
+                      submitted: false
+                    }
+                  ],
+                  productOrder: { id: docId, name: `${docId}_Official_PO.pdf`, verified: true, verifiedBy: 'Procurement Officer' },
+                  goodsReceipt: { id: `GRN-${docId}`, name: `GRN_${docId}_Delivery.pdf`, verified: false },
+                  invoice: { id: `INV-${docId}`, name: `Tax_Invoice_${docId}.pdf`, verified: false, amount, taxAmount: Math.round(amount * 0.18) },
+                  submitted: false
+                })
+              }
+            })
+            return list
+          })
+        }
+      }
+
+      // Invoices
+      if (invRes.status === 'fulfilled' && invRes.value?.data) {
+        const rawInvoices = Array.isArray(invRes.value.data) ? invRes.value.data : invRes.value.data?.results || []
+        setInvoices(rawInvoices.map((inv: any) => ({
+          id: inv.invoice_id || `INV-${inv.id}`,
+          invoiceNumber: inv.invoice_number || inv.invoice_id || `INV-${inv.id}`,
+          poId: inv.purchase_order_detail?.po_id || inv.purchase_order || '',
+          poNumber: inv.purchase_order_detail?.po_id || inv.purchase_order || '',
+          requestId: inv.purchase_order_detail?.purchase_request || '',
+          requestTitle: inv.purchase_order_detail?.purchase_request_detail?.title || `Invoice ${inv.invoice_number || inv.id}`,
+          vendor: inv.vendor_detail?.name || (typeof inv.vendor === 'string' ? inv.vendor : 'Vendor'),
+          vendorId: inv.vendor_detail?.unique_vendor_id || inv.vendor,
+          invoiceDate: inv.invoice_date || (inv.created_at || '').split('T')[0] || new Date().toISOString().split('T')[0],
+          dueDate: inv.due_date || (inv.created_at || '').split('T')[0] || new Date().toISOString().split('T')[0],
+          subtotal: Number(inv.amount) || 0,
+          taxAmount: Number(inv.tax_amount) || 0,
+          totalAmount: (Number(inv.amount) || 0) + (Number(inv.tax_amount) || 0),
+          status: inv.status === 'Approved' ? 'Accepted' : inv.status === 'Exception' ? 'Rejected' : 'Pending Review',
+          items: []
+        })))
+      }
+
+      // Payments
+      if (payRes.status === 'fulfilled' && payRes.value?.data) {
+        const rawPayments = Array.isArray(payRes.value.data) ? payRes.value.data : payRes.value.data?.results || []
+        setPayments(rawPayments.map((p: any) => ({
+          id: p.payment_id || `PAY-${p.id}`,
+          requestId: p.purchase_request_detail?.request_id || p.purchase_request || 'N/A',
+          requestTitle: p.purchase_request_detail?.title || `Disbursement for ${p.payment_id || p.id}`,
+          vendor: p.vendor_detail?.name || (typeof p.vendor === 'string' ? p.vendor : 'Vendor'),
+          invoiceId: p.invoice_detail?.invoice_number || (typeof p.invoice === 'string' ? p.invoice : `INV-${p.id}`),
+          poNumber: p.purchase_request_detail?.po_number || 'PO-2026-001',
+          grnNumber: p.reference_number || undefined,
+          amount: Number(p.amount) || 0,
+          taxAmount: Math.round((Number(p.amount) || 0) * 0.18),
+          dueDate: p.payment_date || (p.created_at || '').split('T')[0] || new Date().toISOString().split('T')[0],
+          paymentDate: p.payment_date || (p.status === 'Paid' ? (p.updated_at || '').split('T')[0] : undefined),
+          paymentMethod: p.payment_method || 'Bank Transfer',
+          status: p.status || 'Pending',
+          notes: p.notes || '',
+          transactionRef: p.reference_number || undefined,
+          history: []
+        })))
       }
 
     } catch (e) {
       console.warn('Backend manager fetch fallback:', e)
+    } finally {
+      isFetchingRef.current = false
     }
   }
 
@@ -778,7 +911,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     refreshManagerBackendData()
     const handleUpdate = () => refreshManagerBackendData()
     window.addEventListener('kss_backend_updated', handleUpdate)
-    const interval = setInterval(refreshManagerBackendData, 5000)
+    const interval = setInterval(refreshManagerBackendData, 25000)
     return () => {
       window.removeEventListener('kss_backend_updated', handleUpdate)
       clearInterval(interval)
@@ -806,41 +939,30 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Computed: Pending Financial Approvals (all requests awaiting finance action)
   const pendingFinancialApprovals = useMemo(() => {
-    return financeReview.filter(r =>
+    return allRequests.filter(r =>
       r.status === 'sent_to_finance' ||
       r.status === 'finance_review' ||
       r.status === 'recommended_to_finance' ||
       r.status === 'finance_on_hold' ||
-      r.status === 'clarification_requested'
+      r.status === 'clarification_requested' ||
+      r.financeStatus === 'Awaiting Finance Action' ||
+      r.financeStatus === 'Sent to Finance' ||
+      r.financeStatus === 'Under Review'
     )
-  }, [financeReview])
+  }, [allRequests])
 
   // Computed: Approved Finance Requests
   const approvedFinanceRequests = useMemo(() => {
-    return myApprovals.filter(r => r.financeStatus === 'Approved' || r.status === 'finance_approved')
-  }, [myApprovals])
+    return allRequests.filter(r => r.financeStatus === 'Approved' || r.status === 'finance_approved')
+  }, [allRequests])
 
   // Computed: Rejected Finance Requests
   const rejectedFinanceRequests = useMemo(() => {
-    return [
-      ...rejectedRequests.filter(r => r.rejectedBy?.toLowerCase().includes('finance') || r.status === 'finance_rejected'),
-      ...financeAuditHistory.filter(a => a.action === 'REJECTED').map(a => ({
-        id: a.requestId,
-        title: a.requestTitle,
-        requester: 'Procurement Requester',
-        department: 'Corporate',
-        category: 'Procurement',
-        amount: a.amount,
-        date: a.timestamp.split(' ')[0],
-        status: 'rejected' as RequestStatus,
-        priority: 'Medium' as const,
-        rejectionReason: a.reason || 'Finance Review Rejection',
-        rejectedBy: a.actor,
-        rejectedDate: a.timestamp.split(' ')[0],
-        financeComment: a.comment,
-      })),
-    ].filter((item, idx, self) => idx === self.findIndex(t => t.id === item.id))
-  }, [rejectedRequests, financeAuditHistory])
+    return allRequests.filter(r =>
+      r.status === 'finance_rejected' ||
+      (r.status === 'rejected' && (r.rejectedBy?.toLowerCase().includes('finance') || r.rejectionReason?.toLowerCase().includes('finance')))
+    )
+  }, [allRequests])
 
   // Manager Dashboard stats
   const dashboardStats = useMemo<DashboardStats>(() => ({
@@ -897,6 +1019,59 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [budgets, tickets, payments])
 
+  // Dynamically compute payment analytics across weekly, monthly, yearly from live payments
+  const paymentData = useMemo(() => {
+    const weeklyMap: Record<string, { approved: number; paid: number; pending: number }> = {
+      Mon: { approved: 0, paid: 0, pending: 0 },
+      Tue: { approved: 0, paid: 0, pending: 0 },
+      Wed: { approved: 0, paid: 0, pending: 0 },
+      Thu: { approved: 0, paid: 0, pending: 0 },
+      Fri: { approved: 0, paid: 0, pending: 0 },
+      Sat: { approved: 0, paid: 0, pending: 0 },
+      Sun: { approved: 0, paid: 0, pending: 0 },
+    }
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const monthlyMap: Record<string, { approved: number; paid: number; pending: number }> = {}
+    months.forEach(m => { monthlyMap[m] = { approved: 0, paid: 0, pending: 0 } })
+
+    const years = ['2023', '2024', '2025', '2026']
+    const yearlyMap: Record<string, { approved: number; paid: number; pending: number }> = {}
+    years.forEach(y => { yearlyMap[y] = { approved: 0, paid: 0, pending: 0 } })
+
+    payments.forEach(p => {
+      const amt = Number(p.amount) || 0
+      const isPaid = p.status === 'Paid'
+      const isPending = p.status === 'Pending' || p.status === 'Processing'
+      const pDate = p.paymentDate ? new Date(p.paymentDate) : new Date()
+      const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][pDate.getDay()]
+      const monthName = months[pDate.getMonth()]
+      const yearStr = String(pDate.getFullYear())
+
+      if (weeklyMap[dayName]) {
+        weeklyMap[dayName].approved += amt
+        if (isPaid) weeklyMap[dayName].paid += amt
+        if (isPending) weeklyMap[dayName].pending += amt
+      }
+      if (monthlyMap[monthName]) {
+        monthlyMap[monthName].approved += amt
+        if (isPaid) monthlyMap[monthName].paid += amt
+        if (isPending) monthlyMap[monthName].pending += amt
+      }
+      if (yearlyMap[yearStr]) {
+        yearlyMap[yearStr].approved += amt
+        if (isPaid) yearlyMap[yearStr].paid += amt
+        if (isPending) yearlyMap[yearStr].pending += amt
+      }
+    })
+
+    return {
+      weekly: Object.keys(weeklyMap).map(k => ({ period: k, ...weeklyMap[k] })),
+      monthly: Object.keys(monthlyMap).map(k => ({ period: k, ...monthlyMap[k] })),
+      yearly: Object.keys(yearlyMap).map(k => ({ period: k, ...yearlyMap[k] })),
+    }
+  }, [payments])
+
   // ─── Manager Actions ────────────────────────────────────────────────────────
 
   const acceptRequest = useCallback((id: string) => {
@@ -907,9 +1082,14 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [arrivedRequests])
 
   const rejectRequest = useCallback((id: string, reason: string, notes?: string) => {
-    rejectRequestApi(id, 1, reason)
-      .then(() => refreshManagerBackendData())
+    const comments = notes ? `${reason} - ${notes}` : reason
+    rejectRequestApi(id, comments)
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
       .catch((e) => console.warn('Backend reject warning:', e))
+
     const req = arrivedRequests.find(r => r.id === id) || pendingApprovals.find(r => r.id === id)
     if (!req) return
     setArrivedRequests(prev => prev.filter(r => r.id !== id))
@@ -925,24 +1105,33 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [arrivedRequests, pendingApprovals])
 
   const recommendToFinance = useCallback((id: string, reason: string) => {
-    recommendToFinanceApi(id, 1, reason)
-      .then(() => refreshManagerBackendData())
+    const safeReason = reason && reason.trim().length > 0 ? reason : 'Recommended to Finance Department for financial review and approval.'
+    recommendToFinanceApi(id, safeReason)
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
       .catch((e) => console.warn('Backend recommend warning:', e))
-    const req = arrivedRequests.find(r => r.id === id) || pendingApprovals.find(r => r.id === id)
+
+    const req = pendingApprovals.find(r => r.id === id) ||
+      arrivedRequests.find(r => r.id === id) ||
+      myApprovals.find(r => r.id === id) ||
+      allRequestsRef.current.find(r => r.id === id)
     if (!req) return
+
     setArrivedRequests(prev => prev.filter(r => r.id !== id))
     setPendingApprovals(prev => prev.filter(r => r.id !== id))
     const updated: ProcurementRequest = {
       ...req,
-      status: 'recommended_to_finance',
+      status: 'finance_review',
       recommendationReason: reason,
       recommendedBy: 'Sarah Manager',
       recommendedDate: new Date().toISOString().split('T')[0],
       financeStatus: 'Awaiting Finance Action',
     }
-    setRecommendedToFinance(prev => [...prev, updated])
-    setFinanceReview(prev => [...prev, { ...updated, status: 'finance_review' }])
-  }, [arrivedRequests, pendingApprovals])
+    setRecommendedToFinance(prev => [...prev.filter(r => r.id !== id), updated])
+    setFinanceReview(prev => [...prev.filter(r => r.id !== id), updated])
+  }, [arrivedRequests, pendingApprovals, myApprovals])
 
   const approveRequest = useCallback((id: string, notes?: string, approvalParams?: ApprovalParameters) => {
     const req = pendingApprovals.find(r => r.id === id) || arrivedRequests.find(r => r.id === id) || allRequestsRef.current.find(r => r.id === id)
@@ -964,34 +1153,49 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       approvedAt: new Date().toISOString()
     }
 
-    const approvedAmountVal = finalParams.approvedAmount || req.amount || 0
+    const approvedAmountVal = Number(finalParams.approvedAmount) || Number(req.amount) || 0
 
-    approveRequestApi(id, notes, approvedAmountVal)
-      .then(() => refreshManagerBackendData())
-      .catch((e) => console.warn('Backend approve warning:', e))
-
-    // 1. Remove from Manager's pending queue
+    // 1. Optimistically move from pending → finance_review (correct next stage after Manager approval)
     setPendingApprovals(prev => prev.filter(r => r.id !== id))
     setArrivedRequests(prev => prev.filter(r => r.id !== id))
 
     const approvedReq: ProcurementRequest = {
       ...req,
-      status: 'finance_review',
-      financeStatus: 'Pending Finance Approval',
+      status: 'finance_review',         // Correct: Manager approval → FINANCE_REVIEW
+      currentStage: 3,                   // Stage 3 = Finance Approval
+      financeStatus: 'Awaiting Finance Action',
       approvedBy: finalParams.approvedBy,
       approvedDate: today,
       description: notes || req.description,
-      amount: approvedAmountVal,
+      amount: approvedAmountVal,         // Persist approved amount
       vendor: finalParams.vendor || req.vendor,
       costCenter: finalParams.costCenter || req.costCenter,
       approvalParams: finalParams
     }
 
-    // 2. Track in Manager approved list
+    // 2. Track in Manager's approved/forwarded list (now visible in Finance)
     setMyApprovals(prev => [approvedReq, ...prev.filter(r => r.id !== id)])
-
-    // 3. Move directly to Finance pending review queue
     setFinanceReview(prev => [approvedReq, ...prev.filter(r => r.id !== id)])
+    setRecommendedToFinance(prev => [approvedReq, ...prev.filter(r => r.id !== id)])
+
+    // 3. Dispatch backend API call, then re-sync from database (source of truth)
+    approveRequestApi(id, {
+      approved_amount: approvedAmountVal,
+      cost_center: finalParams.costCenter,
+      budget_available: finalParams.budgetAvailable === 'Yes',
+      vendor: finalParams.vendor,
+      comments: notes || finalParams.approvalComments,
+    })
+      .then(() => {
+        // Force immediate re-fetch from PostgreSQL to sync all state
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch(e => {
+        console.warn('Manager approve API sync error:', e)
+        // Re-fetch even on error to restore consistent state
+        refreshManagerBackendData()
+      })
   }, [pendingApprovals, arrivedRequests])
 
   const addRFQ = useCallback(async (rfqData: RFQ) => {
@@ -1099,11 +1303,28 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [quotations])
 
-  const sendToFinance = useCallback((id: string, _message?: string) => {
-    setFinanceReview(prev => prev.map(r =>
-      r.id === id ? { ...r, status: 'sent_to_finance', financeStatus: 'Sent to Finance' } : r
-    ))
-  }, [])
+  const sendToFinance = useCallback((id: string, message?: string) => {
+    forwardToFinanceApi(id, message || 'Forwarded to Finance Directorate for budget reservation and disbursement.')
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch(e => console.warn('Forward to finance API error:', e))
+
+    const req = financeReview.find(r => r.id === id) ||
+      recommendedToFinance.find(r => r.id === id) ||
+      allRequestsRef.current.find(r => r.id === id)
+    if (req) {
+      const updated: ProcurementRequest = {
+        ...req,
+        status: 'sent_to_finance',
+        financeStatus: 'Sent to Finance',
+        financeComment: message,
+      }
+      setFinanceReview(prev => [...prev.filter(r => r.id !== id), updated])
+      setRecommendedToFinance(prev => [...prev.filter(r => r.id !== id), updated])
+    }
+  }, [financeReview, recommendedToFinance])
 
   const verifyDocument = useCallback((
     ticketId: string,
@@ -1422,11 +1643,19 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const now = new Date().toISOString()
     const today = now.split('T')[0]
 
-    // 1. Remove from finance review
+    // 1. Dispatch backend API call
+    approveFinanceRequestApi(id, comment, req.amount)
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch(e => console.warn('Finance approve API sync error:', e))
+
+    // 2. Remove from finance review
     setFinanceReview(prev => prev.filter(r => r.id !== id))
     setRecommendedToFinance(prev => prev.filter(r => r.id !== id))
 
-    // 2. Move to Admin pending queue
+    // 3. Move to Admin pending queue
     const forwardedReq: ProcurementRequest = {
       ...req,
       status: 'recommended_to_admin',
@@ -1439,7 +1668,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setRecommendedToAdmin(prev => [forwardedReq, ...prev.filter(r => r.id !== id)])
     setMyApprovals(prev => [forwardedReq, ...prev.filter(r => r.id !== id)])
 
-    // 3. Add to finance audit history
+    // 4. Add to finance audit history
     setFinanceAuditHistory(prev => [
       {
         id: `AUD-${Date.now()}`,
@@ -1461,11 +1690,19 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (!req) return
     const today = new Date().toISOString().split('T')[0]
 
-    // 1. Remove from finance review
+    // 1. Dispatch backend API call
+    rejectFinanceRequestApi(id, reason, comment)
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch(e => console.warn('Finance reject API sync error:', e))
+
+    // 2. Remove from finance review
     setFinanceReview(prev => prev.filter(r => r.id !== id))
     setRecommendedToFinance(prev => prev.filter(r => r.id !== id))
 
-    // 2. Add to rejected requests
+    // 3. Add to rejected requests
     const rejectedReq: ProcurementRequest = {
       ...req,
       status: 'finance_rejected',
@@ -1477,7 +1714,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
     setRejectedRequests(prev => [rejectedReq, ...prev])
 
-    // 3. Add to finance audit history
+    // 4. Add to finance audit history
     setFinanceAuditHistory(prev => [
       {
         id: `AUD-${Date.now()}`,
@@ -1493,6 +1730,38 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ...prev,
     ])
   }, [financeReview])
+
+  const sendBackFinanceRequest = useCallback((id: string, comments: string, actor = 'Mark Finance Officer') => {
+    const req = financeReview.find(r => r.id === id) || allRequests.find(r => r.id === id)
+    if (!req) return
+    const today = new Date().toISOString().split('T')[0]
+
+    sendBackFinanceRequestApi(id, comments)
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch(e => console.warn('Finance send back API sync error:', e))
+
+    setFinanceReview(prev => prev.filter(r => r.id !== id))
+    setRecommendedToFinance(prev => prev.filter(r => r.id !== id))
+    setPendingApprovals(prev => prev.filter(r => r.id !== id))
+
+    setFinanceAuditHistory(prev => [
+      {
+        id: `AUD-${Date.now()}`,
+        requestId: req.id,
+        requestTitle: req.title,
+        actor,
+        action: 'SENT_BACK',
+        timestamp: `${today} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        reason: 'Sent back for correction',
+        comment: comments,
+        amount: req.amount,
+      },
+      ...prev,
+    ])
+  }, [financeReview, allRequests])
 
   const holdFinanceRequest = useCallback((id: string, reason: string, actor = 'Mark Finance Officer') => {
     const today = new Date().toISOString().split('T')[0]
@@ -1604,12 +1873,20 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (!req) return
     const today = new Date().toISOString().split('T')[0]
 
-    // 1. Remove from Admin pending queue and Finance queues
+    // 1. Dispatch backend API call
+    approveAdminRequestApi(id, comment, req.amount)
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch(e => console.warn('Admin approve API sync error:', e))
+
+    // 2. Remove from Admin pending queue and Finance queues
     setRecommendedToAdmin(prev => prev.filter(r => r.id !== id))
     setFinanceReview(prev => prev.filter(r => r.id !== id))
     setRecommendedToFinance(prev => prev.filter(r => r.id !== id))
 
-    // 2. Determine workflow type: Software vs Hardware
+    // 3. Determine workflow type: Software vs Hardware
     const wfType = detectWorkflowType(req.category, req.title)
     const isSoftware = wfType === 'SOFTWARE'
 
@@ -1629,7 +1906,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       paymentStatus: 'Pending',
     }
 
-    // 3. For Software requests: Auto-queue directly into Payments (bypasses RFQ/PO/GRN/Invoice)
+    // 4. For Software requests: Auto-queue directly into Payments (bypasses RFQ/PO/GRN/Invoice)
     if (isSoftware) {
       setPayments(currPayments => {
         if (currPayments.some(p => p.requestId === req.id)) return currPayments
@@ -1653,7 +1930,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
     }
 
-    // 4. Update myApprovals history
+    // 5. Update myApprovals history
     setMyApprovals(prev => [approvedReq, ...prev.filter(r => r.id !== id)])
 
     setFinanceAuditHistory(prev => [
@@ -1682,6 +1959,14 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (!req) return
     const today = new Date().toISOString().split('T')[0]
 
+    // 1. Dispatch backend API call
+    rejectAdminRequestApi(id, comment ? `${reason} - ${comment}` : reason)
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch(e => console.warn('Admin reject API sync error:', e))
+
     setFinanceReview(prev => prev.filter(r => r.id !== id))
     setRecommendedToFinance(prev => prev.filter(r => r.id !== id))
     setRecommendedToAdmin(prev => prev.filter(r => r.id !== id))
@@ -1708,7 +1993,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         action: 'REJECTED',
         timestamp: `${today} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
         reason,
-        comment: comment || 'Executive authority rejected the requisition.',
+        comment,
         amount: req.amount,
       },
       ...prev,
@@ -1721,6 +2006,15 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     actor = 'Priyanka Sharma (Admin)'
   ) => {
     const today = new Date().toISOString().split('T')[0]
+
+    // 1. Dispatch backend API call
+    sendBackAdminRequestApi(id, feedback)
+      .then(() => {
+        refreshManagerBackendData()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch(e => console.warn('Admin return API sync error:', e))
+
     setFinanceReview(prev => prev.filter(r => r.id !== id))
     setRecommendedToAdmin(prev => prev.filter(r => r.id !== id))
 
@@ -2416,7 +2710,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       rejectedFinanceRequests,
       rfqs,
       budgets,
-      paymentData: MOCK_PAYMENT_DATA,
+      paymentData,
       tickets,
       payments,
       complaints,
@@ -2444,6 +2738,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       rejectVendorInvoice,
       approveFinanceRequest,
       rejectFinanceRequest,
+      sendBackFinanceRequest,
       holdFinanceRequest,
       requestClarification,
       recommendToHigherAuthority,

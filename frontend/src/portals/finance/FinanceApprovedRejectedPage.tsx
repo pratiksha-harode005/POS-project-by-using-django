@@ -150,13 +150,13 @@ export const FinanceApprovedRejectedPage: React.FC = () => {
                         {fmt(r.amount)}
                       </td>
                       <td className="p-4 whitespace-nowrap text-slate-700">
-                        {r.financeApprovedBy || 'Mark Finance Officer'}
+                        {r.financeApprovedBy || 'Finance Controller'}
                       </td>
                       <td className="p-4 whitespace-nowrap text-slate-500">
-                        {r.financeApprovedDate || r.approvedDate || '2026-09-10'}
+                        {r.financeApprovedDate || r.approvedDate || '-'}
                       </td>
-                      <td className="p-4 max-w-sm text-slate-600 truncate" title={r.financeComment || 'Within departmental threshold'}>
-                        {r.financeComment || 'Within Q3 Capex threshold. Approved for PO generation.'}
+                      <td className="p-4 max-w-sm text-slate-600 truncate" title={r.financeComment || 'Authorized for PO release.'}>
+                        {r.financeComment || 'Authorized for PO release.'}
                       </td>
                       <td className="p-4 whitespace-nowrap">
                         <span
@@ -228,10 +228,10 @@ export const FinanceApprovedRejectedPage: React.FC = () => {
                         {r.rejectedBy || 'Finance Audit Team'}
                       </td>
                       <td className="p-4 max-w-sm text-rose-800 font-medium truncate" title={r.rejectionReason}>
-                        {r.rejectionReason || 'Non-essential expenditure exceeding policy threshold'}
+                        {r.rejectionReason || 'Disapproved during financial audit.'}
                       </td>
                       <td className="p-4 whitespace-nowrap text-slate-500">
-                        {r.rejectedDate || '2026-08-30'}
+                        {r.rejectedDate || '-'}
                       </td>
                       <td className="p-4 whitespace-nowrap">
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">

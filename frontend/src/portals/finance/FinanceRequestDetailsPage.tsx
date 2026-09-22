@@ -9,6 +9,7 @@ import {
 import { useFinanceData, ProcurementRequest, RFQ, ApprovalParameters } from '../../context/ManagerDataContext'
 import { getWorkflowProgression } from '../../utils/workflowUtils'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -36,10 +37,13 @@ const SOFTWARE_STAGES_CONFIG = [
 
 export const FinanceRequestDetailsPage: React.FC = () => {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
   const { allRequests, rfqs, approveFinanceRequest } = useFinanceData()
 
-  const reqId = searchParams.get('id') || allRequests[0]?.id || 'REQ-2026-001'
+  const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
+
+  const reqId = searchParams.get('id') || allRequests[0]?.id || ''
   const [selectedId, setSelectedId] = useState(reqId)
   const [viewMode, setViewMode] = useState<'FORM' | 'STEPPER'>('FORM')
 
@@ -57,8 +61,8 @@ export const FinanceRequestDetailsPage: React.FC = () => {
     if (!request) return
     approveFinanceRequest(
       request.id,
-      params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
-      'Mark Finance Officer'
+      params.approvalComments || 'Verified within budget allocation. Authorized for PO release.',
+      actorName
     )
     showToast(`✓ Request ${request.id} approved! Forwarded for PO release.`, 'success')
     setApproveModalOpen(false)
@@ -142,68 +146,25 @@ export const FinanceRequestDetailsPage: React.FC = () => {
         d.setDate(d.getDate() + 20)
         return d.toISOString().split('T')[0]
       })()
-    : '2026-09-30'
+    : new Date().toISOString().split('T')[0]
 
-  const deliveryLocation = 'Pune HQ, 4th Floor'
-  const preferredVendor = request.vendor || (request.category?.toLowerCase().includes('software') ? 'Amazon Web Services' : 'Dell Technologies')
-  const justification = request.justification || `${request.title} is required to maintain business continuity, sprint deliverables, and departmental operational goals.`
-  const description = request.description || `${request.title} required by ${request.requester} for ${request.department}. Includes enterprise delivery, compliance certifications, and SLA support.`
+  const deliveryLocation = request.department ? `${request.department} Department Facilities` : 'Corporate Headquarters'
+  const preferredVendor = request.vendor || 'Vendor to be Assigned'
+  const justification = request.justification || `${request.title} required for operational workflow.`
+  const description = request.description || `${request.title} requested by ${request.requester} for ${request.department}.`
 
   // Product specifications breakdown
   const getProductDetails = () => {
-    const t = (request.title + ' ' + (request.category || '')).toLowerCase()
-    if (t.includes('laptop') || t.includes('macbook')) {
-      return {
-        modelName: 'Apple MacBook Pro 14" M3 Pro / Dell Latitude Enterprise Workstation',
-        partNumber: 'SKU-HW-LPT-2026-09',
-        technicalSpecs: 'Apple M3 Pro / Intel Core i9, 32GB Unified RAM, 1TB NVMe PCIe Gen4 SSD, Liquid Retina XDR Display, 70W Fast Charger.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} Enterprise AppleCare+ / OEM Onsite Support with 24x7 priority coverage`,
-        certifications: 'RoHS, EnergyStar, ISO 27001 Security Compliant',
-        deliveryTimeline: '3 to 5 Business Days upon PO Issuance',
-      }
-    }
-    if (t.includes('server')) {
-      return {
-        modelName: 'Dell PowerEdge R760 2U Rack Server Dual Intel Xeon',
-        partNumber: 'SKU-SRV-R760-2026',
-        technicalSpecs: '2x Intel Xeon Gold 6430 (64 Cores), 128GB DDR5 ECC Registered RAM, 4x 3.84TB Enterprise NVMe SSD in RAID 10, Dual 1100W Redundant Titanium PSUs.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} OEM 24x7 Mission-Critical ProSupport with 4-Hour Onsite Response`,
-        certifications: 'Tier-4 Datacenter Certified, CE, FCC, UL',
-        deliveryTimeline: '7 to 10 Business Days',
-      }
-    }
-    if (t.includes('monitor') || t.includes('display')) {
-      return {
-        modelName: 'Dell UltraSharp 32" 4K USB-C Hub Monitor (U3223QE)',
-        partNumber: 'SKU-MON-U32-2026',
-        technicalSpecs: 'IPS Black Technology, 4K UHD 3840x2160 @ 60Hz, 90W USB-C Power Delivery, Built-in KVM Switch & RJ45 Ethernet Port.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} Advanced Exchange Service & Premium Panel Guarantee`,
-        certifications: 'TCO Certified Displays 9.0, EPEAT Gold',
-        deliveryTimeline: '2 to 4 Business Days',
-      }
-    }
-    if (t.includes('software') || t.includes('saas') || t.includes('cloud')) {
-      return {
-        modelName: 'Enterprise SaaS Annual Multi-Seat Production License & Cloud Capacity',
-        partNumber: 'SKU-SW-CORP-2026',
-        technicalSpecs: 'Dedicated Tenant Deployment, SSO/SAML 2.0 Integration, 99.99% Uptime SLA, Audit Logging, Automated Daily Encrypted Backups.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} 24x7 Premium Enterprise Technical SLA Support with Dedicated Account Manager`,
-        certifications: 'SOC 2 Type II, ISO 27001, GDPR, HIPAA Certified',
-        deliveryTimeline: 'Instant Digital Provisioning within 2 Hours of Finance Clearance',
-      }
-    }
+    const reqAny = request as any
+    const firstItem = reqAny.items && reqAny.items[0]
     return {
-      modelName: `${request.title} — Commercial Enterprise Specification`,
-      partNumber: `SKU-COMM-${request.id}`,
-      technicalSpecs: `Commercial grade deployment specifications certified for ${request.department} operational infrastructure.`,
-      unitPrice: Math.round(request.amount / quantity),
-      warrantyTerms: `${warranty} Comprehensive Enterprise Onsite Warranty & Support`,
+      modelName: firstItem?.name || request.title,
+      partNumber: firstItem?.sku || `SKU-${request.id}`,
+      technicalSpecs: request.description || `Enterprise procurement specification for ${request.department}`,
+      unitPrice: firstItem?.unitPrice || Math.round(request.amount / quantity),
+      warrantyTerms: `${warranty} Enterprise Warranty & Support`,
       certifications: 'Standard Commercial Standards & Regulatory Clearance',
-      deliveryTimeline: '5 to 7 Business Days',
+      deliveryTimeline: 'Standard Procurement Timeline',
     }
   }
 
@@ -230,44 +191,34 @@ export const FinanceRequestDetailsPage: React.FC = () => {
       action = 'Requisition Disapproved'
     } else if (idx < currentStageIndex || (idx === currentStageIndex && progression.isCompleted)) {
       statusType = 'completed'
+      const reqAny = request as any
+      const hist = (reqAny.approvalHistory as any[])?.find(
+        (h: any) => h.role?.toLowerCase().includes(s.name.toLowerCase()) || h.action?.toLowerCase().includes(s.name.toLowerCase())
+      )
       if (idx === 0) {
-        date = `${request.date} 09:30 AM`
+        date = request.date ? `${request.date}` : ''
         responsible = `${request.requester} (${request.department})`
         action = 'Requisition Created & Submitted'
         doc = 'Requisition_PR_Form.pdf'
       } else if (idx === 1) {
-        date = `${request.date} 11:15 AM`
-        responsible = request.approvedBy || 'Sarah Manager (Procurement Manager)'
+        date = request.approvedDate || hist?.date || request.date || ''
+        responsible = request.approvedBy || hist?.approverName || 'Manager Verification'
         action = 'Manager Verified & Budget Endorsed'
-        comment = 'Justification verified against project objectives.'
+        comment = hist?.comment || 'Justification verified against project objectives.'
       } else if (idx === 2) {
-        date = request.financeApprovedDate || '2026-09-10 03:20 PM'
-        responsible = request.financeApprovedBy || 'Mark Finance (Finance Controller)'
+        date = request.financeApprovedDate || hist?.date || request.date || ''
+        responsible = request.financeApprovedBy || hist?.approverName || actorName
         action = 'Finance Approved & Capital Allocated'
-        comment = 'Sufficient fiscal headroom verified.'
-        doc = 'Capex_Headroom_Clearance.pdf'
-      } else if (idx === 3) {
-        date = '2026-09-10 05:00 PM'
-        responsible = 'David Admin (Executive Authority)'
-        action = 'Executive Sign-off Granted'
-      } else if (idx === 4) {
-        date = '2026-09-11 09:30 AM'
-        responsible = 'Alex Sourcing (Procurement Admin)'
-        action = 'RFQ Issued to Approved Vendors'
-        doc = 'RFQ_Document_Spec.pdf'
-      } else if (idx === 5) {
-        date = '2026-09-11 02:00 PM'
-        responsible = 'Vendor Portals (Dell, Lenovo, HP)'
-        action = 'Commercial Quotations Logged'
-        doc = 'Commercial_Evaluation_Matrix.pdf'
+        comment = request.financeComment || hist?.comment || 'Headroom verified and approved.'
       } else {
-        date = '2026-09-11 04:00 PM'
-        responsible = s.dept
+        date = hist?.date || request.date || ''
+        responsible = hist?.approverName || s.dept
         action = `${s.name} Complete`
+        comment = hist?.comment || ''
       }
     } else if (idx === currentStageIndex) {
       statusType = 'current'
-      date = 'In Progress Today'
+      date = 'In Progress'
       responsible = s.dept
       action = `Currently in ${s.name}`
       comment = request.description || 'Under active operational workflow'
@@ -999,7 +950,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
         isOpen={approveModalOpen}
         request={request}
         portalType="FINANCE"
-        approverName="Mark Finance Officer"
+        approverName={actorName}
         onClose={() => setApproveModalOpen(false)}
         onConfirm={handleConfirmApproval}
       />

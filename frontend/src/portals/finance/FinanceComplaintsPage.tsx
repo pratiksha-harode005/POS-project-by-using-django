@@ -29,19 +29,77 @@ const COMMON_COMPLAINT_TYPES = [
   'Other',
 ]
 
-const SAMPLE_PRODUCTS = [
-  { name: 'Dell Latitude 5440 Laptop', sku: 'SKU-DELL-LAT54', vendor: 'Dell Technologies Enterprise' },
-  { name: 'Apple MacBook Pro 14"', sku: 'SKU-APPL-MBP14', vendor: 'Apple India Enterprise' },
-  { name: 'Samsung 27" 4K UHD Monitor', sku: 'SKU-SAMS-M274K', vendor: 'Samsung Display Systems' },
-  { name: 'Logitech MX Master 3S Mouse', sku: 'SKU-LOGI-MXM3S', vendor: 'Logitech Peripheral Corp' },
-  { name: 'Keychron Mechanical Keyboard', sku: 'SKU-KEYC-K8PRO', vendor: 'Keychron Tech' },
-  { name: 'Cisco 24-Port Gigabit Switch', sku: 'SKU-CISC-SG350', vendor: 'Cisco Enterprise Networks' },
-]
-
 export const FinanceComplaintsPage: React.FC = () => {
   const navigate = useNavigate()
-  const { complaints, addComplaint, updateComplaintStatus } = useFinanceData()
+  const { complaints, addComplaint, updateComplaintStatus, allRequests, purchaseOrders, vendors } = useFinanceData()
   const { user } = useAuth()
+
+  // Dynamically derive available products from real POs and procurement requests
+  const availableProducts = useMemo(() => {
+    const list: Array<{ name: string; sku: string; vendor: string; poNumber?: string }> = []
+    
+    // Extract from purchase orders
+    purchaseOrders?.forEach((po: any) => {
+      po.items?.forEach((it: any) => {
+        list.push({
+          name: it.name || it.item_name || 'Procured Product',
+          sku: it.sku || `SKU-${po.poNumber || 'PO'}-${it.id || 1}`,
+          vendor: po.vendor || po.vendorName || '',
+          poNumber: po.poNumber
+        })
+      })
+    })
+
+    // Extract from procurement requests
+    allRequests?.forEach((r: any) => {
+      const v = r.vendor_name || r.vendor || ''
+      const po = r.po_number || `PO-2026-${r.id}`
+      if (r.items && r.items.length > 0) {
+        r.items.forEach((it: any, idx: number) => {
+          list.push({
+            name: it.name || it.item_name || r.title || 'Procured Item',
+            sku: it.sku || `SKU-REQ-${r.id}-${idx + 1}`,
+            vendor: v,
+            poNumber: po
+          })
+        })
+      } else if (r.title || r.item_name) {
+        list.push({
+          name: r.title || r.item_name || 'Procured Item',
+          sku: `SKU-REQ-${r.id}`,
+          vendor: v,
+          poNumber: po
+        })
+      }
+    })
+
+
+    // Deduplicate by name
+    const seen = new Set<string>()
+    return list.filter(p => {
+      if (!p.name || seen.has(p.name)) return false
+      seen.add(p.name)
+      return true
+    })
+  }, [purchaseOrders, allRequests])
+
+  // Dynamically derive vendors from context, requests, and orders
+  const availableVendors = useMemo(() => {
+    const set = new Set<string>()
+    vendors?.forEach((v: any) => {
+      const name = typeof v === 'string' ? v : (v.name || v.company_name)
+      if (name) set.add(name)
+    })
+    allRequests?.forEach((r: any) => {
+      if (r.vendor) set.add(r.vendor)
+      if (r.vendor_name) set.add(r.vendor_name)
+    })
+    purchaseOrders?.forEach((po: any) => {
+      if (po.vendor) set.add(po.vendor)
+      if (po.vendorName) set.add(po.vendorName)
+    })
+    return Array.from(set).filter(Boolean)
+  }, [vendors, allRequests, purchaseOrders])
 
   // Form states
   const [productName, setProductName] = useState('')
@@ -54,18 +112,18 @@ export const FinanceComplaintsPage: React.FC = () => {
 
   const [complaintType, setComplaintType] = useState('Defective Product')
   const [issueDescription, setIssueDescription] = useState('')
-  const [defectiveQuantity, setDefectiveQuantity] = useState('5')
+  const [defectiveQuantity, setDefectiveQuantity] = useState('1')
   const [severity, setSeverity] = useState('High')
   const [discoveryDate, setDiscoveryDate] = useState(new Date().toISOString().split('T')[0])
 
   // Defective Pieces Exchange Section States
   const [exchangeType, setExchangeType] = useState('1-to-1 Unit Swap (Direct Defective Piece Replacement)')
   const [defectClassification, setDefectClassification] = useState('DOA (Dead on Arrival) - Zero Power')
-  const [exchangeUnits, setExchangeUnits] = useState('5')
-  const [defectiveSerials, setDefectiveSerials] = useState('SN-DL-849201, SN-DL-849202, SN-DL-849203, SN-DL-849204, SN-DL-849205')
+  const [exchangeUnits, setExchangeUnits] = useState('1')
+  const [defectiveSerials, setDefectiveSerials] = useState('')
   const [pickupMethod, setPickupMethod] = useState('Vendor Field Engineer On-site Pickup')
   const [replacementSla, setReplacementSla] = useState('Immediate Express (24–48 Hours Advance Dispatch)')
-  const [reverseContact, setReverseContact] = useState('Rajesh Sharma - Warehouse Manager (+91 98400 12345)')
+  const [reverseContact, setReverseContact] = useState('')
   const [gatePassReq, setGatePassReq] = useState(true)
 
   // Attachments
@@ -75,10 +133,7 @@ export const FinanceComplaintsPage: React.FC = () => {
     deliveryChallan: false,
     other: false,
   })
-  const [uploadedFiles, setUploadedFiles] = useState<string[]>([
-    'defect_evidence_photo_1.jpg',
-    'damaged_unit_chassis.png',
-  ])
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
 
   // Resolution
   const [resolutionType, setResolutionType] = useState('Defective Pieces Exchange & Immediate Replacement')
@@ -106,17 +161,17 @@ export const FinanceComplaintsPage: React.FC = () => {
     setTimeout(() => setToast(null), 3500)
   }
 
-  // Handle product selection to autofill SKU and Vendor
+  // Handle product selection to autofill SKU and Vendor from real data
   const handleProductSelect = (name: string) => {
     setProductName(name)
-    const matched = SAMPLE_PRODUCTS.find((p) => p.name === name)
+    const matched = availableProducts.find((p) => p.name === name)
     if (matched) {
       setProductId(matched.sku)
-      setVendor(matched.vendor)
-      setPoNumber('PO-2026-0891')
-      setGrnNumber('GRN-2214')
-      setSerialNumber('SN-DL-849200-SERIES')
-      setDeliveryDate('2026-09-08')
+      if (matched.vendor) setVendor(matched.vendor)
+      if (matched.poNumber) setPoNumber(matched.poNumber)
+      setGrnNumber(`GRN-${Math.floor(1000 + Math.random() * 9000)}`)
+      setSerialNumber(`SN-${matched.sku.replace(/^SKU-/, '')}-001`)
+      setDeliveryDate(new Date().toISOString().split('T')[0])
     }
   }
 
@@ -157,14 +212,14 @@ export const FinanceComplaintsPage: React.FC = () => {
       return
     }
 
-    const creatorName = user ? `${user.first_name} ${user.last_name}` : 'Mark Finance Officer'
+    const creatorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
 
     addComplaint({
       productName: productName || 'Selected Equipment',
-      productId: productId || 'SKU-GEN-001',
-      serialNumber: serialNumber || defectiveSerials.split(',')[0] || 'SN-UNKNOWN',
-      poNumber: poNumber || 'PO-2026-0891',
-      grnNumber: grnNumber || 'GRN-2214',
+      productId: productId || '',
+      serialNumber: serialNumber || defectiveSerials.split(',')[0] || '',
+      poNumber: poNumber || '',
+      grnNumber: grnNumber || '',
       vendor: vendor || 'Enterprise Vendor',
       deliveryDate: deliveryDate || new Date().toISOString().split('T')[0],
       complaintType,
@@ -266,8 +321,8 @@ export const FinanceComplaintsPage: React.FC = () => {
                   className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   required
                 >
-                  <option value="">Select product</option>
-                  {SAMPLE_PRODUCTS.map((p) => (
+                  <option value="">Select product ({availableProducts.length} available)</option>
+                  {availableProducts.map((p) => (
                     <option key={p.sku} value={p.name}>
                       {p.name}
                     </option>
@@ -344,12 +399,14 @@ export const FinanceComplaintsPage: React.FC = () => {
                   required
                 >
                   <option value="">Select vendor</option>
-                  <option value="Dell Technologies Enterprise">Dell Technologies Enterprise</option>
-                  <option value="Apple India Enterprise">Apple India Enterprise</option>
-                  <option value="Samsung Display Systems">Samsung Display Systems</option>
-                  <option value="Logitech Peripheral Corp">Logitech Peripheral Corp</option>
-                  <option value="Keychron Tech">Keychron Tech</option>
-                  <option value="Cisco Enterprise Networks">Cisco Enterprise Networks</option>
+                  {vendor && !availableVendors.includes(vendor) && (
+                    <option value={vendor}>{vendor}</option>
+                  )}
+                  {availableVendors.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
                 </select>
               </div>
 

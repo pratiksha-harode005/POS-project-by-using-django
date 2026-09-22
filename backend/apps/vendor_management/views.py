@@ -18,7 +18,8 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        qs = Vendor.objects.select_related('category', 'user').order_by('-created_at')
         if user.role == 'VENDOR':
             # Vendor user can only see their own vendor profile
-            return Vendor.objects.filter(user=user)
-        return Vendor.objects.all().order_by('-created_at')
+            return qs.filter(user=user)
+        return qs

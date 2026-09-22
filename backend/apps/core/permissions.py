@@ -6,19 +6,43 @@ class IsAdminUser(permissions.BasePermission):
         return bool(request.user and request.user.is_authenticated and request.user.role == 'ADMIN')
 
 
-class IsTeamLeadUser(permissions.BasePermission):
+IsAdminRole = IsAdminUser
+
+
+class IsEmployeeRole(permissions.BasePermission):
+    """Allows access to Employees, Team Leads, and Admins."""
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and request.user.role == 'TEAM_LEAD')
+        return bool(
+            request.user and request.user.is_authenticated and
+            request.user.role in ['EMPLOYEE', 'TEAM_LEAD', 'ADMIN']
+        )
 
 
-class IsManagerUser(permissions.BasePermission):
+class IsTeamLeadRole(permissions.BasePermission):
+    """Allows access strictly to Team Leads and Admins."""
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and request.user.role == 'MANAGER')
+        return bool(
+            request.user and request.user.is_authenticated and
+            request.user.role in ['TEAM_LEAD', 'ADMIN']
+        )
 
 
-class IsFinanceUser(permissions.BasePermission):
+class IsManagerRole(permissions.BasePermission):
+    """Allows access strictly to Managers and Admins."""
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and request.user.role == 'FINANCE')
+        return bool(
+            request.user and request.user.is_authenticated and
+            request.user.role in ['MANAGER', 'ADMIN']
+        )
+
+
+class IsFinanceRole(permissions.BasePermission):
+    """Allows access strictly to Finance and Admins."""
+    def has_permission(self, request, view):
+        return bool(
+            request.user and request.user.is_authenticated and
+            request.user.role in ['FINANCE', 'ADMIN']
+        )
 
 
 class IsVendorUser(permissions.BasePermission):

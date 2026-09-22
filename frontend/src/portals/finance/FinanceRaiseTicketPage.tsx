@@ -80,7 +80,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
   }
 
   const handleVerify = (productId: string, docType: DocType) => {
-    const verifier = user ? `${user.first_name} ${user.last_name}` : 'Mark Finance Officer'
+    const verifier = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
     verifyDocument(ticket.id, productId, docType, verifier)
     showToast(`✓ Document verified successfully in database`)
     if (step === 0) setStep(1)
@@ -92,7 +92,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
       showToast('Both documents (Goods Receipt, Invoice) must be verified before submission.', 'error')
       return
     }
-    const submitter = user ? `${user.first_name} ${user.last_name}` : 'Mark Finance Officer'
+    const submitter = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
     if (submitProductTicket) {
       submitProductTicket(ticket.id, product.id, submitter)
     } else {
@@ -105,7 +105,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
 
   const handleMakePayment = (product?: TicketProduct) => {
     const amount = product ? product.totalAmount : ticket.requestAmount
-    const vendor = product?.vendor || ticket.products?.[0]?.vendor || 'Dell Technologies India'
+    const vendor = product?.vendor || ticket.products?.[0]?.vendor || 'Vendor Partner'
     const res = makePayment(ticket.requestId, ticket.id, {
       amount,
       paymentMethod: 'NEFT / RTGS Corporate Treasury',
@@ -349,7 +349,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                 verifiedBy: product.goodsReceipt.verifiedBy,
                 verifiedAt: product.goodsReceipt.verifiedAt,
                 fields: [
-                  { label: 'Received Date', value: product.goodsReceipt.receivedDate || product.productOrder?.date || '2026-09-12' },
+                  { label: 'Received Date', value: product.goodsReceipt.receivedDate || product.productOrder?.date || new Date().toISOString().split('T')[0] },
                   { label: 'Vendor', value: product.goodsReceipt.vendor || product.vendor },
                   { label: 'Total Quantity', value: `${product.goodsReceipt.acceptedQty || product.quantity} ${product.goodsReceipt.unit || product.unit}` },
                 ],
@@ -367,7 +367,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                 verifiedBy: product.invoice.verifiedBy,
                 verifiedAt: product.invoice.verifiedAt,
                 fields: [
-                  { label: 'Invoice Date', value: product.invoice.date || product.invoice.invoiceDate || product.productOrder?.date || '2026-09-10' },
+                  { label: 'Invoice Date', value: product.invoice.date || product.invoice.invoiceDate || product.productOrder?.date || new Date().toISOString().split('T')[0] },
                   { label: 'Vendor', value: product.invoice.vendor || product.vendor },
                   { label: 'Total Amount', value: fmt(product.invoice.amount || product.invoice.invoiceAmount || product.totalAmount) },
                 ],
@@ -697,7 +697,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
             date:
               (viewModalDoc.docType === 'goodsReceipt'
                 ? viewModalDoc.product.goodsReceipt.receivedDate || viewModalDoc.product.productOrder?.date
-                : viewModalDoc.product.invoice.date || viewModalDoc.product.invoice.invoiceDate || viewModalDoc.product.productOrder?.date) || '2026-09-10',
+                : viewModalDoc.product.invoice.date || viewModalDoc.product.invoice.invoiceDate || viewModalDoc.product.productOrder?.date) || new Date().toISOString().split('T')[0],
             amount: viewModalDoc.product.totalAmount,
             verified:
               viewModalDoc.docType === 'goodsReceipt'

@@ -160,8 +160,11 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
         (h.stageName && h.stageName.toLowerCase().includes('finance'))
     ) ||
     st.includes('finance') ||
+    st.includes('manager_approved') ||
+    st === 'approved' ||
     fst.includes('finance') ||
-    fst === 'recommended to finance'
+    fst === 'recommended to finance' ||
+    (typeof req.currentStage === 'number' && req.currentStage >= 3)
 
   const wentToAdmin =
     (req.history || []).some(
@@ -173,9 +176,6 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     fst.includes('admin')
 
   let dynamicStages = [...stages]
-  if (!wentToFinance) {
-    dynamicStages = dynamicStages.filter((s) => s !== 'Finance Approval')
-  }
   if (!wentToAdmin) {
     dynamicStages = dynamicStages.filter((s) => s !== 'Admin Approval')
   }
@@ -196,7 +196,8 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       st === 'sent_to_finance' ||
       st === 'recommended_to_finance' ||
       st === 'finance_on_hold' ||
-      st === 'clarification_requested'
+      st === 'clarification_requested' ||
+      st === 'manager_approved'
     ) {
       currentStageName = 'Finance Approval'
       currentlyWith = 'Finance — Mark Finance Officer'
@@ -242,18 +243,20 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     } else if (st === 'pending_approval') {
       currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
-    } else if (st === 'approved') {
-      currentStageName = 'RFQ Sent'
-      currentlyWith = 'Sourcing Team (RFQ Sent)'
     } else if (
       st === 'finance_review' ||
       st === 'sent_to_finance' ||
       st === 'recommended_to_finance' ||
       st === 'finance_on_hold' ||
-      st === 'clarification_requested'
+      st === 'clarification_requested' ||
+      st === 'manager_approved' ||
+      (st === 'approved' && req.currentStage === 3)
     ) {
       currentStageName = 'Finance Approval'
       currentlyWith = 'Finance — Mark Finance Officer'
+    } else if (st === 'approved' || st === 'rfq_sent') {
+      currentStageName = 'RFQ Sent'
+      currentlyWith = 'Sourcing Team (RFQ Sent)'
     } else if (st === 'recommended_to_admin' || fst === 'recommended to admin') {
       currentStageName = 'Admin Approval'
       currentlyWith = 'Admin — Executive Authority'

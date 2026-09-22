@@ -8,6 +8,8 @@ import {
 import { numberToIndianWords } from '../../utils/paymentLedgerPdfGenerator'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { useFinanceData } from '../../context/ManagerDataContext'
+import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -41,359 +43,11 @@ export interface FinanceReportItem {
   financeNotes?: string
 }
 
-const INITIAL_FINANCE_REPORTS: FinanceReportItem[] = [
-  // ── WEEKLY REPORTS (Past 7 Days: Sep 09 - Sep 16, 2026) ──
-  {
-    id: 'REP-MGR-2026-004',
-    title: 'Weekly Enterprise Asset Handover & Capital Budget Allocation Dossier',
-    submitterName: 'Sarah Manager',
-    submitterRole: 'Senior Procurement Manager & IT Director',
-    submitterType: 'Manager',
-    department: 'IT & Infrastructure',
-    submittedDate: '2026-09-15',
-    periodCategory: 'Weekly',
-    totalAmount: 1250000,
-    status: 'Pending',
-    priority: 'Critical',
-    category: 'Capital Expenditure & Infrastructure',
-    costCenter: 'CC-IT-CAPEX-2026',
-    summary: 'Executive managerial handover for core cloud infrastructure expansion and enterprise workstation deployment.',
-    keyFindings: [
-      'Validated by IT line management with multi-vendor price benchmarking completed.',
-      'Anticipated operational throughput increase of 45% across engineering pods.',
-      'Vendor contracts locked under Q3 pricing matrix with guaranteed SLA.'
-    ],
-    itemBreakdown: [
-      { item: 'Dell PowerEdge R760 Rack Server Cluster', qty: 2, unitCost: 450000, totalCost: 900000 },
-      { item: 'Enterprise SAN Storage Expansion (50TB)', qty: 1, unitCost: 350000, totalCost: 350000 }
-    ],
-    recommendation: 'Formal handover to Finance Controller for budget deduction, purchase order generation, and vendor advance payment.',
-    attachedDocs: [
-      { name: 'Manager_Clearance_Dossier.pdf', size: '2.8 MB' },
-      { name: 'Dell_Enterprise_Discount_Schedule.xlsx', size: '940 KB' }
-    ]
-  },
-  {
-    id: 'REP-TL-2026-041',
-    title: 'Weekly Sprint Hardware & Dev Infrastructure Requisition',
-    submitterName: 'Alex Developer',
-    submitterRole: 'Lead Fullstack Architect',
-    submitterType: 'Team Lead',
-    department: 'Engineering',
-    submittedDate: '2026-09-14',
-    periodCategory: 'Weekly',
-    totalAmount: 385000,
-    status: 'Pending',
-    priority: 'High',
-    category: 'IT Hardware & Workstations',
-    costCenter: 'CC-ENG-002',
-    summary: 'Hardware upgrade requirements for newly onboarded microservices engineers and AI pipeline testing rigs.',
-    keyFindings: [
-      '5 junior engineers require dual-monitor IPS displays and NVMe workstation SSDs.',
-      'Current development build times reduced by 40% in initial benchmark tests.',
-      'Vendors identified under pre-negotiated corporate rates with 3-year enterprise warranties.'
-    ],
-    itemBreakdown: [
-      { item: 'Dell UltraSharp 27" 4K Monitors', qty: 5, unitCost: 32000, totalCost: 160000 },
-      { item: 'Samsung 990 Pro 2TB NVMe PCIe 4.0', qty: 5, unitCost: 19000, totalCost: 95000 },
-      { item: 'Corsair 64GB DDR5 Memory Upgrade Kits', qty: 5, unitCost: 26000, totalCost: 130000 }
-    ],
-    recommendation: 'Urgent release recommended to prevent sprint velocity bottlenecks before Q4 launch.',
-    attachedDocs: [
-      { name: 'Hardware_Benchmark_Analysis.pdf', size: '1.8 MB' },
-      { name: 'Vendor_Comparative_Quote.xlsx', size: '640 KB' }
-    ]
-  },
-  {
-    id: 'REP-TL-2026-042',
-    title: 'Weekly Operations Facility Safety & Consumables Audit',
-    submitterName: 'Ravi Kumar',
-    submitterRole: 'Operations Team Lead',
-    submitterType: 'Team Lead',
-    department: 'Operations',
-    submittedDate: '2026-09-12',
-    periodCategory: 'Weekly',
-    totalAmount: 145000,
-    status: 'Approved',
-    priority: 'Medium',
-    category: 'Facilities & Safety',
-    costCenter: 'CC-OPS-2026',
-    summary: 'Weekly inventory evaluation and stock replenishment for warehouse packaging and worker PPE gear.',
-    keyFindings: [
-      'Floor 2 packaging materials below minimum buffer threshold of 14 days.',
-      'Emergency eyewash station cartridges require bi-weekly replacement.',
-      'Supplies budgeted under monthly facilities OPEX limit.'
-    ],
-    itemBreakdown: [
-      { item: 'Industrial Packaging Strapping Rolls', qty: 40, unitCost: 1500, totalCost: 60000 },
-      { item: 'Safety Helmets & Heavy Duty Gloves', qty: 50, unitCost: 900, totalCost: 45000 },
-      { item: 'Emergency Eyewash Solution Barrels', qty: 8, unitCost: 5000, totalCost: 40000 }
-    ],
-    recommendation: 'Immediate order sign-off to ensure compliance with OSHA warehouse regulations.',
-    attachedDocs: [
-      { name: 'Weekly_Inventory_Checklist.pdf', size: '920 KB' }
-    ],
-    approvedBy: 'David Finance (Finance Controller)',
-    approvedDate: '2026-09-13',
-    financeNotes: 'Approved and booked under warehouse facilities budget.'
-  },
-  {
-    id: 'REP-MGR-2026-003',
-    title: 'Weekly Software Discretionary Spend Overrun Review',
-    submitterName: 'Sarah Manager',
-    submitterRole: 'Senior Procurement Manager',
-    submitterType: 'Manager',
-    department: 'Marketing',
-    submittedDate: '2026-09-10',
-    periodCategory: 'Weekly',
-    totalAmount: 210000,
-    status: 'Rejected',
-    priority: 'Low',
-    category: 'Marketing Software',
-    costCenter: 'CC-MKT-004',
-    summary: 'Managerial submission regarding off-cycle social media monitoring software subscription requests.',
-    keyFindings: [
-      'Existing enterprise Sprout Social contract provides duplicate functionality.',
-      'Finance audit flagged budget overrun on marketing software line items.'
-    ],
-    itemBreakdown: [
-      { item: 'Supplementary Social Listening Tool (6 Months)', qty: 1, unitCost: 210000, totalCost: 210000 }
-    ],
-    recommendation: 'Forwarded for Finance consideration regarding policy exemption.',
-    attachedDocs: [
-      { name: 'Software_Overlap_Assessment.pdf', size: '1.1 MB' }
-    ],
-    rejectionReason: 'Finance Disapproval: Redundant expenditure. Existing Sprout Social enterprise license provides identical features.',
-    rejectedDate: '2026-09-11'
-  },
-
-  // ── MONTHLY REPORTS (Past 30 Days: Aug 17 - Sep 16, 2026) ──
-  {
-    id: 'REP-MGR-2026-002',
-    title: 'Monthly Corporate Insurance & Statutory Risk Clearance Dossier',
-    submitterName: 'Sarah Manager',
-    submitterRole: 'Senior Procurement Manager',
-    submitterType: 'Manager',
-    department: 'Admin & Facilities',
-    submittedDate: '2026-09-06',
-    periodCategory: 'Monthly',
-    totalAmount: 320000,
-    status: 'Pending',
-    priority: 'High',
-    category: 'Corporate Insurance & Legal',
-    costCenter: 'CC-ADM-001',
-    summary: 'Managerial review and clearance report for comprehensive statutory liability and premises asset coverage renewal across 3 facilities.',
-    keyFindings: [
-      'Comprehensive liability and corporate asset insurance renewal for all corporate facilities.',
-      'Price benchmarked across ICICI Lombard and HDFC Ergo tariff schedules.',
-      'Statutory compliance prerequisite before quarterly audit inspection.'
-    ],
-    itemBreakdown: [
-      { item: 'Commercial Premises Asset Protection Policy', qty: 1, unitCost: 195000, totalCost: 195000 },
-      { item: 'Corporate Directors & Officers Liability Rider', qty: 1, unitCost: 125000, totalCost: 125000 }
-    ],
-    recommendation: 'Transmitted to Finance Directorate for budget booking, PO issuance, and NEFT premium disbursement.',
-    attachedDocs: [
-      { name: 'Insurance_Premium_Schedule_2026.pdf', size: '3.1 MB' },
-      { name: 'Manager_Clearance_Endorsement.pdf', size: '820 KB' }
-    ]
-  },
-  {
-    id: 'REP-TL-2026-032',
-    title: 'Monthly Software Licenses & SaaS Subscriptions Audit',
-    submitterName: 'Priya Sharma',
-    submitterRole: 'IT Operations & Infrastructure Lead',
-    submitterType: 'Team Lead',
-    department: 'IT',
-    submittedDate: '2026-09-02',
-    periodCategory: 'Monthly',
-    totalAmount: 780000,
-    status: 'Approved',
-    priority: 'High',
-    category: 'SaaS & Enterprise Software',
-    costCenter: 'CC-IT-SAAS-2026',
-    summary: 'Comprehensive monthly audit of active seat licenses across GitHub Enterprise, Figma, and Jira Service Management.',
-    keyFindings: [
-      'Identified 24 idle seat licenses that were safely reallocated, saving ₹1,12,000.',
-      'Annual renewal required for 150 GitHub Enterprise seats before September 30.',
-      'Vendor offered 12% multi-year discount if signed before end of month.'
-    ],
-    itemBreakdown: [
-      { item: 'GitHub Enterprise Annual Seat Renewals', qty: 150, unitCost: 4200, totalCost: 630000 },
-      { item: 'Figma Enterprise Design Seats', qty: 25, unitCost: 3600, totalCost: 90000 },
-      { item: 'Jira Service Management Pro Tier', qty: 1, unitCost: 60000, totalCost: 60000 }
-    ],
-    recommendation: 'Authorize annual purchase order to retain discounted pricing and prevent service disruption.',
-    attachedDocs: [
-      { name: 'SaaS_License_Reconciliation_Aug2026.xlsx', size: '1.5 MB' },
-      { name: 'GitHub_Discount_Agreement.pdf', size: '2.1 MB' }
-    ],
-    approvedBy: 'David Finance (Finance Controller)',
-    approvedDate: '2026-09-04',
-    financeNotes: 'Full pricing verified. Forwarded for annual PO release.'
-  },
-  {
-    id: 'REP-TL-2026-035',
-    title: 'Monthly Core Switch & Redundant UPS Modernization Report',
-    submitterName: 'Nitesh IT',
-    submitterRole: 'Senior Network Lead',
-    submitterType: 'Team Lead',
-    department: 'IT',
-    submittedDate: '2026-08-20',
-    periodCategory: 'Monthly',
-    totalAmount: 640000,
-    status: 'Pending',
-    priority: 'High',
-    category: 'Networking & Telecommunications',
-    costCenter: 'CC-NET-003',
-    summary: 'Monthly infrastructure review indicating server room battery degradation and packet latency on primary floor switches.',
-    keyFindings: [
-      'Server Room A UPS runtime dropped below safety margin of 20 minutes.',
-      'Replacement high-density switches will expand bandwidth to 10Gbps backplane.',
-      'Three quotes received with Cisco, Aruba, and Juniper certified vendors.'
-    ],
-    itemBreakdown: [
-      { item: 'APC Symmetra LX 16kVA Modular UPS Battery Pack', qty: 1, unitCost: 360000, totalCost: 360000 },
-      { item: 'Cisco Catalyst 9300 48-Port PoE+ Switch', qty: 2, unitCost: 140000, totalCost: 280000 }
-    ],
-    recommendation: 'Recommend finance budget verification and purchase order release.',
-    attachedDocs: [
-      { name: 'Battery_Impedance_Health_Report.pdf', size: '1.1 MB' },
-      { name: 'Three_Way_Vendor_Comparison.xlsx', size: '890 KB' }
-    ]
-  },
-  {
-    id: 'REP-MGR-2026-001',
-    title: 'Monthly Data Center Infrastructure Expansion Dossier',
-    submitterName: 'Sarah Manager',
-    submitterRole: 'Senior Procurement Manager',
-    submitterType: 'Manager',
-    department: 'IT & Infrastructure',
-    submittedDate: '2026-08-18',
-    periodCategory: 'Monthly',
-    totalAmount: 875000,
-    status: 'Approved',
-    priority: 'Critical',
-    category: 'Datacenter Infrastructure',
-    costCenter: 'CC-DC-2026',
-    summary: 'Specialized consultant support and hardware staging for Phase 2 zero-downtime datacenter migration.',
-    keyFindings: [
-      'CTO approved technical risk mitigation protocol.',
-      'Third-party audit validation completed with zero non-conformances.',
-      'Payment scheduled across 3 milestones against deliverable sign-offs.'
-    ],
-    itemBreakdown: [
-      { item: 'Datacenter Migration Consultant Retainer', qty: 1, unitCost: 500000, totalCost: 500000 },
-      { item: 'High-Density Rack Power Distribution Units', qty: 5, unitCost: 75000, totalCost: 375000 }
-    ],
-    recommendation: 'Cleared by Line Management. Transmitted for Finance disbursement schedule.',
-    attachedDocs: [
-      { name: 'Milestone_Payment_Structure.pdf', size: '2.5 MB' }
-    ],
-    approvedBy: 'David Finance (Finance Controller)',
-    approvedDate: '2026-08-20',
-    financeNotes: 'Milestone 1 PO disbursed. Milestones 2 & 3 scheduled.'
-  },
-
-  // ── YEARLY REPORTS (Fiscal Year FY2026) ──
-  {
-    id: 'REP-MGR-2026-Y01',
-    title: 'Annual Enterprise ERP Cloud Migration & Database Modernization Dossier',
-    submitterName: 'Sarah Manager',
-    submitterRole: 'Senior Procurement Manager & IT Director',
-    submitterType: 'Manager',
-    department: 'Enterprise Systems',
-    submittedDate: '2026-07-10',
-    periodCategory: 'Yearly',
-    totalAmount: 2400000,
-    status: 'Pending',
-    priority: 'Critical',
-    category: 'Enterprise Software & ERP',
-    costCenter: 'CC-ERP-CAPEX-2026',
-    summary: 'Core ERP system migration to enterprise cloud edition with unified financial database upgrade and multi-year licensing.',
-    keyFindings: [
-      'Current on-premise ERP server reaches end-of-support in Q4 FY2026.',
-      'Cloud edition consolidates procurement, inventory, and ledger databases into a single cloud cluster.',
-      'Negotiated 22% enterprise multi-year subscription rebate.'
-    ],
-    itemBreakdown: [
-      { item: 'Enterprise ERP Cloud Software License (Annual)', qty: 1, unitCost: 1600000, totalCost: 1600000 },
-      { item: 'Database Migration Services & Data Cleansing', qty: 1, unitCost: 500000, totalCost: 500000 },
-      { item: '24/7 Priority SLA & Dedicated Solutions Architect', qty: 1, unitCost: 300000, totalCost: 300000 }
-    ],
-    recommendation: 'Requires joint sign-off from Chief Financial Officer and Procurement Directorate.',
-    attachedDocs: [
-      { name: 'ERP_Cloud_RFP_Evaluation.pdf', size: '7.4 MB' },
-      { name: 'Vendor_Commercial_Terms_Contract.pdf', size: '5.2 MB' }
-    ]
-  },
-  {
-    id: 'REP-TL-2026-011',
-    title: 'Annual Datacenter Disaster Recovery & Cold-Site Standby Report',
-    submitterName: 'Priya Sharma',
-    submitterRole: 'IT Operations & Infrastructure Lead',
-    submitterType: 'Team Lead',
-    department: 'IT',
-    submittedDate: '2026-06-15',
-    periodCategory: 'Yearly',
-    totalAmount: 1850000,
-    status: 'Approved',
-    priority: 'Critical',
-    category: 'Enterprise Infrastructure & DR',
-    costCenter: 'CC-IT-DR-2026',
-    summary: 'Comprehensive annual disaster recovery strategy and dedicated secondary facility replication agreement.',
-    keyFindings: [
-      'Mandatory RBI and ISO-27001 disaster recovery compliance requirement.',
-      'RTO target under 15 minutes, RPO target under 60 seconds successfully verified.',
-      'Multi-year SLA negotiated with Tier-IV data center provider.'
-    ],
-    itemBreakdown: [
-      { item: 'Tier-IV Secondary Facility Colocation (Annual Contract)', qty: 1, unitCost: 1200000, totalCost: 1200000 },
-      { item: 'Dark Fiber Redundant Line Connectivity', qty: 2, unitCost: 225000, totalCost: 450000 },
-      { item: 'Annual Third-Party DR Simulation & Audit', qty: 1, unitCost: 200000, totalCost: 200000 }
-    ],
-    recommendation: 'Executive sign-off required for statutory banking regulatory compliance.',
-    attachedDocs: [
-      { name: 'Disaster_Recovery_Audit_FY2026.pdf', size: '5.6 MB' },
-      { name: 'Tier_IV_Colocation_Agreement.pdf', size: '4.1 MB' }
-    ],
-    approvedBy: 'David Finance (Finance Controller)',
-    approvedDate: '2026-06-18',
-    financeNotes: 'Capital expenditure authorized by Finance Committee.'
-  },
-  {
-    id: 'REP-MGR-2026-Y02',
-    title: 'Annual Executive Corporate Fleet Vehicle Capital Expenditure',
-    submitterName: 'Sarah Manager',
-    submitterRole: 'Senior Procurement Manager',
-    submitterType: 'Manager',
-    department: 'General Administration',
-    submittedDate: '2026-05-12',
-    periodCategory: 'Yearly',
-    totalAmount: 1680000,
-    status: 'Rejected',
-    priority: 'Medium',
-    category: 'Fleet Operations & Transport',
-    costCenter: 'CC-ADM-FLEET',
-    summary: 'Executive proposal to replace current managerial transport vehicles with luxury hybrid sedans.',
-    keyFindings: [
-      'Existing company vehicles have 2 remaining years on operational leases.',
-      'Early termination penalty would incur ₹3,40,000 in contractual liquidated damages.'
-    ],
-    itemBreakdown: [
-      { item: 'Executive Hybrid Sedans (Annual Lease Contract)', qty: 2, unitCost: 840000, totalCost: 1680000 }
-    ],
-    recommendation: 'Submitted for Finance evaluation.',
-    attachedDocs: [
-      { name: 'Executive_Fleet_Lease_Quote.pdf', size: '3.9 MB' }
-    ],
-    rejectionReason: 'Finance Disapproval: Early lease termination penalties render this uneconomical. Re-tender at end of FY2027.',
-    rejectedDate: '2026-05-15'
-  }
-]
-
 export const FinanceReceivedReportsPage: React.FC = () => {
-  const [reports, setReports] = useState<FinanceReportItem[]>(INITIAL_FINANCE_REPORTS)
+  const { user } = useAuth()
+  const { allRequests, approveFinanceRequest, rejectFinanceRequest } = useFinanceData()
+  const currentFinanceOfficer = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Controller'
+  const [localOverrides, setLocalOverrides] = useState<Record<string, Partial<FinanceReportItem>>>({})
   const [timePeriod, setTimePeriod] = useState<TimePeriodFilter>('ALL')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [submitterFilter, setSubmitterFilter] = useState<SubmitterFilter>('ALL')
@@ -409,28 +63,118 @@ export const FinanceReceivedReportsPage: React.FC = () => {
     setTimeout(() => setToast(null), 3500)
   }
 
+  // Derive reports dynamically from real procurement requests forwarded or managed
+  const reports = useMemo<FinanceReportItem[]>(() => {
+    const today = new Date()
+    return allRequests.map((req: any, idx) => {
+      const id = String(req.id || `REQ-${idx + 1}`)
+      const reportId = id.startsWith('REP-') ? id : `REP-${id}`
+      const subDateStr = req.submittedDate || req.created_at || new Date().toISOString().split('T')[0]
+      const dateObj = new Date(subDateStr)
+      const diffDays = Math.max(0, Math.floor((today.getTime() - dateObj.getTime()) / (1000 * 60 * 60 * 24)))
+
+      let periodCategory: 'Weekly' | 'Monthly' | 'Yearly' = 'Weekly'
+      if (diffDays > 30) periodCategory = 'Yearly'
+      else if (diffDays > 7) periodCategory = 'Monthly'
+
+      const isTL = req.role === 'Team Lead' || String(req.requester_name || '').toLowerCase().includes('lead') || String(req.createdBy || '').toLowerCase().includes('lead')
+      const submitterType: 'Manager' | 'Team Lead' = isTL ? 'Team Lead' : 'Manager'
+      const submitterName = req.createdBy || req.requester_name || (isTL ? 'Team Lead' : 'Procurement Manager')
+      const submitterRole = isTL ? `${req.department || 'Operations'} Lead` : `${req.department || 'Procurement'} Manager`
+
+      const rawStatus = (req.status || 'Pending').toLowerCase()
+      let status: 'Pending' | 'Approved' | 'Rejected' = 'Pending'
+      if (rawStatus.includes('approved') || rawStatus === 'completed' || rawStatus === 'manager_approved') {
+        status = 'Approved'
+      } else if (rawStatus.includes('rejected') || rawStatus === 'cancelled') {
+        status = 'Rejected'
+      }
+
+      const totalAmount = Number(req.amount || req.totalAmount || req.total_estimated_cost || req.budget || req.estimated_amount || 0)
+      const priority = (req.priority || 'Medium') as 'Critical' | 'High' | 'Medium' | 'Low'
+      const dept = req.department || 'Procurement'
+
+      const items = (req.items && req.items.length > 0)
+        ? req.items.map((it: any) => ({
+            item: it.name || it.item_name || 'Procurement Item',
+            qty: Number(it.quantity || 1),
+            unitCost: Number(it.unit_price || it.unitCost || 0),
+            totalCost: Number(it.total_price || it.totalCost || (Number(it.quantity || 1) * Number(it.unit_price || 0)))
+          }))
+        : [{
+            item: req.title || req.item_name || 'Procurement Allocation',
+            qty: 1,
+            unitCost: totalAmount,
+            totalCost: totalAmount
+          }]
+
+      const baseReport: FinanceReportItem = {
+        id: reportId,
+        title: req.title || req.item_name || `Procurement Dossier for ${dept}`,
+        submitterName,
+        submitterRole,
+        submitterType,
+        department: dept,
+        submittedDate: subDateStr.split('T')[0],
+        periodCategory,
+        totalAmount,
+        status,
+        priority,
+        category: req.category || 'Capital Expenditure',
+        costCenter: req.costCenter || `CC-${dept.substring(0, 3).toUpperCase()}-2026`,
+        summary: req.justification || req.description || `Managerial submission and compliance dossier for ${req.title || 'procurement requirements'}.`,
+        keyFindings: [
+          `Allocated budget of ${fmt(totalAmount)} verified against fiscal thresholds.`,
+          `Sourcing specifications aligned with ${dept} requirements.`,
+          `Pre-screened against corporate procurement governance.`
+        ],
+        itemBreakdown: items,
+        recommendation: req.manager_comments || req.justification || 'Forwarded for Finance audit, fund allocation, and PO issuance.',
+        attachedDocs: [
+          { name: `${reportId}_Approval_Dossier.pdf`, size: '2.1 MB' },
+          { name: 'Vendor_Compliance_Quotation.pdf', size: '1.4 MB' }
+        ],
+        ...(status === 'Approved' ? {
+          approvedBy: currentFinanceOfficer,
+          approvedDate: new Date().toISOString().split('T')[0],
+          financeNotes: 'Audited and approved for fiscal disbursement.'
+        } : {}),
+        ...(status === 'Rejected' ? {
+          rejectionReason: req.rejection_reason || 'Requires revision of budgetary ceiling.',
+          rejectedDate: new Date().toISOString().split('T')[0]
+        } : {})
+      }
+
+      if (localOverrides[reportId]) {
+        return { ...baseReport, ...localOverrides[reportId] }
+      }
+      return baseReport
+    })
+  }, [allRequests, localOverrides])
+
   // Action Handlers
   const handleApproveReport = (reportId: string) => {
-    setReports(prev =>
-      prev.map(r =>
-        r.id === reportId
-          ? {
-              ...r,
-              status: 'Approved',
-              approvedBy: 'David Finance (Finance Controller)',
-              approvedDate: new Date().toISOString().split('T')[0],
-              financeNotes: 'Audited and cleared for fund disbursement and PO issuance.'
-            }
-          : r
-      )
-    )
+    setLocalOverrides(prev => ({
+      ...prev,
+      [reportId]: {
+        status: 'Approved',
+        approvedBy: currentFinanceOfficer,
+        approvedDate: new Date().toISOString().split('T')[0],
+        financeNotes: 'Audited and cleared for fund disbursement and PO issuance.'
+      }
+    }))
+    // Also trigger shared finance context approval
+    const originalId = reportId.replace(/^REP-/, '')
+    if (approveFinanceRequest) {
+      approveFinanceRequest(originalId)
+    }
     if (selectedReport && selectedReport.id === reportId) {
       setSelectedReport(prev =>
         prev
           ? {
               ...prev,
               status: 'Approved',
-              approvedBy: 'David Finance (Finance Controller)',
+              approvedBy: currentFinanceOfficer,
               approvedDate: new Date().toISOString().split('T')[0],
               financeNotes: 'Audited and cleared for fund disbursement and PO issuance.'
             }
@@ -448,18 +192,18 @@ export const FinanceReceivedReportsPage: React.FC = () => {
   const handleConfirmReject = () => {
     if (!rejectModalReport || !rejectReason.trim()) return
     const id = rejectModalReport.id
-    setReports(prev =>
-      prev.map(r =>
-        r.id === id
-          ? {
-              ...r,
-              status: 'Rejected',
-              rejectionReason: rejectReason,
-              rejectedDate: new Date().toISOString().split('T')[0]
-            }
-          : r
-      )
-    )
+    setLocalOverrides(prev => ({
+      ...prev,
+      [id]: {
+        status: 'Rejected',
+        rejectionReason: rejectReason,
+        rejectedDate: new Date().toISOString().split('T')[0]
+      }
+    }))
+    const originalId = id.replace(/^REP-/, '')
+    if (rejectFinanceRequest) {
+      rejectFinanceRequest(originalId, rejectReason)
+    }
     if (selectedReport && selectedReport.id === id) {
       setSelectedReport(prev =>
         prev
@@ -625,7 +369,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
     doc.setFontSize(8)
     if (rep.status === 'Approved') {
       doc.setTextColor(22, 101, 52)
-      doc.text(`Audited and Approved by ${rep.approvedBy || 'David Finance'} on ${rep.approvedDate || rep.submittedDate}.`, margin + 10, y + 30)
+      doc.text(`Audited and Approved by ${rep.approvedBy || currentFinanceOfficer} on ${rep.approvedDate || rep.submittedDate}.`, margin + 10, y + 30)
     } else if (rep.status === 'Rejected') {
       doc.setTextColor(190, 18, 60)
       doc.text(`Disapproved by Finance: ${rep.rejectionReason || 'Policy non-compliance'} (${rep.rejectedDate || rep.submittedDate}).`, margin + 10, y + 30)
@@ -1046,7 +790,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
                     </div>
                     {rep.status === 'Approved' && (
                       <span className="text-emerald-700 font-bold flex items-center gap-1">
-                        <CheckCircle size={13} /> Cleared by {rep.approvedBy || 'David Finance'} ({rep.approvedDate})
+                        <CheckCircle size={13} /> Cleared by {rep.approvedBy || currentFinanceOfficer} ({rep.approvedDate})
                       </span>
                     )}
                     {rep.status === 'Rejected' && (
@@ -1254,7 +998,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
                   <div>
                     <span className="font-bold">Finance Clearance Complete:</span>
                     <p className="text-[11px] text-emerald-700 mt-0.5">
-                      Approved and authorized for PO release by {selectedReport.approvedBy || 'David Finance'} on {selectedReport.approvedDate}.
+                      Approved and authorized for PO release by {selectedReport.approvedBy || currentFinanceOfficer} on {selectedReport.approvedDate}.
                     </p>
                   </div>
                 </div>
@@ -1276,7 +1020,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
             {/* Modal Actions */}
             <div className="bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
               <div className="text-xs text-slate-500">
-                Active Auditor: <b>David Finance (Finance Controller)</b>
+                Active Auditor: <b>{currentFinanceOfficer}</b>
               </div>
               <div className="flex items-center gap-2">
                 <button

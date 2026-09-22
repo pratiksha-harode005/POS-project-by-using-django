@@ -14,11 +14,30 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        qs = Invoice.objects.select_related(
+            'vendor',
+            'vendor__category',
+            'vendor__user',
+            'purchase_order',
+            'purchase_order__vendor',
+            'purchase_order__vendor__category',
+            'purchase_order__purchase_request',
+            'purchase_order__purchase_request__department',
+            'purchase_order__purchase_request__created_by',
+            'purchase_order__purchase_request__assigned_team_lead',
+            'purchase_order__purchase_request__assigned_manager'
+        ).prefetch_related(
+            'purchase_order__goods_receipts',
+            'purchase_order__purchase_request__approval_steps__actor',
+            'purchase_order__purchase_request__approval_steps__reason',
+            'purchase_order__purchase_request__approval_history__performed_by'
+        ).order_by('-created_at')
+
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
-                return Invoice.objects.filter(vendor=user.vendor_profile).order_by('-created_at')
-            return Invoice.objects.all()
-        return Invoice.objects.all().order_by('-created_at')
+                return qs.filter(vendor=user.vendor_profile)
+            return qs
+        return qs
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -40,9 +59,16 @@ class ThreeWayMatchViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        qs = ThreeWayMatch.objects.select_related(
+            'purchase_order',
+            'purchase_order__vendor',
+            'goods_receipt',
+            'invoice',
+            'invoice__vendor'
+        ).order_by('-created_at')
         if user.role == 'VENDOR':
-            return ThreeWayMatch.objects.all() # Vendor cannot access 3-way matching view
-        return ThreeWayMatch.objects.all().order_by('-created_at')
+            return qs.none()
+        return qs
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def verify_match(self, request):

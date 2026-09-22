@@ -173,43 +173,88 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // No longer syncing to localStorage
 
+  const isFetchingRef = React.useRef(false)
+
   // Dynamic fetch from Django REST API backend
   const refreshBackendRequests = async () => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    if (isFetchingRef.current) return
+    isFetchingRef.current = true
+
     try {
       const data = await getTeamLeadRequests()
       const list = Array.isArray(data) ? data : data?.results || []
-      const mapped: PurchaseRequest[] = list.map((item: any) => ({
-        id: item.request_id || item.id,
-        title: item.title,
-        category: item.category,
-        subcategory: item.subcategory || 'General',
-        description: item.description || '',
-        quantity: item.quantity || 1,
-        estimatedCost: Number(item.total_estimated_cost) || 0,
-        requiredBy: item.required_by || new Date().toISOString().split('T')[0],
-        department: item.department_detail?.name || 'IT & Infrastructure',
-        deliveryLocation: item.delivery_location || 'Pune HQ',
-        priority: item.priority || 'Medium',
-        preferredVendor: item.preferred_vendor || '',
-        justification: item.justification || '',
-        attachmentCount: item.attachments ? 1 : 0,
-        status: item.status || 'Pending',
-        currentStage: item.status === 'Approved' || item.status === 'In Procurement' ? Math.max(item.current_stage ?? 4, 4) : (item.current_stage ?? 1),
-        date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        currentlyWith: item.status === 'Pending' ? { role: 'Manager', name: 'Sarah Manager' } : item.status === 'Approved' || item.status === 'In Procurement' ? { role: 'Procurement Sourcing Desk', name: 'Sourcing Team (RFQ Sent)' } : { role: item.status, name: 'System' },
-        flowType: item.flow_type || 'A',
-        extraFields: item.extra_fields || {},
-        history: Array.isArray(item.approval_steps)
-          ? item.approval_steps.map((s: any) => ({
-              date: s.created_at || '',
-              actorRole: s.role || 'User',
-              actorName: s.actor_detail?.first_name ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : 'User',
-              action: s.decision || 'Updated',
-              remark: s.notes || '',
-            }))
-          : [],
-      }))
+      const mapped: PurchaseRequest[] = list.map((item: any) => {
+        let normalizedStatus: PurchaseRequest['status'] = 'Pending'
+        if (item.status === 'Approved' || item.status === 'MANAGER_APPROVED' || item.status === 'FINANCE_APPROVED') {
+          normalizedStatus = 'Approved'
+        } else if (item.status === 'Rejected' || item.status === 'REJECTED' || item.status === 'FINANCE_REJECTED') {
+          normalizedStatus = 'Rejected'
+        } else if (item.status === 'Returned' || item.status === 'SENT_BACK') {
+          normalizedStatus = 'Returned'
+        } else if (item.status === 'In Procurement') {
+          normalizedStatus = 'In Procurement'
+        } else if (item.status === 'Completed') {
+          normalizedStatus = 'Completed'
+        } else if (item.status === 'Draft') {
+          normalizedStatus = 'Draft'
+        }
+
+        let currentlyWithRole = 'Manager'
+        let currentlyWithName = 'Sarah Manager'
+        if (item.status === 'FINANCE_REVIEW' || item.status === 'FINANCE_RECOMMENDED') {
+          currentlyWithRole = 'Finance'
+          currentlyWithName = 'Finance Desk'
+        } else if (item.status === 'SENT_BACK' || item.status === 'Returned') {
+          currentlyWithRole = 'Team Lead'
+          currentlyWithName = 'Awaiting Re-submission'
+        } else if (normalizedStatus === 'Approved') {
+          currentlyWithRole = 'Procurement Sourcing Desk'
+          currentlyWithName = 'Sourcing Team (Approved)'
+        }
+
+        return {
+          id: item.request_id || item.id,
+          title: item.title,
+          category: item.category,
+          subcategory: item.subcategory || 'General',
+          description: item.description || '',
+          quantity: item.quantity || 1,
+          estimatedCost: Number(item.approved_amount || item.total_estimated_cost || item.requested_amount) || 0,
+          requiredBy: item.required_by || new Date().toISOString().split('T')[0],
+          department: item.department_detail?.name || 'IT & Infrastructure',
+          deliveryLocation: item.delivery_location || 'Pune HQ',
+          priority: item.priority || 'Medium',
+          preferredVendor: item.preferred_vendor || '',
+          justification: item.justification || '',
+          attachmentCount: item.attachments ? 1 : 0,
+          status: normalizedStatus,
+          currentStage: normalizedStatus === 'Approved' || normalizedStatus === 'In Procurement' ? Math.max(item.current_stage ?? 4, 4) : (item.current_stage ?? 1),
+          date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          currentlyWith: { role: currentlyWithRole, name: currentlyWithName },
+          flowType: item.flow_type || 'A',
+          extraFields: item.extra_fields || {},
+          history: Array.isArray(item.approval_history) && item.approval_history.length > 0
+            ? item.approval_history.map((h: any) => ({
+                date: h.created_at || h.timestamp || '',
+                actorRole: h.user_role || 'User',
+                actorName: h.performed_by_detail ? `${h.performed_by_detail.first_name} ${h.performed_by_detail.last_name}` : (h.performed_by_detail?.username || h.user_role || 'User'),
+                action: h.action || 'Updated',
+                remark: h.comments || '',
+              }))
+            : Array.isArray(item.approval_steps)
+            ? item.approval_steps.map((s: any) => ({
+                date: s.created_at || '',
+                actorRole: s.role || 'User',
+                actorName: s.actor_detail?.first_name ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : 'User',
+                action: s.decision || 'Updated',
+                remark: s.notes || '',
+              }))
+            : [],
+        }
+      })
       setRequests(mapped)
 
       try {
@@ -221,11 +266,16 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     } catch (e) {
       console.warn('Backend requests fetch fallback:', e)
+    } finally {
+      isFetchingRef.current = false
     }
   }
 
   useEffect(() => {
     refreshBackendRequests()
+    const onBackendUpdated = () => refreshBackendRequests()
+    window.addEventListener('kss_backend_updated', onBackendUpdated)
+    return () => window.removeEventListener('kss_backend_updated', onBackendUpdated)
   }, [])
 
   const addRequest = (
@@ -256,7 +306,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     setRequests((prev) => [newReq, ...prev])
 
-    // Persist to PostgreSQL backend via Django REST API
+    // Persist to PostgreSQL backend via single Django REST API call
     createTeamLeadRequest({
       title: reqData.title,
       category: reqData.category,
@@ -268,11 +318,12 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       priority: reqData.priority || 'Medium',
       preferred_vendor: reqData.preferredVendor || '',
       justification: reqData.justification || '',
+      requested_amount: reqData.estimatedCost || 0,
       total_estimated_cost: reqData.estimatedCost || 0,
       flow_type: reqData.flowType || 'A',
       extra_fields: reqData.extraFields || {},
     })
-      .then(() => {
+      .then((createdData) => {
         refreshBackendRequests()
         window.dispatchEvent(new Event('kss_backend_updated'))
       })
@@ -282,7 +333,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const newNotif: NotificationRecord = {
         id: Date.now(),
         title: `Approval Required for ${nextId}`,
-        message: `${newReq.title} awaits Manager Approval.`,
+        message: `${newReq.title}${newReq.estimatedCost ? ` (₹${newReq.estimatedCost.toLocaleString('en-US', { minimumFractionDigits: 2 })})` : ''} awaits Manager Approval.`,
         timestamp: 'Just now',
         dateGroup: 'Today',
         isRead: false,
@@ -338,6 +389,13 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       },
       ...prev,
     ])
+
+    resubmitTeamLeadRequest(id, updatedData)
+      .then(() => {
+        refreshBackendRequests()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch((err) => console.warn('Backend request resubmit sync error:', err))
   }
 
   const uploadReceipt = (paymentId: string, receiptData: ReceiptSubmissionPayload | File) => {

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { useManagerData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -36,7 +37,10 @@ const priorityColors: Record<string, string> = {
 
 export const RecommendedToAdminPage: React.FC = () => {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { recommendedToAdmin, adminApproveRequest } = useManagerData()
+
+  const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
 
   // State
   const [search, setSearch] = useState('')
@@ -108,7 +112,7 @@ export const RecommendedToAdminPage: React.FC = () => {
     adminApproveRequest(
       approveModalReq.id,
       params.approvalComments || 'Ratified and approved by Executive Admin Committee.',
-      'Priyanka Sharma (Admin)'
+      actorName
     )
     showToast(`✓ Request ${approveModalReq.id} has been formally approved by Admin.`, 'success')
     if (selectedReq?.id === approveModalReq.id) {
@@ -116,7 +120,7 @@ export const RecommendedToAdminPage: React.FC = () => {
         ...selectedReq,
         status: 'finance_approved',
         financeStatus: 'Admin Approved',
-        approvedBy: 'Priyanka Sharma (Admin)',
+        approvedBy: actorName,
         approvedDate: new Date().toISOString().split('T')[0],
       })
     }
@@ -125,14 +129,14 @@ export const RecommendedToAdminPage: React.FC = () => {
   }
 
   const handleAdminApprove = (req: ProcurementRequest, note?: string) => {
-    adminApproveRequest(req.id, note || 'Ratified and approved by Executive Admin Committee.', 'Priyanka Sharma (Admin)')
+    adminApproveRequest(req.id, note || 'Ratified and approved by Executive Admin Committee.', actorName)
     showToast(`✓ Request ${req.id} has been formally approved by Admin.`, 'success')
     if (selectedReq?.id === req.id) {
       setSelectedReq({
         ...selectedReq,
         status: 'finance_approved',
         financeStatus: 'Admin Approved',
-        approvedBy: 'Priyanka Sharma (Admin)',
+        approvedBy: actorName,
         approvedDate: new Date().toISOString().split('T')[0],
       })
     }
@@ -150,7 +154,7 @@ export const RecommendedToAdminPage: React.FC = () => {
       `"${r.department}"`,
       r.amount,
       `"${(r.recommendationReason || '').replace(/"/g, '""')}"`,
-      `"${r.recommendedBy || 'Mark Finance Officer'}"`,
+      `"${r.recommendedBy || actorName}"`,
       `"${r.recommendedDate || r.date}"`,
       `"${r.financeStatus || 'Recommended to Admin'}"`
     ])
@@ -471,7 +475,7 @@ export const RecommendedToAdminPage: React.FC = () => {
                       {/* Column 5: Recommended By & Date */}
                       <td className="p-4 align-top whitespace-nowrap">
                         <p className="font-semibold text-slate-700">
-                          {req.recommendedBy || 'Mark Finance Officer'}
+                          {req.recommendedBy || actorName}
                         </p>
                         <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
                           <Calendar size={11} />
@@ -659,7 +663,7 @@ export const RecommendedToAdminPage: React.FC = () => {
                   <div className="text-right">
                     <span className="text-[10px] font-bold uppercase text-slate-400 block">Recommending Officer</span>
                     <span className="font-semibold text-slate-700">
-                      {selectedReq.recommendedBy || 'Mark Finance Officer'}
+                      {selectedReq.recommendedBy || actorName}
                     </span>
                   </div>
                 </div>
@@ -706,7 +710,7 @@ export const RecommendedToAdminPage: React.FC = () => {
         isOpen={!!approveModalReq}
         request={approveModalReq}
         portalType="FINANCE"
-        approverName="Mark Finance Officer"
+        approverName={actorName}
         onClose={() => setApproveModalReq(null)}
         onConfirm={handleConfirmFinancialDossier}
       />

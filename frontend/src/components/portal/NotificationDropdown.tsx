@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
 import {
-  Bell, CheckCheck, X, Clock, ShieldAlert, ArrowRight, CheckCircle
+  Bell, CheckCheck, X, CheckCircle, ArrowRight
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useActivity } from '../../context/ActivityContext'
+import { apiClient } from '../../api/client'
 
 export interface NotificationItem {
   id: number
@@ -17,98 +18,72 @@ export interface NotificationItem {
   sender: string
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 1,
-    title: 'Request REQ-2026-001 Approved',
-    message: 'High Performance Laptops for Engineering approved by Manager. Routed to Finance Review for capex verification.',
-    timestamp: '10 mins ago',
-    date: '2026-09-11 17:45',
-    isRead: false,
-    category: 'Approval',
-    requestId: 'REQ-2026-001',
-    sender: 'Sarah Manager',
-  },
-  {
-    id: 2,
-    title: 'Quotation Received from Dell Technologies',
-    message: 'Quotation QUO-4582 ($35,000.00) submitted for RFQ-2026-001 with 15-day delivery commitment.',
-    timestamp: '45 mins ago',
-    date: '2026-09-11 17:10',
-    isRead: false,
-    category: 'RFQ',
-    requestId: 'REQ-2026-001',
-    sender: 'Dell Technologies Enterprise',
-  },
-  {
-    id: 3,
-    title: 'Budget Threshold Warning — IT Department',
-    message: 'IT Capex utilization reached 78.4% of quarterly ceiling. Approvals above ₹10L require CFO sign-off.',
-    timestamp: '2 hours ago',
-    date: '2026-09-11 15:55',
-    isRead: false,
-    category: 'Budget',
-    sender: 'Finance System Automated',
-  },
-  {
-    id: 4,
-    title: 'Goods Receipt GRN-2214 Verified',
-    message: 'Warehouse team confirmed physical delivery of 20 units with zero damage. Ready for 3-way matching.',
-    timestamp: '4 hours ago',
-    date: '2026-09-11 13:50',
-    isRead: true,
-    category: 'Logistics',
-    requestId: 'PO-4582',
-    sender: 'Logistics & Receiving',
-  },
-  {
-    id: 5,
-    title: 'Payment Scheduled for PO-4582',
-    message: 'Accounts Payable scheduled wire disbursement for ₹3,50,000 on Sep 14, 2026.',
-    timestamp: 'Yesterday',
-    date: '2026-09-10 16:30',
-    isRead: true,
-    category: 'Payment',
-    requestId: 'INV-9841',
-    sender: 'Finance Controller',
-  },
-  {
-    id: 6,
-    title: 'Policy Compliance Reminder',
-    message: 'Quarterly vendor audit documentation must be completed before end of month.',
-    timestamp: '3 days ago',
-    date: '2026-09-08 10:00',
-    isRead: true,
-    category: 'Compliance',
-    sender: 'Audit & Risk Team',
-  },
-]
-
 interface NotificationDropdownProps {
   currentRole: string
 }
 
 export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ currentRole }) => {
   const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const dropdownRef = useRef<HTMLDivElement>(null)
   const { getRoleTotalUnread } = useActivity()
+
+  // Fetch real-time notifications from PostgreSQL
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+
+    const fetchNotifications = async () => {
+      try {
+        const res = await apiClient.get('/notifications/')
+        const data = Array.isArray(res.data) ? res.data : (res.data?.results || [])
+        const items: NotificationItem[] = data.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          timestamp: n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+          date: n.created_at ? n.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          isRead: Boolean(n.is_read),
+          category: 'Approval',
+          requestId: n.purchase_request ? `REQ-${n.purchase_request}` : undefined,
+          sender: 'System'
+        }))
+        setNotifications(items)
+      } catch (err) {
+        // silent fail if unauthenticated or network error
+      }
+    }
+
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const unreadCount = notifications.filter((n) => !n.isRead).length
   const totalUnreadCount = unreadCount + getRoleTotalUnread()
   const topNotifications = notifications.slice(0, 5)
 
   // Mark all as read
-  const handleMarkAllAsRead = () => {
+  const handleMarkAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    try {
+      await apiClient.post('/notifications/mark_all_read/')
+    } catch (err) {
+      console.warn('Failed to mark all notifications read:', err)
+    }
   }
 
   // Click notification: automatically mark as read
-  const handleNotificationClick = (item: NotificationItem) => {
+  const handleNotificationClick = async (item: NotificationItem) => {
     if (!item.isRead) {
       setNotifications((prev) =>
         prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
       )
+      try {
+        await apiClient.post(`/notifications/${item.id}/mark_read/`)
+      } catch (err) {
+        console.warn('Failed to mark notification read:', err)
+      }
     }
   }
 
@@ -185,7 +160,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
             {topNotifications.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-xs">
                 <CheckCircle size={28} className="mx-auto mb-2 text-emerald-400 opacity-80" />
-                No notifications right now
+                No new notifications
               </div>
             ) : (
               topNotifications.map((n) => (

@@ -38,322 +38,98 @@ export interface FinanceOrder {
   history?: StepHistoryItem[]
 }
 
-const INITIAL_FINANCE_ORDERS: FinanceOrder[] = [
-  {
-    id: 'REQ-2026-001',
-    title: 'High Performance Laptops for Engineering Team',
-    description: '10x high-spec 14-inch mobile workstations with 32GB RAM for local LLM compilation, machine learning model prototyping, and developer productivity.',
-    category: 'IT Hardware & Infrastructure',
-    quantity: 10,
+const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+
+// Convert real ProcurementRequest to FinanceOrder view model
+function mapRequestToFinanceOrder(req: any): FinanceOrder {
+  const amount = Number(req.amount) || Number(req.total_estimated_cost) || 0
+  const qty = Number(req.quantity) || 1
+  const stage = req.currentStage || (req.status === 'completed' ? 9 : req.status === 'finance_approved' || req.status === 'assigned_to_vendor' ? 5 : 2)
+
+  let orderStatus: FinanceOrder['status'] = 'Pending'
+  if (req.status === 'completed') {
+    orderStatus = 'Completed'
+  } else if (req.status === 'finance_approved' || req.status === 'assigned_to_vendor' || req.status === 'invoiced' || stage >= 5) {
+    orderStatus = 'In Procurement'
+  } else if (req.status === 'rejected' || req.status === 'finance_rejected') {
+    orderStatus = 'Rejected'
+  } else if (req.status === 'approved') {
+    orderStatus = 'Approved'
+  }
+
+  let currentlyWith = 'Department Manager'
+  if (req.status === 'finance_review' || req.status === 'recommended_to_finance' || req.status === 'sent_to_finance') {
+    currentlyWith = 'Finance Directorate'
+  } else if (req.status === 'finance_approved' || req.status === 'assigned_to_vendor') {
+    currentlyWith = 'Procurement & Vendor Dispatch'
+  } else if (req.status === 'completed') {
+    currentlyWith = 'Completed & Settled'
+  }
+
+  const hist = Array.isArray(req.history) && req.history.length > 0
+    ? req.history.map((h: any, idx: number) => ({
+        stageNumber: idx + 1,
+        stageName: h.action || `Stage ${idx + 1}`,
+        actor: `${h.actorName || 'Officer'} (${h.actorRole || 'Finance'})`,
+        action: h.action || 'Reviewed',
+        timestamp: h.date || req.date || new Date().toISOString().split('T')[0],
+        note: h.remark || 'Processed within governance protocol.'
+      }))
+    : [
+        {
+          stageNumber: 1,
+          stageName: 'Create Request',
+          actor: `${req.requester || 'Requester'} (${req.department || 'Corporate'})`,
+          action: 'Created & Submitted Request',
+          timestamp: req.date ? `${req.date} 10:00 AM` : new Date().toLocaleDateString(),
+          note: req.description || 'Requisition submitted for departmental processing.',
+        }
+      ]
+
+  return {
+    id: req.id,
+    title: req.title,
+    description: req.description || req.title,
+    category: req.category || 'General',
+    quantity: qty,
     unit: 'Units',
-    estCost: '₹3,50,000',
-    rawCost: 350000,
-    unitPrice: '₹35,000 / unit',
-    vendor: 'Dell Technologies Enterprise',
-    deliveryLocation: 'Bangalore Campus, Innovation Tower, Floor 4',
-    budgetCode: 'CAPEX-ENG-2026-Q3',
-    date: '2026-09-10',
-    time: '10:14 AM',
-    status: 'In Procurement',
-    currentStage: 6, // Stage 7: Delivery
-    currentlyWith: 'Logistics & Receiving Dock',
-    lastUpdated: '2026-09-11 10:45 AM',
-    department: 'Engineering',
-    requester: 'Sarah Manager',
-    priority: 'High',
-    poNumber: 'PO-2026-4582',
-    grnNumber: 'GRN-2026-2214',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Sarah Manager (Manager)',
-        action: 'Created & Submitted Request',
-        timestamp: '2026-09-10 10:14 AM',
-        note: '10x high-spec laptops requested for machine learning builds and compiler workloads.',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager (Self-Verified)',
-        action: 'Department Need Approved',
-        timestamp: '2026-09-10 11:30 AM',
-        note: 'Verified against team headcount growth and technical specs.',
-      },
-      {
-        stageNumber: 3,
-        stageName: 'Finance Approval',
-        actor: 'Mark Finance (Finance Controller)',
-        action: 'Capex Certified & Approved',
-        timestamp: '2026-09-10 03:20 PM',
-        note: 'Budget allocation verified under CAPEX-ENG-2026-Q3.',
-      },
-      {
-        stageNumber: 4,
-        stageName: 'Admin Approval',
-        actor: 'David Admin (Head of Operations)',
-        action: 'Executive Sign-off Granted',
-        timestamp: '2026-09-10 05:00 PM',
-      },
-      {
-        stageNumber: 5,
-        stageName: 'RFQ Sent',
-        actor: 'Procurement Desk',
-        action: 'RFQ #982 Issued to Approved Vendors',
-        timestamp: '2026-09-11 09:00 AM',
-      },
-      {
-        stageNumber: 6,
-        stageName: 'Vendor Quotes Received',
-        actor: 'Dell Technologies Enterprise',
-        action: 'Quotation QUO-4582 ($35,000) Ingested',
-        timestamp: '2026-09-11 10:00 AM',
-        note: 'Best price-to-warranty ratio selected among 3 supplier bids.',
-      },
-      {
-        stageNumber: 7,
-        stageName: 'Delivery',
-        actor: 'Logistics & Receiving Dock',
-        action: 'Goods Received & Inspected at Central Dock',
-        timestamp: '2026-09-11 10:45 AM',
-        note: 'Dock intake verified against packing slip and serial numbers.',
-      },
-    ],
-  },
-  {
-    id: 'REQ-2026-012',
-    title: 'Cloud Infrastructure Yearly Enterprise Renewal (AWS & GCP)',
-    description: 'Annual compute and object storage reservation contract extension for core microservices, multi-region Kubernetes clusters, and database backups.',
-    category: 'Software & SaaS',
-    quantity: 1,
-    unit: 'Annual Contract',
-    estCost: '₹5,80,000',
-    rawCost: 580000,
-    unitPrice: '₹5,80,000 / year',
-    vendor: 'Amazon Web Services India Pvt Ltd',
-    deliveryLocation: 'Virtual Cloud Enterprise Tenant',
-    budgetCode: 'OPEX-CLOUD-2026-ANNUAL',
-    date: '2026-09-08',
-    time: '09:30 AM',
-    status: 'Pending',
-    currentStage: 2, // Stage 3: Finance Approval
-    currentlyWith: 'Finance Review — Mark Finance',
-    lastUpdated: '2026-09-11 09:15 AM',
-    department: 'DevOps & IT',
-    requester: 'Mark Finance',
-    priority: 'Critical',
-    poNumber: 'PO-2026-4190',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Mark Finance (Finance Controller)',
-        action: 'Submitted Renewal Contract Request',
-        timestamp: '2026-09-08 09:30 AM',
-        note: '32% discount commitment secured for upfront yearly reservation.',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager (Manager)',
-        action: 'Approved & Recommended to Finance',
-        timestamp: '2026-09-08 02:15 PM',
-        note: 'Approved. Forwarded for high-value OPEX verification.',
-      },
-      {
-        stageNumber: 3,
-        stageName: 'Finance Approval',
-        actor: 'Mark Finance (Finance Controller)',
-        action: 'Under Financial Review',
-        timestamp: '2026-09-11 09:15 AM',
-        note: 'Verifying quarterly cashflow allocation for upfront annual payment.',
-      },
-    ],
-  },
-  {
-    id: 'REQ-2026-018',
-    title: 'Standing Desks & Ergonomic Accessories for Operations Floor',
-    description: '20x motorized dual-motor height-adjustable desks with cable management and monitor arm mounts for ergonomic workplace standard compliance.',
-    category: 'Furniture & Facilities',
-    quantity: 20,
-    unit: 'Sets',
-    estCost: '₹2,85,000',
-    rawCost: 285000,
-    unitPrice: '₹14,250 / set',
-    vendor: 'Featherlite Commercial Furniture',
-    deliveryLocation: 'Operations Wing, 2nd Floor, Facility Central',
-    budgetCode: 'FAC-FURN-2026-Q3',
-    date: '2026-09-07',
-    time: '11:20 AM',
-    status: 'Pending',
-    currentStage: 1, // Stage 2: Manager Approval
-    currentlyWith: 'Manager — Sarah Manager (Review)',
-    lastUpdated: '2026-09-11 08:30 AM',
-    department: 'Operations',
-    requester: 'Sarah Manager',
-    priority: 'Medium',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Operations Lead',
-        action: 'Request Drafted & Submitted',
-        timestamp: '2026-09-07 11:20 AM',
-        note: 'Ergonomic audit recommendation for operations desk setup.',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager (Manager)',
-        action: 'In Progress — Verifying Space Plan',
-        timestamp: '2026-09-11 08:30 AM',
-      },
-    ],
-  },
-  {
-    id: 'REQ-2026-003',
-    title: 'Enterprise CRM Software Annual License (50 Seats)',
-    description: '50x enterprise sales CRM user licenses with sales pipeline automation, custom reporting dashboards, and Slack integration add-on.',
-    category: 'Software & SaaS',
-    quantity: 50,
-    unit: 'User Seats',
-    estCost: '₹1,20,000',
-    rawCost: 120000,
-    unitPrice: '₹2,400 / seat / year',
-    vendor: 'Salesforce Enterprise Solutions',
-    deliveryLocation: 'Corporate Digital Workspace',
-    budgetCode: 'SAAS-SUBS-2026',
-    date: '2026-09-01',
-    time: '09:00 AM',
-    status: 'Completed',
-    currentStage: 9, // Stage 10: Payment Settled
-    currentlyWith: 'Finance Accounts — Complete',
-    lastUpdated: '2026-09-09 04:00 PM',
-    department: 'Sales & BD',
-    requester: 'Mark Finance',
-    priority: 'Medium',
-    poNumber: 'PO-2026-3980',
-    grnNumber: 'GRN-2026-1940',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Sales Operations',
-        action: 'Created Request',
-        timestamp: '2026-09-01 09:00 AM',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager',
-        action: 'Approved',
-        timestamp: '2026-09-02 11:30 AM',
-      },
-      {
-        stageNumber: 3,
-        stageName: 'Finance Approval',
-        actor: 'Mark Finance',
-        action: 'Approved',
-        timestamp: '2026-09-03 02:15 PM',
-      },
-      {
-        stageNumber: 7,
-        stageName: 'Delivery',
-        actor: 'IT Systems Admin',
-        action: 'License Keys Provisioned & Validated',
-        timestamp: '2026-09-04 10:00 AM',
-      },
-      {
-        stageNumber: 8,
-        stageName: 'Invoice',
-        actor: 'Finance Accounts',
-        action: 'Invoice Reconciled & Validated',
-        timestamp: '2026-09-05 02:00 PM',
-      },
-      {
-        stageNumber: 9,
-        stageName: 'Verification and Order Complete',
-        actor: 'Procurement Audit Desk',
-        action: 'Order Reconciled & Certified',
-        timestamp: '2026-09-06 03:00 PM',
-        note: 'Order verified and operational compliance achieved.',
-      },
-      {
-        stageNumber: 10,
-        stageName: 'Payment',
-        actor: 'Finance Treasury',
-        action: 'Final Payment Disbursed & Settled',
-        timestamp: '2026-09-09 04:00 PM',
-        note: 'Payment processed and disbursed. Requisition fully settled.',
-      },
-    ],
-  },
-  {
-    id: 'REQ-2026-024',
-    title: 'Server Room Precision Cooling Units & Annual Maintenance',
-    description: '2x 5.5-ton precision split air conditioning units with continuous humidity control and automatic failover switch for primary datacenter rack array.',
-    category: 'Facilities & Hardware',
-    quantity: 2,
-    unit: 'Units',
-    estCost: '₹4,10,000',
-    rawCost: 410000,
-    unitPrice: '₹2,05,000 / unit',
-    vendor: 'Daikin Commercial HVAC Systems',
-    deliveryLocation: 'Central Server Room B, Basement Level',
-    budgetCode: 'CAPEX-DC-2026',
-    date: '2026-09-05',
-    time: '02:40 PM',
-    status: 'In Procurement',
-    currentStage: 4, // Stage 5: RFQ Sent
-    currentlyWith: 'Procurement — Vendor RFQ Desk',
-    lastUpdated: '2026-09-10 03:15 PM',
-    department: 'Infrastructure',
-    requester: 'Mark Finance',
-    priority: 'High',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Facilities Desk',
-        action: 'Submitted Request',
-        timestamp: '2026-09-05 02:40 PM',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager',
-        action: 'Approved & Justified',
-        timestamp: '2026-09-06 10:00 AM',
-      },
-      {
-        stageNumber: 3,
-        stageName: 'Finance Approval',
-        actor: 'Mark Finance',
-        action: 'Capex Approved',
-        timestamp: '2026-09-08 04:30 PM',
-      },
-      {
-        stageNumber: 5,
-        stageName: 'RFQ Sent',
-        actor: 'Procurement Desk',
-        action: 'RFQ #994 Active with 3 HVAC Vendors',
-        timestamp: '2026-09-10 03:15 PM',
-        note: 'Awaiting vendor sealed technical proposals.',
-      },
-    ],
-  },
-]
+    estCost: fmt(amount),
+    rawCost: amount,
+    unitPrice: fmt(Math.round(amount / qty)),
+    vendor: req.vendor || req.preferred_vendor || 'Preferred Vendor Partner',
+    deliveryLocation: req.deliveryLocation || 'Corporate Headquarters',
+    budgetCode: req.costCenter || `CC-${(req.department || 'FIN').slice(0, 3).toUpperCase()}`,
+    date: req.date || new Date().toISOString().split('T')[0],
+    time: '10:00 AM',
+    status: orderStatus,
+    currentStage: stage,
+    currentlyWith,
+    lastUpdated: req.date || new Date().toISOString().split('T')[0],
+    department: req.department || 'Corporate',
+    requester: req.requester || 'Requester',
+    priority: req.priority || 'Medium',
+    poNumber: (req.extraFields?.poNumber as string) || req.poNumber || (stage >= 5 ? `PO-${req.id}` : undefined),
+    history: hist
+  }
+}
 
 export const FinanceMyRequestsPage: React.FC = () => {
   const { user } = useAuth()
   const { allRequests } = useFinanceData()
-  const [orders, setOrders] = useState<FinanceOrder[]>(INITIAL_FINANCE_ORDERS)
+  const [localOrders, setLocalOrders] = useState<FinanceOrder[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'In Procurement' | 'Completed'>('All')
 
+  // Real orders derived from allRequests + newly created local orders
+  const orders = useMemo<FinanceOrder[]>(() => {
+    const fromRequests = allRequests.map(mapRequestToFinanceOrder)
+    const combined = [...localOrders, ...fromRequests]
+    return combined.filter((item, idx, self) => idx === self.findIndex(t => t.id === item.id))
+  }, [allRequests, localOrders])
+
   // Set of expanded order IDs
   // By default, open the first order so the user immediately sees the tracking workflow
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['REQ-2026-001']))
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set([]))
 
   // Modal for creating new request
   const [showNewModal, setShowNewModal] = useState(false)
@@ -415,7 +191,7 @@ export const FinanceMyRequestsPage: React.FC = () => {
     e.preventDefault()
     if (!newTitle.trim()) return
 
-    const newId = `REQ-2026-0${orders.length + 10}`
+    const newId = `REQ-${Date.now().toString().slice(-6)}`
     const costVal = parseInt(newCost || '0')
     const createdOrder: FinanceOrder = {
       id: newId,
@@ -451,7 +227,7 @@ export const FinanceMyRequestsPage: React.FC = () => {
       ],
     }
 
-    setOrders([createdOrder, ...orders])
+    setLocalOrders(prev => [createdOrder, ...prev])
     setExpandedIds(new Set([newId, ...Array.from(expandedIds)]))
     setShowNewModal(false)
     setNewTitle('')

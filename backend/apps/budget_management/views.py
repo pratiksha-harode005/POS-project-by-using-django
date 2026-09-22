@@ -8,7 +8,7 @@ from apps.core.permissions import IsAdminUser
 
 
 class BudgetLimitViewSet(viewsets.ModelViewSet):
-    queryset = BudgetLimit.objects.all()
+    queryset = BudgetLimit.objects.select_related('department').order_by('id')
     serializer_class = BudgetLimitSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['role', 'department', 'fiscal_year']
@@ -20,7 +20,7 @@ class BudgetLimitViewSet(viewsets.ModelViewSet):
 
 
 class BudgetAllocationViewSet(viewsets.ModelViewSet):
-    queryset = BudgetAllocation.objects.all()
+    queryset = BudgetAllocation.objects.select_related('department').order_by('id')
     serializer_class = BudgetAllocationSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['department', 'fiscal_year']
