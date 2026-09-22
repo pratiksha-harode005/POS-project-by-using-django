@@ -73,6 +73,16 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         data = request.data.copy()
+        if not data.get('required_by') or str(data.get('required_by')).strip() == '':
+            import datetime
+            data['required_by'] = (datetime.date.today() + datetime.timedelta(days=14)).isoformat()
+        if not data.get('delivery_location'):
+            data['delivery_location'] = 'Pune HQ'
+        if not data.get('priority'):
+            data['priority'] = 'Medium'
+        if not data.get('justification'):
+            data['justification'] = data.get('description', 'Purchase requisition')
+
         dept_val = data.get('department')
         if dept_val:
             from apps.users.models import Department
