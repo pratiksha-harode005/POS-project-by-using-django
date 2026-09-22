@@ -7,6 +7,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('apps.authentication.urls')),
     path('api/users/', include('apps.users.urls')),
+    path('api/departments/', include('apps.users.urls')),
     path('api/requests/', include('apps.request_management.urls')),
     path('api/vendors/', include('apps.vendor_management.urls')),
     path('api/rfq/', include('apps.rfq_management.urls')),
