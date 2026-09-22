@@ -654,9 +654,14 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           deliveryLocation: item.delivery_location || existing?.deliveryLocation,
           currentStage: item.current_stage || existing?.currentStage || 1,
           costCenter: item.cost_center || item.budget_code || existing?.costCenter,
-          date: item.created_at ? item.created_at.split('T')[0] : (existing?.date || new Date().toISOString().split('T')[0]),
-          status: item.status === 'Pending' ? 'pending_approval' : item.status === 'Approved' ? 'approved' : item.status === 'Rejected' ? 'rejected' : 'finance_review',
-          priority: item.priority || existing?.priority || 'Medium',
+          status: (() => {
+            const rawSt = (item.status || '').toLowerCase().trim()
+            const stage = Number(item.current_stage) || 1
+            if (rawSt === 'rejected') return 'rejected'
+            if (rawSt === 'approved' || rawSt === 'manager_approved' || stage >= 4 || rawSt === 'rfq_sent' || rawSt === 'quotes_received' || rawSt === 'in procurement') return 'approved'
+            if (stage === 2 || stage === 3 || rawSt.includes('finance') || rawSt.includes('admin')) return 'finance_review'
+            return 'pending_approval'
+          })(),
           vendor: item.preferred_vendor || existing?.vendor || 'Preferred Vendor',
           description: item.description || existing?.description,
           justification: item.justification || existing?.justification,

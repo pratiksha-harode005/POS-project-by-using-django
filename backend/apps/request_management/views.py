@@ -71,13 +71,31 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         self.check_object_permissions(self.request, obj)
         return obj
 
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+        dept_val = data.get('department')
+        if dept_val:
+            from apps.users.models import Department
+            if isinstance(dept_val, str) and not dept_val.isdigit():
+                dept_obj = Department.objects.filter(name__icontains=dept_val).first() or Department.objects.first()
+                if dept_obj:
+                    data['department'] = dept_obj.id
+            elif isinstance(dept_val, int) or (isinstance(dept_val, str) and dept_val.isdigit()):
+                data['department'] = int(dept_val)
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
         user = self.request.user if (self.request.user and self.request.user.is_authenticated) else None
         if not user or user.is_anonymous:
             from apps.users.models import User
             user = User.objects.filter(role='TEAM_LEAD').first() or User.objects.first()
 
-        dept = serializer.validated_data.get('department')
+        dept = serializer.validated_data.pop('department', None)
         if not dept:
             if hasattr(user, 'department') and user.department:
                 dept = user.department
