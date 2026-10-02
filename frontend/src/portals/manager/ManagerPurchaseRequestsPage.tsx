@@ -6,17 +6,24 @@ import {
 } from 'lucide-react'
 import { useManagerData } from '../../context/ManagerDataContext'
 import { formatDate } from '../../utils/formatDate'
+import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
 export const ManagerPurchaseRequestsPage: React.FC = () => {
   const navigate = useNavigate()
-  const { allRequests } = useManagerData()
+  const { allRequests, refreshData } = useManagerData()
   const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
 
   // State
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [deptFilter, setDeptFilter] = useState(searchParams.get('dept') || 'ALL')
+  const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
 
   useEffect(() => {
     const s = searchParams.get('search')
@@ -37,9 +44,13 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
     return Array.from(new Set(allRequests.map((r) => r.department)))
   }, [allRequests])
 
+  // Segmented filter counts
+  const softwareCount = useMemo(() => allRequests.filter(r => isSoftwareRequest(r)).length, [allRequests])
+  const hardwareCount = useMemo(() => allRequests.filter(r => isHardwareRequest(r)).length, [allRequests])
+
   // Filtered & Sorted List
   const filteredRequests = useMemo(() => {
-    return allRequests
+    const matching = allRequests
       .filter((r) => {
         const matchesSearch =
           r.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -55,18 +66,30 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
           (statusFilter === 'Approved' && (r.status === 'approved' || r.status === 'finance_approved' || r.financeStatus === 'Approved')) ||
           (statusFilter === 'Rejected' && (r.status === 'rejected' || r.status === 'finance_rejected' || r.status.toLowerCase().includes('reject')))
 
-        return matchesSearch && matchesDept && matchesPriority && matchesStatus
+        const matchesType = requestType === 'all'
+          ? true
+          : requestType === 'software'
+          ? isSoftwareRequest(r)
+          : isHardwareRequest(r)
+
+        return matchesSearch && matchesDept && matchesPriority && matchesStatus && matchesType
       })
-      .sort((a, b) => {
-        if (sortField === 'amount') {
-          return sortAsc ? a.amount - b.amount : b.amount - a.amount
-        } else {
-          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.created_at ? new Date(a.created_at).getTime() : new Date(a.date).getTime())
-          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.created_at ? new Date(b.created_at).getTime() : new Date(b.date).getTime())
-          return sortAsc ? timeA - timeB : timeB - timeA
-        }
-      })
-  }, [allRequests, search, deptFilter, priorityFilter, statusFilter, sortField, sortAsc])
+
+    if (sortField === 'date' && !sortAsc) {
+      return sortRequestsNewestFirst(matching)
+    }
+
+    return matching.sort((a, b) => {
+      if (sortField === 'amount') {
+        return sortAsc ? a.amount - b.amount : b.amount - a.amount
+      } else {
+        const timeA = new Date((a as any).createdAt || a.date || 0).getTime()
+        const timeB = new Date((b as any).createdAt || b.date || 0).getTime()
+        if (timeB !== timeA) return sortAsc ? timeA - timeB : timeB - timeA
+        return String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
+      }
+    })
+  }, [allRequests, search, deptFilter, priorityFilter, statusFilter, requestType, sortField, sortAsc])
 
   // Pagination slice — when pageSize is ALL, all records are displayed
   const actualPageSize = pageSize === 'ALL' ? (filteredRequests.length || 1) : pageSize
@@ -110,6 +133,20 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
           <CheckSquare size={14} />
           Review Pending Approvals
         </button>
+      </div>
+
+      {/* Request Type Segmented Filter */}
+      <div className="flex items-center justify-between">
+        <RequestTypeFilter
+          value={requestType}
+          onChange={(newType) => {
+            setRequestType(newType)
+            setCurrentPage(1)
+          }}
+          totalCount={allRequests.length}
+          softwareCount={softwareCount}
+          hardwareCount={hardwareCount}
+        />
       </div>
 
       {/* Filter and Search Bar */}

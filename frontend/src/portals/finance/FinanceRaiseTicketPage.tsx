@@ -3,7 +3,7 @@ import {
   Package, Box, FileText, Eye, ShieldCheck, Clock, Check, Send,
   ArrowLeft, ChevronDown, ChevronUp, Layers, CheckCircle2,
   AlertCircle, Sparkles, Filter, Search, CheckSquare, CreditCard,
-  ArrowRight, X, Building2, QrCode, Banknote, AlertTriangle, Info
+  ArrowRight, Smartphone, Banknote, X, Building2
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useFinanceData, TicketProduct, isFinanceRelevantRequest } from '../../context/ManagerDataContext'
@@ -136,22 +136,16 @@ export const FinanceRaiseTicketPage: React.FC = () => {
     vendor: string
     reqTitle?: string
     notes?: string
-    details?: {
-      methodKey: PaymentMethodKey
-      utrNumber?: string
-      upiId?: string
-      upiTxnId?: string
-      cashPaidTo?: string
-      cashReceivedBy?: string
-      cashVoucherNo?: string
-      chequeNo?: string
-      chequeBank?: string
-      chequeDate?: string
-      cardLast4?: string
-      cardApprovalCode?: string
-    }
+    details?: any
   } | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+
+  // Confirm Payment Modal state
+  const [confirmPaymentProduct, setConfirmPaymentProduct] = useState<TicketProduct | null>(null)
+  const [payMethod, setPayMethod] = useState<'bank' | 'upi' | 'cash' | 'card'>('bank')
+  const [utrRef, setUtrRef] = useState('')
+  const [settlementNote, setSettlementNote] = useState('')
+  const [utrError, setUtrError] = useState('')
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -265,8 +259,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
   }
 
   const handleVerify = (productId: string, docType: DocType) => {
-    const verifier = user ? `${user.first_name} ${user.last_name}`.trim() : 'Mark Finance Officer'
-    // Optimistic local update for this specific document only
+    const verifier = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
     verifyDocument(ticket.id, productId, docType, verifier)
 
     // Resolve the actual backend document ID for the specific docType
@@ -306,7 +299,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
       showToast('Both documents (Goods Receipt, Invoice) must be verified before submission.', 'error')
       return
     }
-    const submitter = user ? `${user.first_name} ${user.last_name}` : 'Mark Finance Officer'
+    const submitter = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
     if (submitProductTicket) {
       submitProductTicket(ticket.id, product.id, submitter)
     } else {
@@ -317,98 +310,52 @@ export const FinanceRaiseTicketPage: React.FC = () => {
     showToast(`🎉 Verified for ${product.name}! Queued for payment disbursement.`)
   }
 
-  // Open the Payment Method modal instead of completing immediately
-  const handleOpenPaymentModal = (product: TicketProduct) => {
-    setPaymentModalProduct(product)
-    setPaymentForm({
-      method: 'ONLINE_BANK_TRANSFER',
-      utrNumber: '',
-      upiId: '',
-      upiTxnId: '',
-      cashPaidTo: product.vendor || 'Vendor Partner',
-      cashReceivedBy: user ? `${user.first_name} ${user.last_name}`.trim() : 'Mark Finance Officer',
-      cashVoucherNo: '',
-      cardLast4: '',
-      cardApprovalCode: '',
-      notes: ''
-    })
+  // Opens the Confirm Payment modal (no instant dispatch)
+  const handleMakePayment = (product?: TicketProduct) => {
+    setConfirmPaymentProduct(product || null)
+    setPayMethod('bank')
+    setUtrRef('')
+    setSettlementNote('')
+    setUtrError('')
+    setConfirmSubmitProduct(null)
   }
+  const handleOpenPaymentModal = handleMakePayment
 
+  // Validate UTR / reference and dispatch payment
   const handleConfirmAndPay = () => {
-    if (!paymentModalProduct || !isPaymentFormValid) return
-    const product = paymentModalProduct
-    const amount = product.totalAmount || ticket.requestAmount
-    const vendor = product.vendor || ticket.products?.[0]?.vendor || 'Dell Technologies India'
-
-    let methodLabel = 'Online Bank Transfer (NEFT/RTGS/IMPS)'
-    let refString = ''
-    let detailsObj: any = { methodKey: paymentForm.method }
-
-    switch (paymentForm.method) {
-      case 'ONLINE_BANK_TRANSFER':
-        methodLabel = 'Online Bank Transfer (NEFT/RTGS/IMPS)'
-        refString = paymentForm.utrNumber.trim()
-        detailsObj = {
-          ...detailsObj,
-          utrNumber: paymentForm.utrNumber.trim()
-        }
-        break
-      case 'UPI':
-        methodLabel = 'UPI'
-        refString = paymentForm.upiTxnId.trim()
-        detailsObj = {
-          ...detailsObj,
-          upiId: paymentForm.upiId.trim(),
-          upiTxnId: paymentForm.upiTxnId.trim()
-        }
-        break
-      case 'CASH':
-        methodLabel = 'Cash on Hand'
-        refString = `VCHR-${paymentForm.cashVoucherNo.trim()}`
-        detailsObj = {
-          ...detailsObj,
-          cashPaidTo: paymentForm.cashPaidTo.trim(),
-          cashReceivedBy: paymentForm.cashReceivedBy.trim(),
-          cashVoucherNo: paymentForm.cashVoucherNo.trim()
-        }
-        break
-      case 'CARD':
-        methodLabel = 'Card'
-        refString = `CARD-****${paymentForm.cardLast4.trim()}`
-        detailsObj = {
-          ...detailsObj,
-          cardLast4: paymentForm.cardLast4.trim(),
-          cardApprovalCode: paymentForm.cardApprovalCode.trim()
-        }
-        break
+    if (payMethod === 'bank') {
+      if (!utrRef.trim() || utrRef.trim().length < 6 || utrRef.trim().length > 22) {
+        setUtrError('Enter a valid 6–22 character UTR / NEFT / RTGS reference.')
+        return
+      }
+    } else if (payMethod === 'upi') {
+      if (!utrRef.trim() || utrRef.trim().length < 6) {
+        setUtrError('Enter a valid UPI Transaction / Reference ID (min 6 chars).')
+        return
+      }
     }
-
+    setUtrError('')
+    const product = confirmPaymentProduct || undefined
+    const amount = product ? product.totalAmount : ticket.requestAmount
+    const vendor = product?.vendor || ticket.products?.[0]?.vendor || 'Vendor Partner'
+    const methodLabel = payMethod === 'bank' ? 'NEFT / RTGS / IMPS' : payMethod === 'upi' ? 'UPI Instant Transfer' : payMethod === 'cash' ? 'Cash / Petty Cash' : 'Corporate Card'
     const res = makePayment(ticket.requestId, ticket.id, {
       amount,
       paymentMethod: methodLabel,
-      referenceNumber: refString,
-      transactionRef: refString,
-      productId: product.id,
-      notes: paymentForm.notes.trim() || undefined,
-      details: detailsObj
+      productId: product?.id
     })
 
     setPaymentResult({
       ...res,
-      paymentMethod: methodLabel,
-      referenceNumber: refString,
-      utrRef: refString,
+      utrRef: utrRef.trim() || res.utrRef,
       vendor: res.vendor || vendor,
-      reqTitle: `${ticket.requestTitle} — ${product.name}`,
-      notes: paymentForm.notes.trim() || undefined,
-      details: detailsObj,
+      reqTitle: product ? `${ticket.requestTitle} — ${product.name}` : ticket.requestTitle,
+      notes: settlementNote.trim() || undefined,
       amount: amount,
       date: res.date
     })
-
-    setPaymentModalProduct(null)
-    setConfirmSubmitProduct(null)
-    showToast(`💳 Payment Disbursed: ₹${amount.toLocaleString('en-IN')} via ${methodLabel}! Ref: ${refString}`, 'success')
+    setConfirmPaymentProduct(null)
+    showToast(`💳 Payment Disbursed: ₹${amount.toLocaleString('en-IN')}! UTR: ${utrRef.trim() || res.utrRef}`, 'success')
   }
 
   return (
@@ -763,7 +710,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                 verifiedBy: product.goodsReceipt.verifiedBy,
                 verifiedAt: product.goodsReceipt.verifiedAt,
                 fields: [
-                  { label: 'Received Date', value: product.goodsReceipt.receivedDate || product.productOrder?.date || '2026-09-12' },
+                  { label: 'Received Date', value: product.goodsReceipt.receivedDate || product.productOrder?.date || new Date().toISOString().split('T')[0] },
                   { label: 'Vendor', value: product.goodsReceipt.vendor || product.vendor },
                   { label: 'Accepted / Received Qty', value: `${product.goodsReceipt.acceptedQty || product.quantity} / ${product.goodsReceipt.receivedQty || product.quantity} ${product.goodsReceipt.unit || product.unit}` },
                 ],
@@ -781,7 +728,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                 verifiedBy: product.invoice.verifiedBy,
                 verifiedAt: product.invoice.verifiedAt,
                 fields: [
-                  { label: 'Invoice Date', value: product.invoice.date || product.invoice.invoiceDate || product.productOrder?.date || '2026-09-10' },
+                  { label: 'Invoice Date', value: product.invoice.date || product.invoice.invoiceDate || product.productOrder?.date || new Date().toISOString().split('T')[0] },
                   { label: 'Vendor', value: product.invoice.vendor || product.vendor },
                   { label: 'Billed Quantity', value: `${product.quantity} ${product.unit} @ ${fmt(Math.round((product.totalAmount || 0) / (product.quantity || 1)))}/Unit` },
                   { label: 'Total Amount', value: fmt(product.invoice.amount || product.invoice.invoiceAmount || product.totalAmount) },
@@ -1084,429 +1031,189 @@ export const FinanceRaiseTicketPage: React.FC = () => {
         </div>
       )}
 
-      {/* ─── CONFIRM PAYMENT MODAL (REQUIRED PAYMENT METHOD STEP) ─── */}
-      {paymentModalProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-gray-100 animate-scaleUp my-8 text-left">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                  <CreditCard size={22} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900">Confirm Payment</h3>
-                  <p className="text-xs text-gray-500">Select payment method & enter transaction reference</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPaymentModalProduct(null)}
-                className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
+      {/* ─── CONFIRM PAYMENT MODAL ─── */}
+      {confirmPaymentProduct !== null && confirmPaymentProduct && (() => {
+          const cpProduct = confirmPaymentProduct
+          const payable = cpProduct.totalAmount
+          const invoiceNo = cpProduct.invoice?.id || '—'
+          const grnRef = cpProduct.goodsReceipt?.id || '—'
+          const itemName = cpProduct.name
+          const vendorName = cpProduct.vendor
 
-            {/* Product / Invoice / Vendor Summary Card */}
-            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 my-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
-                <div>
-                  <div className="flex items-center gap-1.5 text-slate-500 text-xs font-medium">
-                    <Building2 size={13} className="text-slate-400" />
-                    <span>Vendor:</span>
-                  </div>
-                  <p className="text-xs font-bold text-slate-900 mt-0.5">
-                    {paymentModalProduct.vendor || 'Vendor Partner'}
-                  </p>
-                </div>
-                <div className="sm:text-right">
-                  <span className="text-[11px] text-slate-500 font-medium">Payable Amount:</span>
-                  <p className="text-base font-black text-emerald-700">
-                    {fmt(paymentModalProduct.totalAmount || ticket.requestAmount)}
-                  </p>
-                </div>
-              </div>
+          const PAY_METHODS = [
+            { id: 'bank' as const, label: 'Bank Tran...', sub: 'NEFT / RTGS /...', icon: <Building2 size={18} /> },
+            { id: 'upi' as const, label: 'UPI', sub: 'Instant Transfer', icon: <Smartphone size={18} /> },
+            { id: 'cash' as const, label: 'Cash on H...', sub: 'Petty Cash / V...', icon: <Banknote size={18} /> },
+            { id: 'card' as const, label: 'Card', sub: 'Corporate Card', icon: <CreditCard size={18} /> },
+          ]
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-3 text-xs">
-                <div>
-                  <span className="text-gray-400 text-[11px] block">Item / Product:</span>
-                  <span className="font-semibold text-gray-800 line-clamp-1">{paymentModalProduct.name}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-[11px] block">Invoice No:</span>
-                  <span className="font-mono font-semibold text-gray-800">{paymentModalProduct.invoice.id}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-[11px] block">GRN Ref:</span>
-                  <span className="font-mono font-semibold text-gray-800">{paymentModalProduct.goodsReceipt.id}</span>
-                </div>
-              </div>
-            </div>
+          const needsRef = payMethod === 'bank' || payMethod === 'upi'
+          const refLabel = payMethod === 'bank' ? 'UTR / Bank Reference Number' : 'UPI Transaction Reference'
+          const refPlaceholder = payMethod === 'bank'
+            ? 'e.g., UTR202610010091 (16 or 22 chars)'
+            : 'e.g., UPI12345678901234'
+          const refHint = payMethod === 'bank'
+            ? 'Enter the 6–22 character alphanumeric reference provided by NEFT/RTGS/IMPS gateway (Max 22).'
+            : 'Enter the UPI Transaction ID / Reference from your payment app.'
 
-            {/* Payment Method Selector Tabs */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-gray-700 mb-2">
-                Select Payment Method <span className="text-red-500">*</span>
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  {
-                    key: 'ONLINE_BANK_TRANSFER' as PaymentMethodKey,
-                    label: 'Bank Transfer',
-                    sub: 'NEFT / RTGS / IMPS',
-                    icon: Building2
-                  },
-                  {
-                    key: 'UPI' as PaymentMethodKey,
-                    label: 'UPI',
-                    sub: 'Instant Transfer',
-                    icon: QrCode
-                  },
-                  {
-                    key: 'CASH' as PaymentMethodKey,
-                    label: 'Cash on Hand',
-                    sub: 'Petty Cash / Voucher',
-                    icon: Banknote
-                  },
-                  {
-                    key: 'CARD' as PaymentMethodKey,
-                    label: 'Card',
-                    sub: 'Corporate Card',
-                    icon: CreditCard
-                  }
-                ].map(item => {
-                  const Icon = item.icon
-                  const isSelected = paymentForm.method === item.key
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setPaymentForm(prev => ({ ...prev, method: item.key }))}
-                      className={`flex items-start gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                        isSelected
-                          ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 ring-2 ring-indigo-500/20 shadow-xs'
-                          : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-lg shrink-0 ${isSelected ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                        <Icon size={14} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold truncate">{item.label}</div>
-                        <div className="text-[10px] text-gray-500 truncate">{item.sub}</div>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+          const canPay = !needsRef || (utrRef.trim().length >= 6 && utrRef.trim().length <= 22)
 
-            {/* Dynamic Method-Specific Form Fields */}
-            <div className="bg-gray-50/70 border border-gray-200 rounded-2xl p-4 mb-4 space-y-3">
-              {/* 1. ONLINE BANK TRANSFER */}
-              {paymentForm.method === 'ONLINE_BANK_TRANSFER' && (
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-gray-700">
-                      UTR / Bank Reference Number <span className="text-red-500">*</span>
-                    </label>
-                    <span className={`text-[10px] font-mono font-medium ${
-                      paymentForm.utrNumber.length === 12
-                        ? 'text-emerald-600 font-bold'
-                        : paymentForm.utrNumber.length > 0
-                        ? 'text-amber-600'
-                        : 'text-gray-400'
-                    }`}>
-                      {paymentForm.utrNumber.length}/12 Characters
-                    </span>
-                  </div>
-                  <input
-                    type="text"
-                    maxLength={12}
-                    placeholder="Enter 12-character UTR number (e.g. UTR2026100109)"
-                    value={paymentForm.utrNumber}
-                    onChange={(e) => {
-                      const sanitized = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
-                      setPaymentForm(prev => ({ ...prev, utrNumber: sanitized }))
-                    }}
-                    className={`w-full px-3 py-2 text-xs rounded-xl border bg-white focus:outline-hidden focus:ring-2 transition-all font-mono tracking-wide ${
-                      paymentForm.utrNumber.trim() && !isUtrValid
-                        ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
-                        : paymentForm.utrNumber.trim() && isUtrValid
-                        ? 'border-emerald-400 focus:ring-emerald-500/20 focus:border-emerald-500 text-emerald-900 font-bold'
-                        : 'border-gray-300 focus:ring-indigo-500/20 focus:border-indigo-500'
-                    }`}
-                  />
-                  {paymentForm.utrNumber.trim() && !isUtrValid ? (
-                    <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
-                      <AlertCircle size={12} className="shrink-0" />
-                      UTR / Bank Reference must be exactly 12 alphanumeric characters.
-                    </p>
-                  ) : paymentForm.utrNumber.trim() && isUtrValid ? (
-                    <p className="text-[11px] text-emerald-700 mt-1 flex items-center gap-1">
-                      <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />
-                      Valid UTR Reference format (12 characters).
-                    </p>
-                  ) : (
-                    <p className="text-[11px] text-gray-500 mt-1 flex items-center gap-1">
-                      <Info size={12} className="text-gray-400 shrink-0" />
-                      Enter the 12-character alphanumeric reference provided by the banking gateway.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* 2. UPI */}
-              {paymentForm.method === 'UPI' && (
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-bold text-gray-700">
-                        UPI ID / VPA <span className="text-red-500">*</span>
-                      </label>
-                      <span className="text-[10px] text-gray-400 font-mono">
-                        {paymentForm.upiId.length}/64
-                      </span>
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-100 overflow-hidden animate-scaleUp">
+                {/* Modal Header */}
+                <div className="flex items-center justify-between px-6 pt-6 pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-sm">
+                      <CreditCard size={22} />
                     </div>
-                    <input
-                      type="text"
-                      maxLength={64}
-                      placeholder="e.g., vendor.payments@okhdfcbank or business@icici"
-                      value={paymentForm.upiId}
-                      onChange={(e) => setPaymentForm(prev => ({ ...prev, upiId: e.target.value.toLowerCase().trim().slice(0, 64) }))}
-                      className={`w-full px-3 py-2 text-xs rounded-xl border bg-white focus:outline-hidden focus:ring-2 transition-all ${
-                        paymentForm.upiId.trim() && !isUpiValid
-                          ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
-                          : paymentForm.upiId.trim() && isUpiValid
-                          ? 'border-emerald-400 focus:ring-emerald-500/20 focus:border-emerald-500'
-                          : 'border-gray-300 focus:ring-indigo-500/20 focus:border-indigo-500'
-                      }`}
-                    />
-                    {paymentForm.upiId.trim() && !isUpiValid ? (
-                      <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
-                        <AlertCircle size={12} className="shrink-0" /> Please enter a valid UPI ID (e.g., username@bank).
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        Recipient UPI Virtual Payment Address (VPA).
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-bold text-gray-700">
-                        UPI Transaction / Reference ID (RRN) <span className="text-red-500">*</span>
-                      </label>
-                      <span className={`text-[10px] font-mono font-medium ${
-                        paymentForm.upiTxnId.length === 12
-                          ? 'text-emerald-600 font-bold'
-                          : paymentForm.upiTxnId.length > 0
-                          ? 'text-amber-600'
-                          : 'text-gray-400'
-                      }`}>
-                        {paymentForm.upiTxnId.length}/12 Digits
-                      </span>
+                    <div>
+                      <h3 className="text-lg font-black text-gray-900 leading-tight">Confirm Payment</h3>
+                      <p className="text-[11px] text-gray-500">Select payment method &amp; enter transaction reference</p>
                     </div>
-                    <input
-                      type="text"
-                      maxLength={12}
-                      placeholder="e.g., 427819283749 (12-digit number)"
-                      value={paymentForm.upiTxnId}
-                      onChange={(e) => setPaymentForm(prev => ({ ...prev, upiTxnId: e.target.value.replace(/\D/g, '').slice(0, 12) }))}
-                      className={`w-full px-3 py-2 text-xs rounded-xl border bg-white focus:outline-hidden focus:ring-2 transition-all font-mono tracking-wider ${
-                        paymentForm.upiTxnId.trim() && !isUpiTxnValid
-                          ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
-                          : paymentForm.upiTxnId.trim() && isUpiTxnValid
-                          ? 'border-emerald-400 focus:ring-emerald-500/20 focus:border-emerald-500'
-                          : 'border-gray-300 focus:ring-indigo-500/20 focus:border-indigo-500'
-                      }`}
-                    />
-                    {paymentForm.upiTxnId.trim() && !isUpiTxnValid ? (
-                      <p className="text-[11px] text-red-600 mt-1 flex items-center gap-1">
-                        <AlertCircle size={12} className="shrink-0" />
-                        Must be exactly 12 numeric digits (UPI 12-digit RRN / Transaction ID).
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        12-digit numeric UPI transaction reference number.
-                      </p>
-                    )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmPaymentProduct(null)}
+                    className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
                 </div>
-              )}
 
-              {/* 3. CASH */}
-              {paymentForm.method === 'CASH' && (
-                <div className="space-y-3">
-                  {/* Statutory Cash Warnings & Blocks */}
-                  {(paymentModalProduct.totalAmount || 0) >= CASH_MAX_LIMIT && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 flex items-start gap-2.5">
-                      <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
+                <div className="px-6 pb-6 space-y-5">
+                  {/* Vendor + Amount Info Card */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-bold">Statutory Limit Exceeded (Section 269ST)</p>
-                        <p className="text-[11px] text-red-700 mt-0.5">
-                          Cash payments of ₹2,00,000 or more are prohibited by statutory regulations. Please choose <b>Online Bank Transfer</b>, <b>UPI</b>, or <b>Card</b>.
-                        </p>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Vendor:</span>
+                        <span className="font-black text-slate-900 text-base">{vendorName}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Payable Amount:</span>
+                        <span className="font-black text-emerald-600 text-xl">{fmt(payable)}</span>
                       </div>
                     </div>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        Paid To (Recipient) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={100}
-                        placeholder="Vendor representative name"
-                        value={paymentForm.cashPaidTo}
-                        onChange={(e) => setPaymentForm(prev => ({ ...prev, cashPaidTo: e.target.value.slice(0, 100) }))}
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        Received / Authorized By <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={100}
-                        placeholder="Staff / Finance Officer name"
-                        value={paymentForm.cashReceivedBy}
-                        onChange={(e) => setPaymentForm(prev => ({ ...prev, cashReceivedBy: e.target.value.slice(0, 100) }))}
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                      />
+                    <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-200">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Item / Product:</span>
+                        <span className="text-xs font-semibold text-slate-700 leading-tight">{itemName}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Invoice No:</span>
+                        <span className="text-xs font-semibold text-slate-700 font-mono">{invoiceNo}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">GRN Ref:</span>
+                        <span className="text-xs font-semibold text-slate-700 font-mono">{grnRef}</span>
+                      </div>
                     </div>
                   </div>
 
+                  {/* Payment Method Selector */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Receipt / Voucher Number <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={30}
-                      placeholder="e.g., VCHR-2026-0042"
-                      value={paymentForm.cashVoucherNo}
-                      onChange={(e) => setPaymentForm(prev => ({ ...prev, cashVoucherNo: e.target.value.toUpperCase().slice(0, 30) }))}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
-                    />
+                    <p className="text-xs font-bold text-slate-800 mb-2">
+                      Select Payment Method <span className="text-red-500">*</span>
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {PAY_METHODS.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => { setPayMethod(m.id); setUtrRef(''); setUtrError('') }}
+                          className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl border-2 text-center transition-all ${
+                            payMethod === m.id
+                              ? 'border-indigo-600 bg-indigo-600 text-white shadow-md'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
+                          }`}
+                        >
+                          <span className={payMethod === m.id ? 'text-white' : 'text-slate-500'}>{m.icon}</span>
+                          <span className="text-[11px] font-bold leading-tight">{m.label}</span>
+                          <span className={`text-[9px] leading-tight ${payMethod === m.id ? 'text-indigo-100' : 'text-slate-400'}`}>{m.sub}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
 
-              {/* 4. CARD */}
-              {paymentForm.method === 'CARD' && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-bold text-gray-700">
-                          Card Last 4 Digits <span className="text-red-500">*</span>
+                  {/* UTR / Reference Field */}
+                  {needsRef && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-800">
+                          {refLabel} <span className="text-red-500">*</span>
                         </label>
-                        <span className={`text-[10px] font-mono font-medium ${
-                          paymentForm.cardLast4.length === 4
-                            ? 'text-emerald-600 font-bold'
-                            : paymentForm.cardLast4.length > 0
-                            ? 'text-amber-600'
-                            : 'text-gray-400'
-                        }`}>
-                          {paymentForm.cardLast4.length}/4 Digits
-                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">{utrRef.length}/22 Characters</span>
                       </div>
                       <input
                         type="text"
-                        maxLength={4}
-                        placeholder="e.g., 4242"
-                        value={paymentForm.cardLast4}
-                        onChange={(e) => setPaymentForm(prev => ({ ...prev, cardLast4: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
-                        className={`w-full px-3 py-2 text-xs rounded-xl border bg-white focus:outline-hidden focus:ring-2 transition-all font-mono tracking-widest ${
-                          paymentForm.cardLast4.trim() && !isCardLast4Valid
-                            ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
-                            : paymentForm.cardLast4.trim() && isCardLast4Valid
-                            ? 'border-emerald-400 focus:ring-emerald-500/20 focus:border-emerald-500'
-                            : 'border-gray-300 focus:ring-indigo-500/20 focus:border-indigo-500'
+                        maxLength={22}
+                        value={utrRef}
+                        onChange={(e) => { setUtrRef(e.target.value.replace(/[^A-Za-z0-9]/g, '')); setUtrError('') }}
+                        placeholder={refPlaceholder}
+                        className={`w-full px-4 py-2.5 rounded-xl border text-xs font-mono focus:outline-none focus:ring-2 transition-all ${
+                          utrError
+                            ? 'border-red-400 focus:ring-red-200 bg-red-50'
+                            : 'border-slate-200 focus:ring-indigo-200 focus:border-indigo-400 bg-slate-50'
                         }`}
                       />
-                      {paymentForm.cardLast4.trim() && !isCardLast4Valid && (
-                        <p className="text-[11px] text-red-600 mt-1">Must be exactly 4 digits.</p>
+                      {utrError ? (
+                        <p className="text-[10px] text-red-600 flex items-center gap-1">
+                          <AlertCircle size={10} /> {utrError}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                          <ShieldCheck size={10} className="text-slate-400" /> {refHint}
+                        </p>
                       )}
                     </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-bold text-gray-700">
-                          Approval / Auth Code <span className="text-red-500">*</span>
-                        </label>
-                        <span className="text-[10px] text-gray-400 font-mono">
-                          {paymentForm.cardApprovalCode.length}/10
-                        </span>
-                      </div>
-                      <input
-                        type="text"
-                        maxLength={10}
-                        placeholder="e.g., AUTH98240"
-                        value={paymentForm.cardApprovalCode}
-                        onChange={(e) => setPaymentForm(prev => ({ ...prev, cardApprovalCode: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) }))}
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-gray-500 flex items-center gap-1">
-                    <Info size={12} className="text-gray-400 shrink-0" />
-                    Enter the POS / Payment gateway authorization code from the transaction slip.
-                  </p>
-                </div>
-              )}
+                  )}
 
-              {/* Settlement Notes (Optional) */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-gray-700">
-                    Settlement Notes / Remarks <span className="text-gray-400 font-normal">(Optional)</span>
-                  </label>
-                  <span className="text-[10px] text-gray-400 font-mono">
-                    {paymentForm.notes.length}/250
-                  </span>
+                  {/* Settlement Notes */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800">
+                        Settlement Notes / Remarks <span className="text-slate-400 font-normal">(Optional)</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">{settlementNote.length}/250</span>
+                    </div>
+                    <textarea
+                      maxLength={250}
+                      rows={2}
+                      value={settlementNote}
+                      onChange={(e) => setSettlementNote(e.target.value)}
+                      placeholder="e.g., Verified against physical invoice &amp; delivery docket"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 resize-none transition-all"
+                    />
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmPaymentProduct(null)}
+                      className="px-5 py-2.5 text-xs font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmAndPay}
+                      disabled={!canPay}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-black rounded-xl shadow transition-all ${
+                        canPay
+                          ? 'bg-slate-800 hover:bg-slate-900 text-white cursor-pointer'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      <CreditCard size={14} />
+                      Confirm &amp; Pay ({fmt(payable)})
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  maxLength={250}
-                  placeholder="e.g., Verified against physical invoice & delivery docket"
-                  value={paymentForm.notes}
-                  onChange={(e) => setPaymentForm(prev => ({ ...prev, notes: e.target.value.slice(0, 250) }))}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                />
               </div>
             </div>
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setPaymentModalProduct(null)}
-                className="px-4 py-2.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors border border-gray-200 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!isPaymentFormValid}
-                onClick={handleConfirmAndPay}
-                className={`flex items-center gap-2 font-bold text-xs px-6 py-2.5 rounded-xl shadow-md transition-all ${
-                  isPaymentFormValid
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-emerald-100'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300'
-                }`}
-              >
-                <CreditCard size={15} />
-                Confirm & Pay ({fmt(paymentModalProduct.totalAmount || ticket.requestAmount)})
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          )
+        })()}
 
       {/* Document View Modal with Authentic Scannable QR Code */}
       {viewModalDoc && (
@@ -1525,8 +1232,8 @@ export const FinanceRaiseTicketPage: React.FC = () => {
             vendor: viewModalDoc.product.vendor,
             date:
               (viewModalDoc.docType === 'goodsReceipt'
-                ? viewModalDoc.product.goodsReceipt.receivedDate || viewModalDoc.product.goodsReceipt.date || viewModalDoc.product.productOrder?.date
-                : viewModalDoc.product.invoice.date || viewModalDoc.product.invoice.invoiceDate || viewModalDoc.product.productOrder?.date) || '2026-09-10',
+                ? viewModalDoc.product.goodsReceipt.receivedDate || viewModalDoc.product.productOrder?.date
+                : viewModalDoc.product.invoice.date || viewModalDoc.product.invoice.invoiceDate || viewModalDoc.product.productOrder?.date) || new Date().toISOString().split('T')[0],
             amount: viewModalDoc.product.totalAmount,
             totalAmount: viewModalDoc.product.totalAmount,
             baseAmount: (viewModalDoc.docType === 'goodsReceipt' ? viewModalDoc.product.goodsReceipt?.baseAmount : viewModalDoc.product.invoice?.baseAmount) ?? viewModalDoc.product.baseAmount,

@@ -7,7 +7,7 @@ SECRET_KEY = 'django-insecure-procurement-os-dev-key-change-in-production'
 
 ALLOWED_HOSTS = []
 
-# ── Installed Apps ──────────────────────────────────────────
+# -- Installed Apps ------------------------------------------
 DJANGO_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -41,7 +41,7 @@ LOCAL_APPS = [
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
-# ── Middleware ───────────────────────────────────────────────
+# -- Middleware -----------------------------------------------
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -73,14 +73,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# ── Auth User & Backends ─────────────────────────────────────
+# -- Auth User & Backends -------------------------------------
 AUTH_USER_MODEL = 'users.User'
 AUTHENTICATION_BACKENDS = [
     'apps.authentication.backends.EmailOrUsernameModelBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-# ── Password Validators ──────────────────────────────────────
+# -- Password Validators --------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -88,13 +88,13 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# ── Internationalization ─────────────────────────────────────
+# -- Internationalization -------------------------------------
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Asia/Kolkata'
 USE_I18N = True
 USE_TZ = True
 
-# ── Static & Media ───────────────────────────────────────────
+# -- Static & Media -------------------------------------------
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
@@ -102,7 +102,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ── Django REST Framework ────────────────────────────────────
+# -- Django REST Framework ------------------------------------
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'apps.authentication.backends.DevSafeJWTAuthentication',
@@ -119,7 +119,7 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
 }
 
-# ── SimpleJWT ────────────────────────────────────────────────
+# -- SimpleJWT ------------------------------------------------
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=8),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -134,7 +134,7 @@ SIMPLE_JWT = {
     'TOKEN_OBTAIN_SERIALIZER': 'apps.authentication.seralizers.CustomTokenObtainPairSerializer',
 }
 
-# ── CORS ─────────────────────────────────────────────────────
+# -- CORS -----------------------------------------------------
 CORS_ALLOW_ALL_ORIGINS = True   # Tighten in production
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [

@@ -6,7 +6,7 @@ import {
   ShieldAlert, Building, Sliders, Truck, FileSpreadsheet, Package,
   FolderOpen, ShoppingCart, LucideIcon, XCircle, Inbox, Ticket, ArrowUpRight,
   BarChart2, GitCompare, ShoppingBag, AlertTriangle, HelpCircle, Tag, Scale,
-  LogOut, Grid
+  LogOut, Grid, RefreshCw
 } from 'lucide-react'
 import { UserRole, useAuth } from '../../context/AuthContext'
 
@@ -29,6 +29,7 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
         { label: 'Dashboard', path: `${basePath}/dashboard`, icon: LayoutDashboard },
         { label: 'My Requests', path: `${basePath}/my-requests`, icon: FileText },
         { label: 'Create Request', path: `${basePath}/create-request`, icon: PlusCircle },
+        { label: 'Renewals & Upgrades', path: `${basePath}/renewals`, icon: RefreshCw },
         { label: 'Request History', path: `${basePath}/request-history`, icon: History },
         { label: 'Notifications', path: `${basePath}/notifications`, icon: Bell },
         { label: 'Payment Status', path: `${basePath}/payment-status`, icon: CreditCard },
@@ -38,7 +39,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
     case 'MANAGER':
       return [
         { label: 'Dashboard', path: `${basePath}/dashboard`, icon: LayoutDashboard },
-        { label: 'My Requests', path: `${basePath}/my-requests`, icon: FileText },
         { label: 'Purchase Requests', path: `${basePath}/purchase-requests`, icon: Layers },
         { label: 'Purchase Orders', path: `${basePath}/purchase-orders`, icon: Package },
         { label: 'Manager Approval', path: `${basePath}/pending-approvals`, icon: CheckSquare },
@@ -57,7 +57,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
     case 'FINANCE':
       return [
         { label: 'Dashboard', path: `${basePath}/dashboard`, icon: LayoutDashboard },
-        { label: 'My Requests', path: `${basePath}/my-requests`, icon: FileText },
         { label: 'Budget', path: `${basePath}/budget`, icon: CreditCard },
         { label: 'Purchase Requests', path: `${basePath}/purchase-requests`, icon: Layers },
         { label: 'RFQs', path: `${basePath}/rfqs`, icon: FileSpreadsheet },

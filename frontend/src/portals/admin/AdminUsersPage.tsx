@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users,
   Search,
@@ -15,13 +15,17 @@ import {
   Eye,
   Briefcase
 } from 'lucide-react';
+import { apiClient } from '../../api/client';
 
 export interface UserRecord {
   id: string;
+  rawId?: number;
   name: string;
+  username?: string;
   email: string;
-  role: 'TEAM_LEAD' | 'MANAGER' | 'FINANCE' | 'VENDOR';
+  role: 'TEAM_LEAD' | 'MANAGER' | 'FINANCE' | 'VENDOR' | 'ADMIN';
   department: string;
+  departmentId?: number | null;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: string;
   lastLogin: string;
@@ -29,77 +33,10 @@ export interface UserRecord {
   phone?: string;
 }
 
-const INITIAL_USERS: UserRecord[] = [
-  {
-    id: 'USR-1002',
-    name: 'Vikram Malhotra',
-    email: 'vikram.mgr@enterprise.in',
-    role: 'MANAGER',
-    department: 'Operations & Facilities',
-    status: 'ACTIVE',
-    createdAt: '2024-02-10',
-    lastLogin: '2026-09-16 10:15 AM',
-    phone: '+91 98765 43211'
-  },
-  {
-    id: 'USR-1003',
-    name: 'Ananya Deshmukh',
-    email: 'ananya.fin@enterprise.in',
-    role: 'FINANCE',
-    department: 'Corporate Finance & Accounts',
-    status: 'ACTIVE',
-    createdAt: '2024-03-01',
-    lastLogin: '2026-09-16 09:30 AM',
-    phone: '+91 98765 43212'
-  },
-  {
-    id: 'USR-1004',
-    name: 'Rahul Verma',
-    email: 'rahul.lead@enterprise.in',
-    role: 'TEAM_LEAD',
-    department: 'Engineering & IT Infra',
-    status: 'ACTIVE',
-    createdAt: '2024-04-12',
-    lastLogin: '2026-09-15 05:45 PM',
-    phone: '+91 98765 43213'
-  },
-  {
-    id: 'USR-1005',
-    name: 'Sunita Rao',
-    email: 'sunita.lead@enterprise.in',
-    role: 'TEAM_LEAD',
-    department: 'Quality Assurance & Lab',
-    status: 'ACTIVE',
-    createdAt: '2024-06-20',
-    lastLogin: '2026-09-15 03:20 PM',
-    phone: '+91 98765 43214'
-  },
-  {
-    id: 'USR-1006',
-    name: 'Apex Industrial Supplies (Rajesh)',
-    email: 'rajesh@apexindustrial.in',
-    role: 'VENDOR',
-    department: 'External Vendor Partner',
-    status: 'ACTIVE',
-    createdAt: '2024-07-05',
-    lastLogin: '2026-09-14 02:10 PM',
-    phone: '+91 98111 22334'
-  },
-  {
-    id: 'USR-1007',
-    name: 'Karan Mehra',
-    email: 'karan.ops@enterprise.in',
-    role: 'MANAGER',
-    department: 'Supply Chain & Logistics',
-    status: 'INACTIVE',
-    createdAt: '2024-05-18',
-    lastLogin: '2026-08-10 11:00 AM',
-    phone: '+91 98765 43215'
-  }
-];
-
 export const AdminUsersPage: React.FC = () => {
-  const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
+  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [dbDepartments, setDbDepartments] = useState<{ id: number; name: string }[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRole, setSelectedRole] = useState<string>('ALL');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('ALL');
@@ -113,13 +50,59 @@ export const AdminUsersPage: React.FC = () => {
   // New user form state
   const [newUser, setNewUser] = useState<Partial<UserRecord>>({
     role: 'TEAM_LEAD',
-    department: 'Engineering & IT Infra',
+    department: 'Engineering',
     status: 'ACTIVE'
   });
 
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const [uRes, dRes] = await Promise.allSettled([
+        apiClient.get('/users/'),
+        apiClient.get('/departments/')
+      ]);
+
+      if (dRes.status === 'fulfilled') {
+        const dData = Array.isArray(dRes.value.data) ? dRes.value.data : (dRes.value.data?.results || []);
+        setDbDepartments(dData);
+      }
+
+      if (uRes.status === 'fulfilled') {
+        const uData = Array.isArray(uRes.value.data) ? uRes.value.data : (uRes.value.data?.results || []);
+        const mapped: UserRecord[] = uData.map((u: any) => {
+          const fullName = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.username;
+          return {
+            id: `USR-${u.id}`,
+            rawId: u.id,
+            name: fullName,
+            username: u.username,
+            email: u.email || `${u.username}@kss.com`,
+            role: (u.role || 'TEAM_LEAD') as any,
+            department: u.department_detail?.name || 'General',
+            departmentId: u.department || null,
+            status: u.is_active ? 'ACTIVE' : 'INACTIVE',
+            createdAt: u.date_joined ? u.date_joined.split('T')[0] : '2026-01-01',
+            lastLogin: u.last_login ? new Date(u.last_login).toLocaleDateString() : 'Active Session',
+            phone: u.phone || '+91 98765 43210'
+          };
+        });
+        setUsers(mapped);
+      }
+    } catch (err) {
+      console.warn('Failed to load users from backend:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
   const departments = useMemo(() => {
-    return Array.from(new Set(users.map(u => u.department)));
-  }, [users]);
+    const list = Array.from(new Set(users.map(u => u.department))).filter(Boolean);
+    return list.length > 0 ? list : dbDepartments.map(d => d.name);
+  }, [users, dbDepartments]);
 
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
@@ -136,31 +119,67 @@ export const AdminUsersPage: React.FC = () => {
     });
   }, [users, searchTerm, selectedRole, selectedDepartment, selectedStatus]);
 
-  const toggleUserStatus = (id: string) => {
+  const toggleUserStatus = async (id: string) => {
+    const user = users.find(u => u.id === id);
+    if (!user) return;
+    const newStatus = user.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     setUsers(prev =>
-      prev.map(u => (u.id === id ? { ...u, status: u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' } : u))
+      prev.map(u => (u.id === id ? { ...u, status: newStatus } : u))
     );
+    const rawId = (user as any).rawId || id.replace(/^USR-/, '');
+    try {
+      await apiClient.patch(`/users/${rawId}/`, { is_active: newStatus === 'ACTIVE' });
+    } catch (err) {
+      console.warn('Failed to update user status in PostgreSQL:', err);
+      fetchUsers();
+    }
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name || !newUser.email) return;
 
-    const created: UserRecord = {
-      id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
-      name: newUser.name,
-      email: newUser.email,
-      role: (newUser.role as any) || 'TEAM_LEAD',
-      department: newUser.department || 'Engineering & IT Infra',
-      status: (newUser.status as any) || 'ACTIVE',
-      createdAt: new Date().toISOString().split('T')[0],
-      lastLogin: 'Never',
-      phone: newUser.phone || '+91 99999 00000'
-    };
+    const nameParts = (newUser.name || '').trim().split(' ');
+    const firstName = nameParts[0] || 'User';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    const baseUsername = newUser.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') || `user_${Date.now()}`;
 
-    setUsers([created, ...users]);
-    setIsAddModalOpen(false);
-    setNewUser({ role: 'TEAM_LEAD', department: 'Engineering & IT Infra', status: 'ACTIVE' });
+    const selectedDeptObj = dbDepartments.find(d => d.name === newUser.department);
+
+    try {
+      const res = await apiClient.post('/users/', {
+        username: baseUsername,
+        first_name: firstName,
+        last_name: lastName,
+        email: newUser.email,
+        role: newUser.role || 'TEAM_LEAD',
+        department: selectedDeptObj ? selectedDeptObj.id : null,
+        phone: newUser.phone || '',
+        is_active: newUser.status === 'ACTIVE',
+        password: 'password123'
+      });
+
+      const u = res.data;
+      const created: UserRecord = {
+        id: `USR-${u.id}`,
+        rawId: u.id,
+        name: `${u.first_name} ${u.last_name}`.trim() || u.username,
+        email: u.email,
+        role: u.role,
+        department: u.department_detail?.name || newUser.department || 'General',
+        status: u.is_active ? 'ACTIVE' : 'INACTIVE',
+        createdAt: new Date().toISOString().split('T')[0],
+        lastLogin: 'Never',
+        phone: u.phone || '+91 99999 00000'
+      };
+
+      setUsers(prev => [created, ...prev]);
+      setIsAddModalOpen(false);
+      setNewUser({ role: 'TEAM_LEAD', department: dbDepartments[0]?.name || 'Engineering', status: 'ACTIVE' });
+    } catch (err) {
+      console.error('Failed to create user in PostgreSQL:', err);
+      alert('Could not save user to PostgreSQL. Check console for details.');
+    }
   };
 
   const handleUpdateUser = (e: React.FormEvent) => {
@@ -170,9 +189,19 @@ export const AdminUsersPage: React.FC = () => {
     setEditingUser(null);
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     if (window.confirm('Are you sure you want to remove this user from the system?')) {
+      const user = users.find(u => u.id === id);
       setUsers(prev => prev.filter(u => u.id !== id));
+      if (user) {
+        const rawId = (user as any).rawId || id.replace(/^USR-/, '');
+        try {
+          await apiClient.delete(`/users/${rawId}/`);
+        } catch (err) {
+          console.warn('Failed to delete user in PostgreSQL:', err);
+          fetchUsers();
+        }
+      }
     }
   };
 

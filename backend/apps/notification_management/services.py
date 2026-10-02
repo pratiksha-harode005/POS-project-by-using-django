@@ -165,20 +165,20 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
             created_notes.append(create_notification(
                 user=req_user,
                 title=f"Request {pr_id} Submitted",
-                message=f"Your purchase request '{title}' (₹{amt:,.2f}) was submitted to Manager for approval.",
+                message=f"Your purchase request '{title}' (Rs.{amt:,.2f}) was submitted to Manager for approval.",
                 purchase_request=pr
             ))
         created_notes.extend(notify_roles(
             roles=['MANAGER'],
             title=f"New Request {pr_id} Arrived",
-            message=f"New request '{title}' (₹{amt:,.2f}) submitted by {getattr(req_user, 'username', 'Team Lead')} ({dept}) for approval.",
+            message=f"New request '{title}' (Rs.{amt:,.2f}) submitted by {getattr(req_user, 'username', 'Team Lead')} ({dept}) for approval.",
             purchase_request=pr,
             exclude_users=[req_user] if req_user else None
         ))
         created_notes.extend(notify_roles(
             roles=['ADMIN'],
             title=f"New Requisition {pr_id} Logged",
-            message=f"Requisition '{title}' (₹{amt:,.2f}) submitted in {dept}.",
+            message=f"Requisition '{title}' (Rs.{amt:,.2f}) submitted in {dept}.",
             purchase_request=pr,
             exclude_users=[req_user] if req_user else None
         ))
@@ -196,7 +196,7 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
         created_notes.extend(notify_roles(
             roles=['ADMIN', 'FINANCE'],
             title=f"Request {pr_id} Approved by Manager",
-            message=f"Request '{title}' (₹{appr_amt:,.2f}) approved by {actor_name} (Manager). Ready for procurement.",
+            message=f"Request '{title}' (Rs.{appr_amt:,.2f}) approved by {actor_name} (Manager). Ready for procurement.",
             purchase_request=pr,
             exclude_users=[actor] if actor else None
         ))
@@ -209,19 +209,19 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
             created_notes.append(create_notification(
                 user=req_user,
                 title=f"Request {pr_id} Under Financial Review",
-                message=f"Your request '{title}' (₹{rec_amt:,.2f}) was forwarded to Finance by Manager for budget review.",
+                message=f"Your request '{title}' (Rs.{rec_amt:,.2f}) was forwarded to Finance by Manager for budget review.",
                 purchase_request=pr
             ))
         created_notes.extend(notify_roles(
             roles=['FINANCE'],
             title=f"Request {pr_id} Forwarded for Review",
-            message=f"Request '{title}' (₹{rec_amt:,.2f}) escalated to Finance by {actor_name}." + (f" Reason: {reason_txt}" if reason_txt else ""),
+            message=f"Request '{title}' (Rs.{rec_amt:,.2f}) escalated to Finance by {actor_name}." + (f" Reason: {reason_txt}" if reason_txt else ""),
             purchase_request=pr
         ))
         created_notes.extend(notify_roles(
             roles=['ADMIN'],
             title=f"Request {pr_id} Escalated to Finance",
-            message=f"Request '{title}' (₹{rec_amt:,.2f}) escalated to Finance by Manager ({actor_name}).",
+            message=f"Request '{title}' (Rs.{rec_amt:,.2f}) escalated to Finance by Manager ({actor_name}).",
             purchase_request=pr
         ))
 
@@ -233,13 +233,13 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
             created_notes.append(create_notification(
                 user=req_user,
                 title=f"Request {pr_id} Under Executive Review",
-                message=f"Your request '{title}' (₹{rec_amt:,.2f}) was escalated to Admin by Manager for executive approval.",
+                message=f"Your request '{title}' (Rs.{rec_amt:,.2f}) was escalated to Admin by Manager for executive approval.",
                 purchase_request=pr
             ))
         created_notes.extend(notify_roles(
             roles=['ADMIN'],
             title=f"Request {pr_id} Forwarded to Admin",
-            message=f"Request '{title}' (₹{rec_amt:,.2f}) escalated to Admin by Manager ({actor_name})." + (f" Reason: {reason_txt}" if reason_txt else ""),
+            message=f"Request '{title}' (Rs.{rec_amt:,.2f}) escalated to Admin by Manager ({actor_name})." + (f" Reason: {reason_txt}" if reason_txt else ""),
             purchase_request=pr
         ))
 
@@ -256,13 +256,13 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
         created_notes.extend(notify_roles(
             roles=['MANAGER'],
             title=f"Request {pr_id} Approved by Finance",
-            message=f"Budget approved for '{title}' (₹{appr_amt:,.2f}) by {actor_name} (Finance). Sourcing can proceed.",
+            message=f"Budget approved for '{title}' (Rs.{appr_amt:,.2f}) by {actor_name} (Finance). Sourcing can proceed.",
             purchase_request=pr
         ))
         created_notes.extend(notify_roles(
             roles=['ADMIN'],
             title=f"Request {pr_id} Approved by Finance",
-            message=f"Budget approved for '{title}' (₹{appr_amt:,.2f}) by Finance ({actor_name}).",
+            message=f"Budget approved for '{title}' (Rs.{appr_amt:,.2f}) by Finance ({actor_name}).",
             purchase_request=pr
         ))
 
@@ -274,7 +274,7 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
             created_notes.append(create_notification(
                 user=req_user,
                 title=f"Request {pr_id} Escalated to Executive Authority",
-                message=f"Your request '{title}' (₹{rec_amt:,.2f}) was reviewed by Finance and escalated to Admin for sign-off.",
+                message=f"Your request '{title}' (Rs.{rec_amt:,.2f}) was reviewed by Finance and escalated to Admin for sign-off.",
                 purchase_request=pr
             ))
         created_notes.extend(notify_roles(
@@ -286,7 +286,7 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
         created_notes.extend(notify_roles(
             roles=['ADMIN'],
             title=f"Request {pr_id} Forwarded to Admin",
-            message=f"Request '{title}' (₹{rec_amt:,.2f}) escalated to Admin by Finance ({actor_name})." + (f" Reason: {reason_txt}" if reason_txt else ""),
+            message=f"Request '{title}' (Rs.{rec_amt:,.2f}) escalated to Admin by Finance ({actor_name})." + (f" Reason: {reason_txt}" if reason_txt else ""),
             purchase_request=pr
         ))
 
@@ -303,19 +303,19 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
         created_notes.extend(notify_roles(
             roles=['MANAGER'],
             title=f"Request {pr_id} Approved by Admin",
-            message=f"Executive sign-off granted for '{title}' (₹{appr_amt:,.2f}) by Admin. Ready for RFQ dispatch.",
+            message=f"Executive sign-off granted for '{title}' (Rs.{appr_amt:,.2f}) by Admin. Ready for RFQ dispatch.",
             purchase_request=pr
         ))
         created_notes.extend(notify_roles(
             roles=['FINANCE'],
             title=f"Request {pr_id} Approved by Admin",
-            message=f"Executive approval granted for '{title}' (₹{appr_amt:,.2f}) by Admin ({actor_name}).",
+            message=f"Executive approval granted for '{title}' (Rs.{appr_amt:,.2f}) by Admin ({actor_name}).",
             purchase_request=pr
         ))
         created_notes.extend(notify_roles(
             roles=['ADMIN'],
             title=f"Request {pr_id} Approved",
-            message=f"Executive authorization completed for '{title}' (₹{appr_amt:,.2f}).",
+            message=f"Executive authorization completed for '{title}' (Rs.{appr_amt:,.2f}).",
             purchase_request=pr,
             exclude_users=[actor] if actor else None
         ))
@@ -384,13 +384,13 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
             created_notes.append(create_notification(
                 user=req_user,
                 title=f"Quotation Received for {pr_id}",
-                message=f"Vendor {v_name} submitted quote ({q_id}, ₹{q_price:,.2f}) for RFQ {rfq_id}.",
+                message=f"Vendor {v_name} submitted quote ({q_id}, Rs.{q_price:,.2f}) for RFQ {rfq_id}.",
                 purchase_request=pr
             ))
         created_notes.extend(notify_roles(
             roles=['MANAGER', 'ADMIN'],
             title=f"New Quotation Received ({q_id})",
-            message=f"Vendor {v_name} submitted quotation of ₹{q_price:,.2f} for RFQ {rfq_id}.",
+            message=f"Vendor {v_name} submitted quotation of Rs.{q_price:,.2f} for RFQ {rfq_id}.",
             purchase_request=pr
         ))
 
@@ -403,13 +403,13 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
             created_notes.append(create_notification(
                 user=req_user,
                 title=f"Purchase Order {po_id} Issued for {pr_id}",
-                message=f"Vendor {v_name} selected. Purchase Order {po_id} (₹{po_amt:,.2f}) generated and dispatched.",
+                message=f"Vendor {v_name} selected. Purchase Order {po_id} (Rs.{po_amt:,.2f}) generated and dispatched.",
                 purchase_request=pr
             ))
         created_notes.extend(notify_roles(
             roles=['MANAGER', 'FINANCE', 'ADMIN'],
             title=f"Purchase Order {po_id} Issued",
-            message=f"Purchase Order {po_id} (₹{po_amt:,.2f}) issued to {v_name} for Request {pr_id}.",
+            message=f"Purchase Order {po_id} (Rs.{po_amt:,.2f}) issued to {v_name} for Request {pr_id}.",
             purchase_request=pr
         ))
 
@@ -427,7 +427,7 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
             ))
         created_notes.extend(notify_roles(
             roles=['FINANCE'],
-            title=f"GRN {grn_id} Verified — Ready for 3-Way Match",
+            title=f"GRN {grn_id} Verified -- Ready for 3-Way Match",
             message=f"Goods Receipt {grn_id} verified for PO {po_id}. Ready for invoice matching.",
             purchase_request=pr
         ))
@@ -473,13 +473,13 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
             created_notes.append(create_notification(
                 user=req_user,
                 title=f"Request {pr_id} Completed & Paid",
-                message=f"Payment of ₹{pay_amt:,.2f} settled to {v_name} for '{title}'. UTR: {utr}. Procurement complete!",
+                message=f"Payment of Rs.{pay_amt:,.2f} settled to {v_name} for '{title}'. UTR: {utr}. Procurement complete!",
                 purchase_request=pr
             ))
         created_notes.extend(notify_roles(
             roles=['MANAGER', 'FINANCE', 'ADMIN'],
             title=f"Payment Settled for Request {pr_id} (UTR: {utr})",
-            message=f"Payment of ₹{pay_amt:,.2f} disbursed to {v_name} (PO: {po_id}, UTR: {utr}). Request marked Completed.",
+            message=f"Payment of Rs.{pay_amt:,.2f} disbursed to {v_name} (PO: {po_id}, UTR: {utr}). Request marked Completed.",
             purchase_request=pr
         ))
 

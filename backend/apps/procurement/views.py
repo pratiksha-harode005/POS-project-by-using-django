@@ -22,10 +22,13 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         qs = PurchaseOrder.objects.select_related(
             'vendor',
             'vendor__category',
+            'vendor__user',
             'purchase_request',
             'purchase_request__created_by',
             'purchase_request__created_by__department',
             'purchase_request__department',
+            'purchase_request__assigned_team_lead',
+            'purchase_request__assigned_manager',
             'quotation',
             'quotation__vendor',
             'quotation__rfq'
@@ -47,7 +50,10 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             Prefetch(
                 'purchase_request__rfqs',
                 queryset=RFQ.objects.prefetch_related('quotations')
-            )
+            ),
+            'purchase_request__approval_steps__actor',
+            'purchase_request__approval_steps__reason',
+            'purchase_request__approval_history__performed_by'
         )
 
         status_param = self.request.query_params.get('status')
@@ -233,7 +239,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 vendor=po.vendor,
                 purchase_request=pr,
                 title=f"New Purchase Order Received ({po.po_id})",
-                message=f"You have received a new Purchase Order {po.po_id} for request {pr.request_id if pr else ''} (Total: ₹{po.total_amount})."
+                message=f"You have received a new Purchase Order {po.po_id} for request {pr.request_id if pr else ''} (Total: Rs.{po.total_amount})."
             )
 
         # 2. Notify Originating Requester (Team Lead), Manager, Finance, and Admin
@@ -284,14 +290,15 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         qs = GoodsReceipt.objects.select_related(
+            'received_by',
+            'received_by__department',
             'purchase_order',
             'purchase_order__vendor',
             'purchase_order__vendor__category',
             'purchase_order__purchase_request',
             'purchase_order__purchase_request__department',
-            'purchase_order__quotation',
-            'received_by',
-            'received_by__department'
+            'purchase_order__purchase_request__created_by',
+            'purchase_order__quotation'
         ).prefetch_related(
             Prefetch(
                 'purchase_order__invoices',

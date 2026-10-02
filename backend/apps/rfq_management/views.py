@@ -26,7 +26,9 @@ class RFQViewSet(viewsets.ModelViewSet):
             'purchase_request',
             'purchase_request__created_by',
             'purchase_request__created_by__department',
-            'purchase_request__department'
+            'purchase_request__department',
+            'purchase_request__assigned_team_lead',
+            'purchase_request__assigned_manager'
         ).prefetch_related(
             Prefetch(
                 'invited_vendors',
@@ -42,7 +44,10 @@ class RFQViewSet(viewsets.ModelViewSet):
                     'vendor',
                     'vendor__category'
                 )
-            )
+            ),
+            'purchase_request__approval_steps__actor',
+            'purchase_request__approval_steps__reason',
+            'purchase_request__approval_history__performed_by'
         ).all()
 
         query_params = getattr(self.request, 'query_params', getattr(self.request, 'GET', {}))
@@ -446,7 +451,7 @@ class QuotationViewSet(viewsets.ModelViewSet):
         if 'total_amount' not in data and 'totalAmount' in data:
             data['total_amount'] = data['totalAmount']
 
-        # ─── UPDATE OR CREATE QUOTATION FOR RFQ & VENDOR ───────────────
+        # --- UPDATE OR CREATE QUOTATION FOR RFQ & VENDOR ---------------
         existing_quotation = Quotation.objects.filter(rfq=rfq_obj, vendor=vendor_obj).first()
         if existing_quotation:
             for field in ['price', 'gst_rate', 'tax_amount', 'total_amount', 'delivery_days', 'warranty_months', 'valid_until', 'terms_conditions', 'extra_fields']:
@@ -502,7 +507,7 @@ class QuotationViewSet(viewsets.ModelViewSet):
         notify_vendor(
             vendor=quotation.vendor,
             title=f"Quotation {quotation.quotation_id} Submitted",
-            message=f"Your quotation of ₹{quotation.price} for RFQ {quotation.rfq.rfq_id if quotation.rfq else ''} was submitted successfully.",
+            message=f"Your quotation of Rs.{quotation.price} for RFQ {quotation.rfq.rfq_id if quotation.rfq else ''} was submitted successfully.",
             purchase_request=quotation.rfq.purchase_request if quotation.rfq else None
         )
         # 2. Notify Request Creator (Originating Portal), Manager, and Admin

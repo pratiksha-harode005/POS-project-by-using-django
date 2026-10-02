@@ -11,6 +11,7 @@ if db_url:
     DATABASES = {
         'default': dj_database_url.parse(
             db_url,
+            # PERFORMANCE FIX: conn_max_age enables persistent PostgreSQL connections.
             conn_max_age=600,
             conn_health_checks=True,
             ssl_require=True
@@ -18,6 +19,3 @@ if db_url:
     }
 else:
     raise ValueError("Database_URL environment variable is missing. Failing loudly as requested.")
-
-
-

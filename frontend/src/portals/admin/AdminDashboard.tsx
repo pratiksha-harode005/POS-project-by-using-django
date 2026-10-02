@@ -1555,6 +1555,7 @@ export const AdminDashboard: React.FC = () => {
                 title={liveTrackingReq.title}
                 lastUpdated={liveTrackingReq.date}
                 history={liveTrackingReq.history}
+                timeline={(liveTrackingReq as any).timeline}
                 poNumber={(liveTrackingReq as any).poNumber || (liveTrackingReq as any).po_number}
                 grnNumber={(liveTrackingReq as any).grnNumber || (liveTrackingReq as any).grn_number}
                 invoiceNumber={(liveTrackingReq as any).invoiceNumber || (liveTrackingReq as any).invoice_number}

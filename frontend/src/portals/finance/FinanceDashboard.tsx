@@ -545,7 +545,7 @@ export const FinanceDashboard: React.FC = () => {
             {financePayments.length === 0 ? (
               <div className="py-8 text-center text-slate-400 text-xs">
                 <CheckCircle size={28} className="mx-auto mb-2 text-emerald-500" />
-                No pending finance disbursements in queue.
+                No pending disbursements in the settlement queue.
               </div>
             ) : (
               <div className="space-y-3">

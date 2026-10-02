@@ -22,7 +22,7 @@ const statusLabel: Record<string, string> = {
   pending_approval: 'Pending Approval',
   approved: 'Approved',
   rejected: 'Rejected',
-  recommended_to_finance: 'Rec. to Finance',
+  recommended_to_finance: 'Recommended to Higher Authority',
   finance_review: 'Finance Review',
   sent_to_finance: 'Sent to Finance',
   payment_pending: 'Payment Pending',

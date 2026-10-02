@@ -56,6 +56,10 @@ class FastPaginator(Paginator):
 
 
 class StandardPagination(PageNumberPagination):
+    """
+    Standard pagination used for all primary data endpoints.
+    FastPaginator eliminates redundant SQL count queries.
+    """
     django_paginator_class = FastPaginator
     page_size = 20
     page_size_query_param = 'page_size'
@@ -66,4 +70,14 @@ class StandardPagination(PageNumberPagination):
         if page_number == 'last':
             page_number = paginator.num_pages
         return page_number
+
+
+class BulkPagination(PageNumberPagination):
+    """
+    For admin/reporting endpoints that legitimately need larger datasets.
+    """
+    django_paginator_class = FastPaginator
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
 

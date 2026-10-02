@@ -25,13 +25,17 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         qs = Invoice.objects.select_related(
             'vendor',
             'vendor__category',
+            'vendor__user',
             'purchase_order',
             'purchase_order__vendor',
+            'purchase_order__vendor__category',
             'purchase_order__quotation',
             'purchase_order__quotation__rfq',
             'purchase_order__purchase_request',
             'purchase_order__purchase_request__department',
-            'purchase_order__purchase_request__created_by'
+            'purchase_order__purchase_request__created_by',
+            'purchase_order__purchase_request__assigned_team_lead',
+            'purchase_order__purchase_request__assigned_manager'
         ).prefetch_related(
             'payments',
             Prefetch(
@@ -41,7 +45,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             Prefetch(
                 'purchase_order__invoices',
                 queryset=Invoice.objects.prefetch_related('payments')
-            )
+            ),
+            'purchase_order__purchase_request__approval_steps__actor',
+            'purchase_order__purchase_request__approval_steps__reason',
+            'purchase_order__purchase_request__approval_history__performed_by'
         )
 
         status_param = self.request.query_params.get('status')
@@ -280,7 +287,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         notify_roles(
             roles=['FINANCE'],
             title=f"New Invoice {invoice.invoice_number} Submitted",
-            message=f"Vendor {invoice.vendor.name if invoice.vendor else ''} submitted invoice {invoice.invoice_number} (₹{invoice.amount}) for PO {po_obj.po_id}.",
+            message=f"Vendor {invoice.vendor.name if invoice.vendor else ''} submitted invoice {invoice.invoice_number} (Rs.{invoice.amount}) for PO {po_obj.po_id}.",
             purchase_request=pr
         )
 
@@ -427,6 +434,7 @@ class ThreeWayMatchViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+
 
         # Auto-sync any verified POs that do not yet have a ThreeWayMatch record
         from apps.procurement.models import PurchaseOrder

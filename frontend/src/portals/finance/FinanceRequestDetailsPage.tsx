@@ -1,17 +1,26 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   FileText, Check, Clock, X, AlertTriangle, ArrowLeft, Building,
   User, Calendar, IndianRupee, Tag, Paperclip, Truck, Box, Package,
   CreditCard, GitCompare, ChevronDown, CheckCircle2, ChevronRight,
-  PlusCircle, ShieldCheck, Layers, ArrowUpRight, CheckCircle
+  PlusCircle, ShieldCheck, Layers, ArrowUpRight, CheckCircle, Sparkles,
+  Save, Calculator, Send, DollarSign
 } from 'lucide-react'
 import { useFinanceData, ProcurementRequest, RFQ, ApprovalParameters } from '../../context/ManagerDataContext'
 import { getWorkflowProgression } from '../../utils/workflowUtils'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
 import { formatDate } from '../../utils/formatDate'
+import { TrackingStepper } from '../../components/portal/TrackingStepper'
+import { ProcessPaymentModal } from '../../components/portal/ProcessPaymentModal'
+import { useAuth } from '../../context/AuthContext'
+import {
+  saveFinanceResearchApi,
+  saveFinanceCostEstimationApi,
+  submitFinanceCostEstimationApi
+} from '../../api/financeApi'
 
-const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN')}`
 
 const HARDWARE_STAGES_CONFIG = [
   { name: 'CREATE REQUEST', dept: 'Requester / Department' },
@@ -27,27 +36,53 @@ const HARDWARE_STAGES_CONFIG = [
 ]
 
 const SOFTWARE_STAGES_CONFIG = [
-  { name: 'CREATE REQUEST', dept: 'Requester / Department' },
-  { name: 'MANAGER APPROVAL', dept: 'Procurement Manager' },
-  { name: 'FINANCE APPROVAL', dept: 'Finance & Treasury' },
-  { name: 'ADMIN APPROVAL', dept: 'Executive Admin' },
-  { name: 'VERIFICATION AND ORDER COMPLETE', dept: 'IT Operations & Provisioning' },
-  { name: 'PAYMENT', dept: 'Treasury & Bank Clearing' },
+  { name: 'REQUEST CREATED', dept: 'Team Lead / Requester' },
+  { name: 'MANAGER REVIEW', dept: 'Project Manager' },
+  { name: 'RECOMMENDED TO FINANCE', dept: 'Project Manager' },
+  { name: 'FINANCE REVIEW', dept: 'Finance Directorate' },
+  { name: 'FINANCE RESEARCH', dept: 'Finance Specialist' },
+  { name: 'COST ESTIMATION', dept: 'Finance Controller' },
+  { name: 'FINANCE REPORT', dept: 'Finance & Treasury' },
 ]
 
 export const FinanceRequestDetailsPage: React.FC = () => {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
-  const { financeRequests, rfqs, approveFinanceRequest } = useFinanceData()
+  const { allRequests, financeRequests, rfqs, approveFinanceRequest } = useFinanceData()
 
-  const reqId = searchParams.get('id') || financeRequests[0]?.id || ''
+  const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
+
+  const reqId = searchParams.get('id') || allRequests[0]?.id || ''
   const [selectedId, setSelectedId] = useState(reqId)
   const [viewMode, setViewMode] = useState<'FORM' | 'STEPPER'>('FORM')
 
   // Approval modal state (Image 2)
   const [approveModalOpen, setApproveModalOpen] = useState(false)
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [approvalNote, setApprovalNote] = useState('')
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+
+  // Finance Research State (Stage 5)
+  const [marketPricing, setMarketPricing] = useState('')
+  const [availableAlternatives, setAvailableAlternatives] = useState('')
+  const [businessValue, setBusinessValue] = useState('')
+  const [vendorQuotationRef, setVendorQuotationRef] = useState('')
+  const [researchNotes, setResearchNotes] = useState('')
+  const [savingResearch, setSavingResearch] = useState(false)
+
+  // Finance Cost Estimation State (Stage 6 & 7)
+  const [currentCost, setCurrentCost] = useState<number | string>(0)
+  const [estimatedBaseCost, setEstimatedBaseCost] = useState<number | string>(45000)
+  const [recommendedCost, setRecommendedCost] = useState<number | string>(48500)
+  const [taxAmount, setTaxAmount] = useState<number | string>(0)
+  const [discountAmount, setDiscountAmount] = useState<number | string>(0)
+  const [finalEstimatedAmount, setFinalEstimatedAmount] = useState<number | string>(48500)
+  const [costCenter, setCostCenter] = useState('')
+  const [budgetCode, setBudgetCode] = useState('')
+  const [recommendedVendor, setRecommendedVendor] = useState('')
+  const [financeComments, setFinanceComments] = useState('')
+  const [savingEstimation, setSavingEstimation] = useState(false)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -76,11 +111,11 @@ export const FinanceRequestDetailsPage: React.FC = () => {
     }
     approveFinanceRequest(
       request.id,
-      params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
-      'Mark Finance Officer',
-      params.approvedAmount
+      params.approvalComments || 'Verified within budget allocation. Authorized for PO release.',
+      actorName,
+      params
     )
-    showToast(`✓ Request ${request.id} approved! Forwarded for PO release.`, 'success')
+    showToast(`✓ Request ${request.id} approved! Amount: ${fmt(params.approvedAmount)}. Ready for payment processing.`, 'success')
     setApproveModalOpen(false)
     setApprovalNote('')
   }
@@ -89,6 +124,88 @@ export const FinanceRequestDetailsPage: React.FC = () => {
   const request = useMemo(() => {
     return financeRequests.find((r) => r.id === selectedId) || financeRequests[0]
   }, [financeRequests, selectedId])
+
+  useEffect(() => {
+    if (request) {
+      const rd = (request as any).research_estimation || {}
+      setMarketPricing(rd.market_pricing || 'Enterprise SaaS pricing tier benchmarked at ₹45,000 - ₹52,000 / year.')
+      setAvailableAlternatives(rd.available_alternatives || '3 alternatives evaluated; current solution verified for seamless security integration and lowest TCO.')
+      setBusinessValue(rd.business_value || 'Direct technical enablement for team operations with automated cloud backup.')
+      setVendorQuotationRef(rd.vendor_quotation_ref || 'QUOTE-SaaS-2026-FIN-01')
+      setResearchNotes(rd.research_notes || 'Confirmed 5% volume discount with annual prepaid terms.')
+
+      const existingAmt = (request as any).existing_cost || (request as any).existingCost || 0
+      const baseAmt = rd.estimated_cost || request.amount || 45000
+      const recAmt = rd.recommended_cost || baseAmt || 48500
+      const taxAmt = rd.tax_amount || Math.round(Number(baseAmt) * 0.18)
+      const discAmt = rd.discount_amount || Math.round(Number(baseAmt) * 0.05)
+      const netFinal = rd.final_estimated_amount || (Number(baseAmt) + Number(taxAmt) - Number(discAmt)) || 48500
+
+      setCurrentCost(existingAmt)
+      setEstimatedBaseCost(baseAmt)
+      setRecommendedCost(recAmt)
+      setTaxAmount(taxAmt)
+      setDiscountAmount(discAmt)
+      setFinalEstimatedAmount(netFinal)
+      setCostCenter(rd.cost_center || request.costCenter || `CC-${(request.department || 'ENG').toUpperCase().slice(0, 3)}-2026-Q3`)
+      setBudgetCode(rd.budget_code || (request as any).budget_code || 'BG-FIN-SOFT-01')
+      setRecommendedVendor(rd.vendor || (request as any).software_name || request.vendor || 'Authorized Vendor')
+      setFinanceComments(rd.manager_comments || rd.business_evaluation || 'Finance research & cost estimation complete. Budget verified within departmental capex allocations.')
+    }
+  }, [request?.id])
+
+  const handleSaveFinanceResearch = async () => {
+    if (!request) return
+    setSavingResearch(true)
+    try {
+      await saveFinanceResearchApi(request.id, {
+        market_pricing: marketPricing,
+        available_alternatives: availableAlternatives,
+        business_value: businessValue,
+        vendor_quotation_ref: vendorQuotationRef,
+        research_notes: researchNotes,
+      })
+      window.dispatchEvent(new Event('kss_backend_updated'))
+      showToast('✓ Finance Research recorded! Stage updated to Finance Research (Stage 5).', 'success')
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || 'Failed to save research findings.', 'error')
+    } finally {
+      setSavingResearch(false)
+    }
+  }
+
+  const handleSubmitFinanceCostEstimation = async () => {
+    if (!request) return
+    const finalAmtNum = Number(finalEstimatedAmount) || 0
+    if (finalAmtNum <= 0) {
+      showToast('Please provide a valid final estimated amount (> 0).', 'error')
+      return
+    }
+    setSavingEstimation(true)
+    try {
+      await submitFinanceCostEstimationApi(request.id, {
+        current_cost: Number(currentCost) || 0,
+        estimated_cost: Number(estimatedBaseCost) || 0,
+        recommended_cost: Number(recommendedCost) || finalAmtNum,
+        tax_amount: Number(taxAmount) || 0,
+        discount_amount: Number(discountAmount) || 0,
+        final_estimated_amount: finalAmtNum,
+        cost_center: costCenter,
+        budget_code: budgetCode,
+        vendor: recommendedVendor,
+        manager_comments: financeComments,
+        business_evaluation: financeComments,
+        is_completed: true,
+      })
+      window.dispatchEvent(new Event('kss_backend_updated'))
+      showToast(`✓ Cost Estimation submitted! Request ${request.id} is now available in Finance Reports.`, 'success')
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || 'Failed to submit cost estimation.', 'error')
+    } finally {
+      setSavingEstimation(false)
+    }
+  }
+
 
   // Matched RFQ (department-aligned or general)
   const matchedRfq: RFQ | undefined = useMemo(() => {
@@ -164,68 +281,25 @@ export const FinanceRequestDetailsPage: React.FC = () => {
         d.setDate(d.getDate() + 20)
         return d.toISOString().split('T')[0]
       })()
-    : '2026-09-30'
+    : new Date().toISOString().split('T')[0]
 
-  const deliveryLocation = request.deliveryLocation || '—'
-  const preferredVendor = request.vendor || '—'
-  const justification = request.justification || `${request.title} is required to maintain business continuity, sprint deliverables, and departmental operational goals.`
-  const description = request.description || `${request.title} required by ${request.requester} for ${request.department}. Includes enterprise delivery, compliance certifications, and SLA support.`
+  const deliveryLocation = request.department ? `${request.department} Department Facilities` : 'Corporate Headquarters'
+  const preferredVendor = request.vendor || 'Vendor to be Assigned'
+  const justification = request.justification || `${request.title} required for operational workflow.`
+  const description = request.description || `${request.title} requested by ${request.requester} for ${request.department}.`
 
   // Product specifications breakdown
   const getProductDetails = () => {
-    const t = (request.title + ' ' + (request.category || '')).toLowerCase()
-    if (t.includes('laptop') || t.includes('macbook')) {
-      return {
-        modelName: 'Apple MacBook Pro 14" M3 Pro / Dell Latitude Enterprise Workstation',
-        partNumber: 'SKU-HW-LPT-2026-09',
-        technicalSpecs: 'Apple M3 Pro / Intel Core i9, 32GB Unified RAM, 1TB NVMe PCIe Gen4 SSD, Liquid Retina XDR Display, 70W Fast Charger.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} Enterprise AppleCare+ / OEM Onsite Support with 24x7 priority coverage`,
-        certifications: 'RoHS, EnergyStar, ISO 27001 Security Compliant',
-        deliveryTimeline: '3 to 5 Business Days upon PO Issuance',
-      }
-    }
-    if (t.includes('server')) {
-      return {
-        modelName: 'Dell PowerEdge R760 2U Rack Server Dual Intel Xeon',
-        partNumber: 'SKU-SRV-R760-2026',
-        technicalSpecs: '2x Intel Xeon Gold 6430 (64 Cores), 128GB DDR5 ECC Registered RAM, 4x 3.84TB Enterprise NVMe SSD in RAID 10, Dual 1100W Redundant Titanium PSUs.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} OEM 24x7 Mission-Critical ProSupport with 4-Hour Onsite Response`,
-        certifications: 'Tier-4 Datacenter Certified, CE, FCC, UL',
-        deliveryTimeline: '7 to 10 Business Days',
-      }
-    }
-    if (t.includes('monitor') || t.includes('display')) {
-      return {
-        modelName: 'Dell UltraSharp 32" 4K USB-C Hub Monitor (U3223QE)',
-        partNumber: 'SKU-MON-U32-2026',
-        technicalSpecs: 'IPS Black Technology, 4K UHD 3840x2160 @ 60Hz, 90W USB-C Power Delivery, Built-in KVM Switch & RJ45 Ethernet Port.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} Advanced Exchange Service & Premium Panel Guarantee`,
-        certifications: 'TCO Certified Displays 9.0, EPEAT Gold',
-        deliveryTimeline: '2 to 4 Business Days',
-      }
-    }
-    if (t.includes('software') || t.includes('saas') || t.includes('cloud')) {
-      return {
-        modelName: 'Enterprise SaaS Annual Multi-Seat Production License & Cloud Capacity',
-        partNumber: 'SKU-SW-CORP-2026',
-        technicalSpecs: 'Dedicated Tenant Deployment, SSO/SAML 2.0 Integration, 99.99% Uptime SLA, Audit Logging, Automated Daily Encrypted Backups.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} 24x7 Premium Enterprise Technical SLA Support with Dedicated Account Manager`,
-        certifications: 'SOC 2 Type II, ISO 27001, GDPR, HIPAA Certified',
-        deliveryTimeline: 'Instant Digital Provisioning within 2 Hours of Finance Clearance',
-      }
-    }
+    const reqAny = request as any
+    const firstItem = reqAny.items && reqAny.items[0]
     return {
-      modelName: `${request.title} — Commercial Enterprise Specification`,
-      partNumber: `SKU-COMM-${request.id}`,
-      technicalSpecs: `Commercial grade deployment specifications certified for ${request.department} operational infrastructure.`,
-      unitPrice: Math.round(request.amount / quantity),
-      warrantyTerms: `${warranty} Comprehensive Enterprise Onsite Warranty & Support`,
+      modelName: firstItem?.name || request.title,
+      partNumber: firstItem?.sku || `SKU-${request.id}`,
+      technicalSpecs: request.description || `Enterprise procurement specification for ${request.department}`,
+      unitPrice: firstItem?.unitPrice || Math.round(request.amount / quantity),
+      warrantyTerms: `${warranty} Enterprise Warranty & Support`,
       certifications: 'Standard Commercial Standards & Regulatory Clearance',
-      deliveryTimeline: '5 to 7 Business Days',
+      deliveryTimeline: 'Standard Procurement Timeline',
     }
   }
 
@@ -252,44 +326,34 @@ export const FinanceRequestDetailsPage: React.FC = () => {
       action = 'Requisition Disapproved'
     } else if (idx < currentStageIndex || (idx === currentStageIndex && progression.isCompleted)) {
       statusType = 'completed'
+      const reqAny = request as any
+      const hist = (reqAny.approvalHistory as any[])?.find(
+        (h: any) => h.role?.toLowerCase().includes(s.name.toLowerCase()) || h.action?.toLowerCase().includes(s.name.toLowerCase())
+      )
       if (idx === 0) {
-        date = `${request.date} 09:30 AM`
+        date = request.date ? `${request.date}` : ''
         responsible = `${request.requester} (${request.department})`
         action = 'Requisition Created & Submitted'
         doc = 'Requisition_PR_Form.pdf'
       } else if (idx === 1) {
-        date = `${request.date} 11:15 AM`
-        responsible = request.approvedBy || 'Sarah Manager (Procurement Manager)'
+        date = request.approvedDate || hist?.date || request.date || ''
+        responsible = request.approvedBy || hist?.approverName || 'Manager Verification'
         action = 'Manager Verified & Budget Endorsed'
-        comment = 'Justification verified against project objectives.'
+        comment = hist?.comment || 'Justification verified against project objectives.'
       } else if (idx === 2) {
-        date = request.financeApprovedDate || '2026-09-10 03:20 PM'
-        responsible = request.financeApprovedBy || 'Mark Finance (Finance Controller)'
+        date = request.financeApprovedDate || hist?.date || request.date || ''
+        responsible = request.financeApprovedBy || hist?.approverName || actorName
         action = 'Finance Approved & Capital Allocated'
-        comment = 'Sufficient fiscal headroom verified.'
-        doc = 'Capex_Headroom_Clearance.pdf'
-      } else if (idx === 3) {
-        date = '2026-09-10 05:00 PM'
-        responsible = 'David Admin (Executive Authority)'
-        action = 'Executive Sign-off Granted'
-      } else if (idx === 4) {
-        date = '2026-09-11 09:30 AM'
-        responsible = 'Alex Sourcing (Procurement Admin)'
-        action = 'RFQ Issued to Approved Vendors'
-        doc = 'RFQ_Document_Spec.pdf'
-      } else if (idx === 5) {
-        date = '2026-09-11 02:00 PM'
-        responsible = 'Vendor Portals (Dell, Lenovo, HP)'
-        action = 'Commercial Quotations Logged'
-        doc = 'Commercial_Evaluation_Matrix.pdf'
+        comment = request.financeComment || hist?.comment || 'Headroom verified and approved.'
       } else {
-        date = '2026-09-11 04:00 PM'
-        responsible = s.dept
+        date = hist?.date || request.date || ''
+        responsible = hist?.approverName || s.dept
         action = `${s.name} Complete`
+        comment = hist?.comment || ''
       }
     } else if (idx === currentStageIndex) {
       statusType = 'current'
-      date = 'In Progress Today'
+      date = 'In Progress'
       responsible = s.dept
       action = `Currently in ${s.name}`
       comment = request.description || 'Under active operational workflow'
@@ -354,6 +418,18 @@ export const FinanceRequestDetailsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Dynamic Workflow Progress Stepper (Single source of truth from backend timeline) ── */}
+      <TrackingStepper
+        category={request.category}
+        title={request.title}
+        status={request.status}
+        financeStatus={request.financeStatus}
+        paymentStatus={request.paymentStatus}
+        lastUpdated={request.date}
+        history={request.history}
+        timeline={(request as any).timeline}
+      />
+
       {/* Main View Mode Selector Tabs */}
       <div className="flex items-center gap-2 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200">
         <button
@@ -417,20 +493,23 @@ export const FinanceRequestDetailsPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              {request.status === 'approved' ||
-              request.status === 'finance_approved' ||
-              request.financeStatus?.toLowerCase() === 'approved' ||
-              (request.currentStage !== undefined && request.currentStage >= 4) ||
-              request.status === 'quotes_received' ||
-              request.status === 'assigned_to_vendor' ||
-              request.status === 'delivered' ||
-              request.status === 'invoiced' ||
-              request.status === 'completed' ||
-              request.financeApprovedBy ||
-              request.financeApprovedDate ? (
+              {((request as any).payment_status === 'Paid' || request.status === 'payment_completed' || request.status === 'completed' || request.paymentStatus === 'Paid') ? (
                 <span className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-300 shadow-2xs">
-                  <CheckCircle size={14} className="text-emerald-700" /> Finance Approved
+                  <CheckCircle size={14} className="text-emerald-700" /> Payment Disbursed: {(request as any).payment_reference || 'Paid'}
                 </span>
+              ) : (request.status === 'finance_approved' || request.financeStatus === 'approved' || (request as any).raw_status === 'FINANCE_APPROVED') ? (
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-50 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-300 shadow-2xs">
+                    <CheckCircle size={14} className="text-emerald-700" /> Finance Approved ({fmt((request as any).finance_approved_amount || request.amount)})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentModalOpen(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                  >
+                    <CreditCard size={14} /> Process Payment
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
@@ -534,7 +613,78 @@ export const FinanceRequestDetailsPage: React.FC = () => {
                 <input
                   type="text"
                   readOnly
-                  value={fmt(request.amount)}
+                  value={fmt(
+                    (() => {
+                      const check = (...vals: any[]) => {
+                        for (const v of vals) {
+                          if (v !== undefined && v !== null && v !== '') {
+                            const num = Number(v)
+                            if (!isNaN(num) && num > 0) return num
+                          }
+                        }
+                        return 0
+                      }
+
+                      const isRenewalOrUpgrade = 
+                        (request as any).request_operation === 'RENEWAL' ||
+                        (request as any).request_operation === 'UPGRADE' ||
+                        (request as any).rawRequest?.request_operation === 'RENEWAL' ||
+                        (request as any).rawRequest?.request_operation === 'UPGRADE' ||
+                        (request.title || '').toLowerCase().startsWith('renewal:') ||
+                        (request.title || '').toLowerCase().startsWith('upgrade:') ||
+                        (request.title || '').toLowerCase().startsWith('renew:')
+
+                      if (isRenewalOrUpgrade) {
+                        const origId = (request as any).original_request || 
+                                       (request as any).parent_request || 
+                                       (request as any).rawRequest?.original_request || 
+                                       (request as any).rawRequest?.parent_request || 
+                                       (request as any).rawRequest?.original_request_id || 
+                                       (request as any).rawRequest?.parent_request_id
+
+                        let root = allRequests.find((r: any) => 
+                          (origId && (r.id === origId || r.request_id === origId || (r as any).rawRequest?.id === origId))
+                        )
+
+                        if (!root && request.title) {
+                          const cleanTitle = request.title.replace(/^(renewal|upgrade|renew):\s*/i, '').trim().toLowerCase()
+                          root = allRequests.find((r: any) => 
+                            r.id !== request.id &&
+                            r.title &&
+                            r.title.toLowerCase().trim() === cleanTitle
+                          )
+                        }
+
+                        if (root) {
+                          const rootCost = check(
+                            (root as any).total_estimated_cost,
+                            (root as any).requested_amount,
+                            root.amount,
+                            (root as any).approved_amount,
+                            (root as any).rawRequest?.total_estimated_cost,
+                            (root as any).rawRequest?.requested_amount,
+                            (root as any).rawRequest?.approved_amount
+                          )
+                          if (rootCost > 0) return rootCost
+                        }
+                      }
+
+                      return check(
+                        (request as any).original_estimated_cost,
+                        (request as any).rawRequest?.original_estimated_cost,
+                        (request as any).total_estimated_cost,
+                        (request as any).requested_amount,
+                        request.amount,
+                        (request as any).existing_cost,
+                        (request as any).extraFields?.original_estimated_cost,
+                        (request as any).extraFields?.existingCost,
+                        (request as any).extraFields?.payment_justification?.existing_cost,
+                        (request as any).rawRequest?.total_estimated_cost,
+                        (request as any).rawRequest?.requested_amount,
+                        (request as any).rawRequest?.existing_cost
+                      )
+                    })()
+                  )}
                   className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-bold text-gray-900 outline-none cursor-default"
                 />
                 <span className="text-[10px] text-gray-400 block mt-1">
@@ -589,15 +739,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
 
             {/* 9. Delivery Location * & 10. Priority * */}
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">9. Delivery Location *</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={deliveryLocation}
-                  className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-gray-800 outline-none cursor-default"
-                />
-              </div>
+
               <div>
                 <label className="block font-bold text-gray-700 mb-1">10. Priority *</label>
                 <div className="relative">
@@ -702,6 +844,338 @@ export const FinanceRequestDetailsPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* ── Team Lead Requisition Requirements (Stage 1) ── */}
+          <div className="p-5 bg-blue-50/60 rounded-xl border border-blue-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText size={16} className="text-blue-700" />
+                <h4 className="text-xs font-bold text-blue-950 uppercase tracking-wider">Team Lead Requisition Requirements (Stage 1)</h4>
+              </div>
+              <span className="text-[10px] font-bold text-blue-800 bg-blue-100 border border-blue-300 px-2.5 py-0.5 rounded-full">
+                Requester Submitted
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="bg-white p-3 rounded-lg border border-blue-100">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Request Type</span>
+                <p className="font-bold text-blue-900 mt-0.5">{(request as any).request_type || (request as any).requestType || 'New Purchase'}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-blue-100">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Current Plan</span>
+                <p className="font-medium text-slate-800 mt-0.5">{(request as any).current_plan || (request as any).currentPlan || 'N/A'}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-blue-100">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Required Plan</span>
+                <p className="font-bold text-indigo-700 mt-0.5">{(request as any).required_plan || (request as any).requiredPlan || 'Enterprise'}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-blue-100">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Existing Cost</span>
+                <p className="font-bold text-slate-900 mt-0.5">{fmt((request as any).existing_cost || (request as any).existingCost || 0)}</p>
+              </div>
+            </div>
+            {(request as any).business_requirement && (
+              <div className="bg-white p-3 rounded-lg border border-blue-100 text-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Business Need & Problem Statement</span>
+                <p className="text-slate-700 mt-1 font-medium leading-relaxed">{(request as any).business_requirement}</p>
+              </div>
+            )}
+          </div>
+
+          {/* ── Manager Review & Recommendation (Stage 3) ── */}
+          <div className="p-5 bg-purple-50/60 rounded-xl border border-purple-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-purple-700" />
+                <h4 className="text-xs font-bold text-purple-950 uppercase tracking-wider">Manager Recommendation & Review (Stage 3)</h4>
+              </div>
+              <span className="text-[10px] font-bold text-purple-800 bg-purple-100 border border-purple-300 px-2.5 py-0.5 rounded-full">
+                Manager Endorsed
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="bg-white p-3 rounded-lg border border-purple-100">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Recommended By</span>
+                <p className="font-bold text-slate-800 mt-0.5">
+                  {(request as any).recommended_by || (request as any).extra_fields?.recommended_by || request.approvedBy || 'Project Manager'}
+                </p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-purple-100">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Recommendation Date</span>
+                <p className="font-bold text-slate-800 mt-0.5">
+                  {((request as any).recommended_date || (request as any).extra_fields?.recommended_date || request.date || '').split('T')[0]}
+                </p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-purple-100">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Target Department</span>
+                <p className="font-bold text-indigo-700 mt-0.5">{request.department || 'Operations'}</p>
+              </div>
+            </div>
+            {((request as any).recommendation_reason || (request as any).extra_fields?.recommendation_reason || (request as any).justification) && (
+              <div className="bg-white p-3 rounded-lg border border-purple-100 text-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Manager Recommendation Notes</span>
+                <p className="text-purple-900 mt-1 font-medium leading-relaxed">
+                  {(request as any).recommendation_reason || (request as any).extra_fields?.recommendation_reason || (request as any).justification}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ── Finance Research Desk (Stage 5) ── */}
+          <div className="p-5 bg-amber-50/60 rounded-xl border border-amber-200 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Calculator size={18} className="text-amber-700" />
+                <div>
+                  <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                    Finance Research Desk (Stage 5)
+                  </h4>
+                  <p className="text-[11px] text-amber-800">
+                    Record market benchmarks, vendor quotes, alternatives, and ROI justification.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {((request as any).raw_status === 'FINANCE_RESEARCH' || (request as any).raw_status === 'COST_ESTIMATION' || (request as any).raw_status === 'FINANCE_REPORT') && (
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Research Saved
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSaveFinanceResearch}
+                  disabled={savingResearch}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  <Save size={13} /> {savingResearch ? 'Saving Research...' : 'Save Finance Research (Stage 5)'}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Market Pricing & Industry Benchmark *
+                  </label>
+                  <input
+                    type="text"
+                    value={marketPricing}
+                    onChange={(e) => setMarketPricing(e.target.value)}
+                    placeholder="e.g. Enterprise SaaS benchmarked at ₹45,000 - ₹52,000 / year"
+                    className="w-full p-2.5 bg-white border border-amber-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Vendor Quotation / Contract Ref #
+                  </label>
+                  <input
+                    type="text"
+                    value={vendorQuotationRef}
+                    onChange={(e) => setVendorQuotationRef(e.target.value)}
+                    placeholder="e.g. QUOTE-SaaS-2026-FIN-01"
+                    className="w-full p-2.5 bg-white border border-amber-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Alternative Vendors / Solutions Evaluated
+                </label>
+                <textarea
+                  rows={2}
+                  value={availableAlternatives}
+                  onChange={(e) => setAvailableAlternatives(e.target.value)}
+                  placeholder="e.g. 3 alternatives evaluated; current vendor chosen for SLA compliance and lowest TCO."
+                  className="w-full p-2.5 bg-white border border-amber-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 outline-none resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Business Value & Technical Enablement
+                </label>
+                <textarea
+                  rows={2}
+                  value={businessValue}
+                  onChange={(e) => setBusinessValue(e.target.value)}
+                  placeholder="e.g. Direct productivity enablement for team operations with automated cloud backup."
+                  className="w-full p-2.5 bg-white border border-amber-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 outline-none resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Finance Research Notes & Volume Terms
+                </label>
+                <textarea
+                  rows={2}
+                  value={researchNotes}
+                  onChange={(e) => setResearchNotes(e.target.value)}
+                  placeholder="e.g. Confirmed 5% volume discount with annual prepaid terms and verified security clearance."
+                  className="w-full p-2.5 bg-white border border-amber-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 outline-none resize-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ── Finance Cost Estimation Form (Stages 6 & 7) ── */}
+          <div className="p-5 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <DollarSign size={18} className="text-emerald-700" />
+                <div>
+                  <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider">
+                    Finance Cost Estimation & Report Form (Stages 6 & 7)
+                  </h4>
+                  <p className="text-[11px] text-emerald-800">
+                    Prepare commercial costing, tax, discount, cost center, and finalize for Finance Report.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleSubmitFinanceCostEstimation}
+                disabled={savingEstimation}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
+              >
+                <Send size={13} /> {savingEstimation ? 'Submitting...' : 'Submit Cost Estimation & Generate Finance Report (Stage 7)'}
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Current Plan Cost (₹)</label>
+                  <input
+                    type="number"
+                    value={currentCost}
+                    onChange={(e) => setCurrentCost(e.target.value)}
+                    className="w-full p-2 bg-white border border-emerald-300 rounded-lg text-slate-900 font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Base Estimated Cost (₹) *</label>
+                  <input
+                    type="number"
+                    value={estimatedBaseCost}
+                    onChange={(e) => {
+                      const base = Number(e.target.value) || 0
+                      setEstimatedBaseCost(base)
+                      const tax = Math.round(base * 0.18)
+                      const disc = Math.round(base * 0.05)
+                      setTaxAmount(tax)
+                      setDiscountAmount(disc)
+                      setFinalEstimatedAmount(base + tax - disc)
+                      setRecommendedCost(base + tax - disc)
+                    }}
+                    className="w-full p-2 bg-white border border-emerald-300 rounded-lg text-slate-900 font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tax / GST Amount (₹)</label>
+                  <input
+                    type="number"
+                    value={taxAmount}
+                    onChange={(e) => {
+                      const tax = Number(e.target.value) || 0
+                      setTaxAmount(tax)
+                      const base = Number(estimatedBaseCost) || 0
+                      const disc = Number(discountAmount) || 0
+                      setFinalEstimatedAmount(base + tax - disc)
+                      setRecommendedCost(base + tax - disc)
+                    }}
+                    className="w-full p-2 bg-white border border-emerald-300 rounded-lg text-slate-900 font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Discount Amount (₹)</label>
+                  <input
+                    type="number"
+                    value={discountAmount}
+                    onChange={(e) => {
+                      const disc = Number(e.target.value) || 0
+                      setDiscountAmount(disc)
+                      const base = Number(estimatedBaseCost) || 0
+                      const tax = Number(taxAmount) || 0
+                      setFinalEstimatedAmount(base + tax - disc)
+                      setRecommendedCost(base + tax - disc)
+                    }}
+                    className="w-full p-2 bg-white border border-emerald-300 rounded-lg text-slate-900 font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 bg-white rounded-lg border-2 border-emerald-400 shadow-2xs">
+                  <span className="text-[10px] font-bold text-emerald-800 block uppercase">Net Final Estimated Amount (₹) *</span>
+                  <input
+                    type="number"
+                    value={finalEstimatedAmount}
+                    onChange={(e) => setFinalEstimatedAmount(e.target.value)}
+                    className="w-full mt-1 text-lg font-black text-emerald-950 bg-emerald-50/50 p-1.5 rounded border border-emerald-300 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Cost Center *</label>
+                  <input
+                    type="text"
+                    value={costCenter}
+                    onChange={(e) => setCostCenter(e.target.value)}
+                    placeholder="e.g. CC-ENG-2026-Q3"
+                    className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-slate-900 font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Budget Code *</label>
+                  <input
+                    type="text"
+                    value={budgetCode}
+                    onChange={(e) => setBudgetCode(e.target.value)}
+                    placeholder="e.g. BG-FIN-SOFT-01"
+                    className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-slate-900 font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Authorized Software / SaaS Vendor *</label>
+                  <input
+                    type="text"
+                    value={recommendedVendor}
+                    onChange={(e) => setRecommendedVendor(e.target.value)}
+                    placeholder="e.g. Jira Software Enterprise / Atlassian"
+                    className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-slate-900 font-medium outline-none focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Recommended Budgetary Allocation (₹)</label>
+                  <input
+                    type="number"
+                    value={recommendedCost}
+                    onChange={(e) => setRecommendedCost(e.target.value)}
+                    className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-slate-900 font-bold outline-none focus:border-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Finance Controller Commercial Evaluation & Comments *
+                </label>
+                <textarea
+                  rows={2}
+                  value={financeComments}
+                  onChange={(e) => setFinanceComments(e.target.value)}
+                  placeholder="Finance research and cost estimation complete. Budget verified and allocated for Finance Report."
+                  className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none resize-none"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -796,33 +1270,76 @@ export const FinanceRequestDetailsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 10-Stage Horizontal Node Bar */}
+            {/* 10-Stage Horizontal Node Bar — two-row layout for perfect alignment */}
             <div className="overflow-x-auto pb-2">
-              <div className="flex items-center justify-between min-w-[760px] relative">
-                <div className="absolute left-4 right-4 top-4 h-0.5 bg-slate-200 -z-0" />
-                {stageDetails.map((s) => (
-                  <div key={s.name} className="relative z-10 flex flex-col items-center text-center w-20">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                        s.statusType === 'completed'
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : s.statusType === 'current'
-                          ? 'bg-indigo-600 text-white shadow-md ring-4 ring-indigo-100'
-                          : s.statusType === 'rejected'
-                          ? 'bg-rose-600 text-white shadow-2xs'
-                          : 'bg-white border-2 border-slate-300 text-slate-400'
-                      }`}
-                    >
-                      {s.statusType === 'completed' && '✓'}
-                      {s.statusType === 'current' && '●'}
-                      {s.statusType === 'pending' && '○'}
-                      {s.statusType === 'rejected' && '×'}
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-700 mt-2 leading-tight">
-                      {s.name}
-                    </span>
-                  </div>
-                ))}
+              <div style={{ minWidth: '760px' }}>
+                {/* ROW 1: Circles + Connectors — labels cannot affect this row */}
+                <div className="flex items-center relative px-1">
+                  {stageDetails.map((s, idx) => (
+                    <React.Fragment key={`fc-${s.name}-${idx}`}>
+                      <div className="flex-none flex items-center justify-center" style={{ width: '32px' }}>
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all relative z-10 ${
+                            s.statusType === 'completed'
+                              ? 'bg-emerald-600 text-white shadow-2xs'
+                              : s.statusType === 'current'
+                              ? 'bg-indigo-600 text-white shadow-md ring-4 ring-indigo-100'
+                              : s.statusType === 'rejected'
+                              ? 'bg-rose-600 text-white shadow-2xs'
+                              : 'bg-white border-2 border-slate-300 text-slate-400'
+                          }`}
+                        >
+                          {s.statusType === 'completed' && '✓'}
+                          {s.statusType === 'current' && '●'}
+                          {s.statusType === 'pending' && '○'}
+                          {s.statusType === 'rejected' && '×'}
+                        </div>
+                      </div>
+                      {idx < stageDetails.length - 1 && (
+                        <div
+                          className={`flex-1 h-[2px] z-0 ${
+                            s.statusType === 'completed' ? 'bg-emerald-400' : 'bg-slate-200'
+                          }`}
+                        />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+                {/* ROW 2: Labels — absolute-positioned to avoid clipping */}
+                <div className="flex items-start px-1 mt-2" style={{ overflow: 'visible' }}>
+                  {stageDetails.map((s, idx) => (
+                    <React.Fragment key={`fl-${s.name}-${idx}`}>
+                      <div
+                        className="flex-none"
+                        style={{ position: 'relative', width: '32px', minHeight: '4.5em' }}
+                      >
+                        <span
+                          style={{
+                            position: 'absolute',
+                            left: '50%',
+                            top: 0,
+                            transform: 'translateX(-50%)',
+                            width: '68px',
+                            textAlign: 'center',
+                            fontSize: '0.65rem',
+                            lineHeight: '1.25em',
+                            fontWeight: 700,
+                            color: s.statusType === 'current' ? '#4338ca' : s.statusType === 'completed' ? '#1e293b' : '#94a3b8',
+                            overflowWrap: 'normal',
+                            wordBreak: 'normal',
+                            whiteSpace: 'normal',
+                            hyphens: 'none',
+                          }}
+                        >
+                          {s.name}
+                        </span>
+                      </div>
+                      {idx < stageDetails.length - 1 && (
+                        <div className="flex-1" style={{ minHeight: '4.5em' }} />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1031,9 +1548,19 @@ export const FinanceRequestDetailsPage: React.FC = () => {
         isOpen={approveModalOpen}
         request={request}
         portalType="FINANCE"
-        approverName="Mark Finance Officer"
+        approverName={actorName}
         onClose={() => setApproveModalOpen(false)}
         onConfirm={handleConfirmApproval}
+      />
+
+      {/* Process Payment Settlement Modal (Stage 8) */}
+      <ProcessPaymentModal
+        isOpen={paymentModalOpen}
+        request={request}
+        onClose={() => setPaymentModalOpen(false)}
+        onSuccess={(ref) => {
+          showToast(`✓ Treasury payment successfully disbursed! Reference: ${ref}`, 'success')
+        }}
       />
     </div>
   )

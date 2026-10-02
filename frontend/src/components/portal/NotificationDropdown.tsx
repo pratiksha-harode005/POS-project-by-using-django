@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
-  Bell, CheckCheck, X, Clock, ShieldAlert, ArrowRight, CheckCircle
+  Bell, CheckCheck, X, CheckCircle, ArrowRight
 } from 'lucide-react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { getNotifications, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
+import { apiClient } from '../../api/client'
 
 export interface NotificationItem {
   id: number
@@ -110,6 +111,37 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       clearInterval(interval)
     }
   }, [fetchRealNotifications])
+
+  // Fetch real-time notifications from PostgreSQL
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+
+    const fetchNotifications = async () => {
+      try {
+        const res = await apiClient.get('/notifications/')
+        const data = Array.isArray(res.data) ? res.data : (res.data?.results || [])
+        const items: NotificationItem[] = data.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          timestamp: n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+          date: n.created_at ? n.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          isRead: Boolean(n.is_read),
+          category: 'Approval',
+          requestId: n.purchase_request ? `REQ-${n.purchase_request}` : undefined,
+          sender: 'System'
+        }))
+        setNotifications(items)
+      } catch (err) {
+        // silent fail if unauthenticated or network error
+      }
+    }
+
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const unreadCount = notifications.filter((n) => !n.isRead).length
   const topNotifications = notifications.slice(0, 5)
@@ -327,7 +359,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
             {topNotifications.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-xs">
                 <CheckCircle size={28} className="mx-auto mb-2 text-emerald-400 opacity-80" />
-                No notifications right now
+                No new notifications
               </div>
             ) : (
               topNotifications.map((n) => (

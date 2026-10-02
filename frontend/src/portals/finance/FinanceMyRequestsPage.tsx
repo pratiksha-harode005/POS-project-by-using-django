@@ -203,6 +203,7 @@ export const FinanceMyRequestsPage: React.FC = () => {
     e.preventDefault()
     if (!newTitle.trim()) return
 
+    const newId = `REQ-${Date.now().toString().slice(-6)}`
     const costVal = parseInt(newCost || '0')
     const qtyVal = parseInt(newQty) || 1
 

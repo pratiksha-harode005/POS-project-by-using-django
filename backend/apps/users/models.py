@@ -15,6 +15,7 @@ class Department(models.Model):
 
 class User(AbstractUser):
     ROLE_CHOICES = (
+        ('EMPLOYEE', 'Employee'),
         ('TEAM_LEAD', 'Team Lead'),
         ('MANAGER', 'Manager'),
         ('FINANCE', 'Finance'),
@@ -22,7 +23,7 @@ class User(AbstractUser):
         ('VENDOR', 'Vendor'),
     )
 
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='TEAM_LEAD')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='EMPLOYEE')
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     vendor_id_code = models.CharField(max_length=50, blank=True, null=True, help_text="Unique Vendor ID for Vendor role")
     phone = models.CharField(max_length=30, blank=True)

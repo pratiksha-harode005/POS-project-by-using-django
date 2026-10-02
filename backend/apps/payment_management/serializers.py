@@ -54,7 +54,7 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     def get_payment_method_display(self, obj):
         if not obj.payment_method or str(obj.payment_method).strip() in ['', 'None', 'null']:
-            return '—'
+            return '--'
         try:
             return obj.get_payment_method_display() or str(obj.payment_method)
         except Exception:

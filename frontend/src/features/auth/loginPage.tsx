@@ -78,15 +78,15 @@ export default function LoginPage() {
     setLoading(true)
 
     const targetRole = selectedRole || detectRoleFromEmail(email)
-    const successResult = await login(email, password, targetRole)
+    const res = await login(email, password, targetRole)
 
-    if (successResult) {
+    if (res.success) {
       setLoading(false)
       setSuccess(true)
       navigate(`/portal/${targetRole.toLowerCase()}/dashboard`)
     } else {
       setLoading(false)
-      setErrors({ password: 'Login failed. Please check your credentials.' })
+      setErrors({ password: res.error || 'Login failed. Please check your credentials.' })
     }
   }
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowUpRight,
@@ -24,6 +24,9 @@ import {
 } from 'lucide-react'
 import { useManagerData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
+import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -36,11 +39,19 @@ const priorityColors: Record<string, string> = {
 
 export const RecommendedToAdminPage: React.FC = () => {
   const navigate = useNavigate()
-  const { recommendedToAdmin, adminApproveRequest } = useManagerData()
+  const { user } = useAuth()
+  const { recommendedToAdmin, refreshData, adminApproveRequest } = useManagerData()
+
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
+
+  const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
 
   // State
   const [search, setSearch] = useState('')
   const [statusTab, setStatusTab] = useState<'ALL' | 'PENDING' | 'APPROVED'>('ALL')
+  const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
   const [selectedDept, setSelectedDept] = useState('ALL')
   const [selectedPriority, setSelectedPriority] = useState('ALL')
   const [selectedReq, setSelectedReq] = useState<ProcurementRequest | null>(null)
@@ -63,6 +74,10 @@ export const RecommendedToAdminPage: React.FC = () => {
     return ['ALL', ...Array.from(set)]
   }, [recommendedToAdmin])
 
+  // Segmented filter counts
+  const softwareCount = useMemo(() => recommendedToAdmin.filter(r => isSoftwareRequest(r)).length, [recommendedToAdmin])
+  const hardwareCount = useMemo(() => recommendedToAdmin.filter(r => isHardwareRequest(r)).length, [recommendedToAdmin])
+
   // KPIs
   const kpis = useMemo(() => {
     const total = recommendedToAdmin.length
@@ -77,10 +92,10 @@ export const RecommendedToAdminPage: React.FC = () => {
     return { total, totalAmount, pending, approved }
   }, [recommendedToAdmin])
 
-  // Filtered List
+  // Filtered List — sorted strictly newest first
   const filteredList = useMemo(() => {
-    const q = (search || '').toLowerCase().trim()
-    return recommendedToAdmin.filter(r => {
+    const matching = recommendedToAdmin.filter(r => {
+      const q = search.toLowerCase()
       const matchesSearch =
         !q ||
         String(r.id || '').toLowerCase().includes(q) ||
@@ -106,9 +121,16 @@ export const RecommendedToAdminPage: React.FC = () => {
       if (statusTab === 'PENDING') matchesTab = isPending
       if (statusTab === 'APPROVED') matchesTab = isApproved
 
-      return matchesSearch && matchesDept && matchesPriority && matchesTab
+      const matchesType = requestType === 'all'
+        ? true
+        : requestType === 'software'
+        ? isSoftwareRequest(r)
+        : isHardwareRequest(r)
+
+      return matchesSearch && matchesDept && matchesPriority && matchesTab && matchesType
     })
-  }, [recommendedToAdmin, search, selectedDept, selectedPriority, statusTab])
+    return sortRequestsNewestFirst(matching)
+  }, [recommendedToAdmin, search, selectedDept, selectedPriority, statusTab, requestType])
 
   // Admin Approval Handler
   const handleConfirmFinancialDossier = (params: ApprovalParameters) => {
@@ -116,7 +138,7 @@ export const RecommendedToAdminPage: React.FC = () => {
     adminApproveRequest(
       approveModalReq.id,
       params.approvalComments || 'Ratified and approved by Executive Admin Committee.',
-      'Priyanka Sharma (Admin)'
+      actorName
     )
     showToast(`✓ Request ${approveModalReq.id} has been formally approved by Admin.`, 'success')
     if (selectedReq?.id === approveModalReq.id) {
@@ -124,7 +146,7 @@ export const RecommendedToAdminPage: React.FC = () => {
         ...selectedReq,
         status: 'finance_approved',
         financeStatus: 'Admin Approved',
-        approvedBy: 'Priyanka Sharma (Admin)',
+        approvedBy: actorName,
         approvedDate: new Date().toISOString().split('T')[0],
       })
     }
@@ -133,14 +155,14 @@ export const RecommendedToAdminPage: React.FC = () => {
   }
 
   const handleAdminApprove = (req: ProcurementRequest, note?: string) => {
-    adminApproveRequest(req.id, note || 'Ratified and approved by Executive Admin Committee.', 'Priyanka Sharma (Admin)')
+    adminApproveRequest(req.id, note || 'Ratified and approved by Executive Admin Committee.', actorName)
     showToast(`✓ Request ${req.id} has been formally approved by Admin.`, 'success')
     if (selectedReq?.id === req.id) {
       setSelectedReq({
         ...selectedReq,
         status: 'finance_approved',
         financeStatus: 'Admin Approved',
-        approvedBy: 'Priyanka Sharma (Admin)',
+        approvedBy: actorName,
         approvedDate: new Date().toISOString().split('T')[0],
       })
     }
@@ -158,7 +180,7 @@ export const RecommendedToAdminPage: React.FC = () => {
       `"${r.department}"`,
       r.amount,
       `"${(r.recommendationReason || '').replace(/"/g, '""')}"`,
-      `"${r.recommendedBy || 'Mark Finance Officer'}"`,
+      `"${r.recommendedBy || actorName}"`,
       `"${r.recommendedDate || r.date}"`,
       `"${r.financeStatus || 'Recommended to Admin'}"`
     ])
@@ -282,6 +304,17 @@ export const RecommendedToAdminPage: React.FC = () => {
           <p className="text-2xl font-bold text-slate-900 mt-2">{kpis.approved}</p>
           <p className="text-[11px] text-blue-600 font-medium mt-0.5">Ratified & cleared for execution</p>
         </div>
+      </div>
+
+      {/* Request Type Segmented Filter */}
+      <div className="flex items-center justify-between">
+        <RequestTypeFilter
+          value={requestType}
+          onChange={setRequestType}
+          totalCount={recommendedToAdmin.length}
+          softwareCount={softwareCount}
+          hardwareCount={hardwareCount}
+        />
       </div>
 
       {/* Filters and Search Bar */}
@@ -486,7 +519,7 @@ export const RecommendedToAdminPage: React.FC = () => {
                       {/* Column 5: Recommended By & Date */}
                       <td className="p-4 align-top whitespace-nowrap">
                         <p className="font-semibold text-slate-700">
-                          {req.recommendedBy || 'Mark Finance Officer'}
+                          {req.recommendedBy || actorName}
                         </p>
                         <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
                           <Calendar size={11} />
@@ -674,7 +707,7 @@ export const RecommendedToAdminPage: React.FC = () => {
                   <div className="text-right">
                     <span className="text-[10px] font-bold uppercase text-slate-400 block">Recommending Officer</span>
                     <span className="font-semibold text-slate-700">
-                      {selectedReq.recommendedBy || 'Mark Finance Officer'}
+                      {selectedReq.recommendedBy || actorName}
                     </span>
                   </div>
                 </div>
@@ -729,7 +762,7 @@ export const RecommendedToAdminPage: React.FC = () => {
         isOpen={!!approveModalReq}
         request={approveModalReq}
         portalType="FINANCE"
-        approverName="Mark Finance Officer"
+        approverName={actorName}
         onClose={() => setApproveModalReq(null)}
         onConfirm={handleConfirmFinancialDossier}
       />

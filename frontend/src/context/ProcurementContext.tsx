@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { getTeamLeadRequests, createTeamLeadRequest, resubmitTeamLeadRequest } from '../api/teamleadApi'
-import { getWorkflowProgression } from '../utils/workflowUtils'
+import { getWorkflowProgression, sortRequestsNewestFirst } from '../utils/workflowUtils'
+import { apiClient } from '../api/client'
+import { triggerGlobalDataSync, subscribeGlobalDataSync } from '../utils/syncUtils'
 
 export interface ApprovalStep {
   date: string
@@ -26,18 +28,51 @@ export interface PurchaseRequest {
   justification: string
   attachmentName?: string
   attachmentCount: number
-  status: 'Draft' | 'Pending' | 'Approved' | 'Rejected' | 'Returned' | 'In Procurement' | 'Completed'
-  currentStage: number // 0 to 9 for Flow A, 0 to 6 for Flow B
+  status: 'Draft' | 'Pending' | 'Approved' | 'Rejected' | 'Returned' | 'In Procurement' | 'Completed' | 'Payment Completed' | 'Payment Approved' | 'Payment Processed' | 'Payment Justification Submitted' | 'Payment Justified'
+  currentStage: number
   date: string
   lastUpdated: string
   returnReason?: string
   currentlyWith: { role: string; name: string }
-  flowType: 'A' | 'B' // Flow A: Vendor-paid, Flow B: Funds released to Team Lead
-  extraFields?: Record<string, string>
+  flowType: 'A' | 'B'
+  extraFields?: Record<string, any>
   history: ApprovalStep[]
   deliveryRef?: string
   expectedDelivery?: string
   poRef?: string
+  raw_status?: string
+  request_type?: string
+  software_name?: string
+  current_plan?: string
+  required_plan?: string
+  existing_cost?: number
+  business_requirement?: string
+  research_estimation?: any
+  finance_approved_amount?: number
+  payment_method?: string
+  payment_reference?: string
+  payment_date?: string
+  payment_status?: string
+  payment_notes?: string
+  confirmed_by_team_lead?: boolean
+  confirmed_at?: string
+  timeline?: any[]
+  final_approval_by?: string
+  approval_path?: string
+  createdAt?: string
+  dbId?: number
+  extra_fields?: Record<string, any>
+  payment_justification_detail?: any
+  request_operation?: string
+  created_by_detail?: any
+  department_detail?: any
+  requested_amount?: number
+  request_id?: string
+  rawRequest?: any
+  subscription_type?: string
+  renewalCycle?: string
+  renewal_cycle?: string
+  renewal_eligibility?: any
 }
 
 export interface ReceiptDetails {
@@ -63,7 +98,7 @@ export interface PaymentRecord {
   title: string
   vendor: string
   amount: number
-  status: 'Processing' | 'Paid' | 'Awaiting Receipt'
+  status: 'Processing' | 'Paid' | 'Awaiting Receipt' | string
   dueDate: string
   paymentStage: string
   flowType: 'A' | 'B'
@@ -73,6 +108,13 @@ export interface PaymentRecord {
   receiptUploaded?: boolean
   receiptFileName?: string
   receiptDetails?: ReceiptDetails
+  purchaseRequestDetail?: any
+  payment_id?: string
+  reference_number?: string
+  payment_date?: string
+  vendor_name?: string
+  payment_method?: string
+  paymentMethod?: string
 }
 
 export interface NotificationRecord {
@@ -111,13 +153,16 @@ interface ProcurementContextType {
   payments: PaymentRecord[]
   notifications: NotificationRecord[]
   profile: ExtendedProfile
-  addRequest: (req: Omit<PurchaseRequest, 'id' | 'date' | 'lastUpdated' | 'currentlyWith' | 'history'> & { id?: string }) => PurchaseRequest
+  addRequest: (req: Omit<PurchaseRequest, 'id' | 'date' | 'lastUpdated' | 'currentlyWith' | 'history'> & { id?: string }) => Promise<PurchaseRequest>
+  refreshBackendRequests: () => Promise<void>
   resubmitRequest: (id: string, updatedData?: Partial<PurchaseRequest>) => void
   uploadReceipt: (paymentId: string, receiptData: ReceiptSubmissionPayload | File) => void
   assignVendorToRequest: (requestId: string, vendorId: string, vendorName: string, notes?: string) => void
   updateVendorPOStatus: (poId: string, newStatus: 'Confirmed' | 'Processing' | 'Shipped' | 'Delivered', trackingRef?: string) => void
   sendRFQToMultipleVendors: (requestId: string) => void
   markNotificationRead: (id: number) => void
+  isPaymentsLoading: boolean
+  paymentsError: string | null
   markAllNotificationsRead: () => void
   releaseFinancePayment: (paymentIdOrPoRef: string) => void
   updateNotificationPreferences: (prefs: Record<string, boolean>) => void
@@ -159,6 +204,8 @@ const ProcurementContext = createContext<ProcurementContextType | undefined>(und
 export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
   const [payments, setPayments] = useState<PaymentRecord[]>([])
+  const [isPaymentsLoading, setIsPaymentsLoading] = useState(true)
+  const [paymentsError, setPaymentsError] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<NotificationRecord[]>([])
   const [profile, setProfile] = useState<ExtendedProfile>(INITIAL_PROFILE)
   const [notificationPreferences, setNotificationPreferences] = useState<Record<string, boolean>>({
@@ -186,143 +233,440 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }
 
   // Dynamic parallel fetch from Django REST API backend
-  const refreshBackendRequests = async () => {
-    try {
-      const { apiClient } = await import('../api/client')
-      const savedRole = (localStorage.getItem('user_role') || 'TEAM_LEAD').toUpperCase()
-      const savedProfile = localStorage.getItem('user_profile')
-      let notifParams: any = { role: savedRole, page_size: 100 }
-      if (savedProfile) {
-        try {
-          const parsed = JSON.parse(savedProfile)
-          if (parsed?.username) notifParams = { user: parsed.username, role: savedRole, page_size: 100 }
-          if (parsed?.role === 'VENDOR' && parsed?.vendor_id_code) {
-            notifParams = { vendor: parsed.vendor_id_code, page_size: 100 }
-          }
-        } catch {}
-      }
+  const isFetchingRef = React.useRef(false)
 
-      const [reqRes, payRes, notifRes] = await Promise.allSettled([
-        apiClient.get('/requests/', { params: { page_size: 1000 } }),
-        apiClient.get('/payments/'),
-        apiClient.get('/notifications/', { params: notifParams })
+  // Dynamic fetch from Django REST API backend
+  const refreshBackendRequests = async () => {
+    const token = localStorage.getItem('access_token')
+    if (!token) {
+      setIsPaymentsLoading(false)
+      return
+    }
+    if (isFetchingRef.current) return
+    isFetchingRef.current = true
+
+    try {
+      // PERFORMANCE FIX: Fetch requests and payments in parallel.
+      // Previously requests were awaited first, then payments — doubling round-trip time.
+      // Now both kick off simultaneously and we process each result when both arrive.
+      const [requestsResult, paymentsResult] = await Promise.allSettled([
+        getTeamLeadRequests(),
+        apiClient.get('/payments/', { params: { page_size: 100 } })
       ])
 
-      if (reqRes.status === 'fulfilled') {
-        const data = reqRes.value.data
-        const list = Array.isArray(data) ? data : data?.results || []
-        const mapped: PurchaseRequest[] = list.map((item: any) => {
-          const stageNum = item.current_stage !== undefined && item.current_stage !== null ? Number(item.current_stage) : 1
-          const rawStatus = item.status || 'Pending'
-          const normalized = normalizeStatus(rawStatus, stageNum)
-          const prog = getWorkflowProgression({
-            currentStage: stageNum,
-            status: normalized,
-            category: item.category,
-            title: item.title,
-            history: item.approval_steps,
-          })
+      const data = requestsResult.status === 'fulfilled' ? requestsResult.value : null
+      const list = Array.isArray(data) ? data : data?.results || []
+      const mapped: PurchaseRequest[] = list.map((item: any) => {
 
-          const costVal = Number(item.total_estimated_cost ?? item.amount ?? item.estimated_cost ?? item.estimatedCost ?? 0) || 0
+        let normalizedStatus: PurchaseRequest['status'] = 'Pending'
+        const bs = (item.status || '').toUpperCase()
+        if (bs === 'PAYMENT_COMPLETED') {
+          normalizedStatus = 'Payment Completed'
+        } else if (bs === 'COMPLETED' || bs === 'TEAM_LEAD_CONFIRMED' || bs === 'REQUEST_COMPLETED') {
+          normalizedStatus = 'Completed'
+        } else if (bs === 'ADMIN_APPROVED' || bs === 'PAYMENT_APPROVED' || bs === 'APPROVED' || bs === 'MANAGER_APPROVED' || bs === 'FINANCE_APPROVED') {
+          normalizedStatus = 'Approved'
+        } else if (bs === 'PAYMENT_PROCESSED') {
+          normalizedStatus = 'Payment Processed'
+        } else if (bs === 'PAYMENT_JUSTIFICATION_SUBMITTED') {
+          normalizedStatus = 'Payment Justification Submitted'
+        } else if (bs === 'PAYMENT_JUSTIFIED' || bs === 'MANAGER_VERIFIED' || bs === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT') {
+          normalizedStatus = 'Payment Justified'
+        } else if (bs === 'REJECTED' || bs === 'FINANCE_REJECTED') {
+          normalizedStatus = 'Rejected'
+        } else if (bs === 'RETURNED' || bs === 'SENT_BACK') {
+          normalizedStatus = 'Returned'
+        } else if (bs === 'IN PROCUREMENT') {
+          normalizedStatus = 'In Procurement'
+        } else if (bs === 'DRAFT') {
+          normalizedStatus = 'Draft'
+        }
 
+        let currentlyWithRole = 'Manager'
+        let currentlyWithName = 'Sarah Manager'
+        if (bs === 'PAYMENT_COMPLETED') {
+          currentlyWithRole = 'Team Lead'
+          currentlyWithName = 'Awaiting Your Confirmation'
+        } else if (bs === 'COMPLETED' || bs === 'TEAM_LEAD_CONFIRMED' || bs === 'REQUEST_COMPLETED') {
+          currentlyWithRole = 'Completed'
+          currentlyWithName = 'Procurement Completed'
+        } else if (bs === 'ADMIN_APPROVED') {
+          currentlyWithRole = 'Team Lead'
+          currentlyWithName = 'Pay Now (Mock) Ready'
+        } else if (bs === 'PAYMENT_APPROVED') {
+          currentlyWithRole = 'Team Lead'
+          currentlyWithName = 'Awaiting Payment Justification'
+        } else if (bs === 'PAYMENT_PROCESSED') {
+          currentlyWithRole = 'Team Lead'
+          currentlyWithName = 'Awaiting Payment Justification'
+        } else if (bs === 'PAYMENT_JUSTIFICATION_SUBMITTED') {
+          currentlyWithRole = 'Manager'
+          currentlyWithName = 'Payment Justification Pending Verification'
+        } else if (bs === 'PAYMENT_JUSTIFIED' || bs === 'MANAGER_VERIFIED' || bs === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT') {
+          currentlyWithRole = 'Team Lead'
+          currentlyWithName = 'Final Acknowledgment Required'
+        } else if (bs === 'RECOMMENDED_TO_ADMIN' || bs === 'FINANCE_RECOMMENDED_TO_ADMIN' || bs === 'ADMIN_REVIEW') {
+          currentlyWithRole = 'Admin'
+          currentlyWithName = 'Executive Administrator'
+        } else if (bs === 'FINANCE_REVIEW' || bs === 'FINANCE_RECOMMENDED' || bs === 'RECOMMENDED_TO_FINANCE' || bs === 'MANAGER_RECOMMENDED_TO_FINANCE' || bs === 'FINANCE_APPROVED') {
+          currentlyWithRole = 'Finance'
+          currentlyWithName = 'Finance Department'
+        } else if (bs === 'SENT_BACK' || bs === 'RETURNED') {
+          currentlyWithRole = 'Team Lead'
+          currentlyWithName = 'Awaiting Re-submission'
+        } else if (normalizedStatus === 'Approved' || bs === 'MANAGER_APPROVED') {
+          const isSoftReq = (
+            (item.category || '').toLowerCase().includes('software') ||
+            (item.category || '').toLowerCase().includes('saas') ||
+            (item.category || '').toLowerCase().includes('cloud') ||
+            (item.category || '').toLowerCase().includes('license') ||
+            (item.category || '').toLowerCase().includes('subscription') ||
+            Boolean(item.software_name) ||
+            item.flow_type === 'B'
+          )
+          if (isSoftReq) {
+            currentlyWithRole = 'Team Lead'
+            currentlyWithName = 'Pay Now (Mock) Ready'
+          } else {
+            currentlyWithRole = 'Procurement Sourcing Desk'
+            currentlyWithName = 'Sourcing Team (RFQ Sent)'
+          }
+        }
+
+        if (item.currently_with) {
+          const parts = item.currently_with.split('—').map((s: string) => s.trim())
+          if (parts.length >= 2) {
+            currentlyWithRole = parts[0]
+            currentlyWithName = parts.slice(1).join('—').trim()
+          } else if (parts.length === 1 && parts[0]) {
+            currentlyWithName = parts[0]
+          }
+        }
+
+        const isSoftReq = (
+          (item.category || '').toLowerCase().includes('software') ||
+          (item.category || '').toLowerCase().includes('saas') ||
+          (item.category || '').toLowerCase().includes('cloud') ||
+          (item.category || '').toLowerCase().includes('license') ||
+          (item.category || '').toLowerCase().includes('subscription') ||
+          Boolean(item.software_name) ||
+          item.flow_type === 'B'
+        )
+
+        let effectiveCurrentStage = item.current_stage || 1
+        if (isSoftReq) {
+          if (item.current_stage) {
+            effectiveCurrentStage = item.current_stage
+          } else if (bs === 'ADMIN_APPROVED' || bs === 'PAYMENT_APPROVED') {
+            effectiveCurrentStage = 7
+          } else if (bs === 'PAYMENT_PROCESSED') {
+            effectiveCurrentStage = 9
+          } else if (bs === 'PAYMENT_JUSTIFICATION_SUBMITTED') {
+            effectiveCurrentStage = 10
+          } else if (bs === 'PAYMENT_JUSTIFIED' || bs === 'MANAGER_VERIFIED' || bs === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT') {
+            effectiveCurrentStage = 11
+          } else if (bs === 'REQUEST_COMPLETED' || bs === 'COMPLETED') {
+            effectiveCurrentStage = 12
+          }
+        } else {
+          if (normalizedStatus === 'Approved' || bs === 'IN PROCUREMENT' || bs === 'IN_PROCUREMENT') {
+            effectiveCurrentStage = Math.max(item.current_stage ?? 4, 4)
+          }
+        }
+
+        const effectiveCost = Number(
+          item.finance_approved_amount ||
+          item.approved_amount ||
+          item.total_estimated_cost ||
+          item.requested_amount ||
+          item.existing_cost
+        ) || 0
+
+        return {
+          id: item.request_id || item.id,
+          title: item.title,
+          category: item.category,
+          subcategory: item.subcategory || 'General',
+          description: item.description || '',
+          quantity: item.quantity || 1,
+          estimatedCost: effectiveCost,
+          requiredBy: item.required_by || new Date().toISOString().split('T')[0],
+          department: item.department_detail?.name || 'IT & Infrastructure',
+          deliveryLocation: item.delivery_location || 'Pune HQ',
+          priority: item.priority || 'Medium',
+          preferredVendor: item.preferred_vendor || item.vendor || '',
+          justification: item.justification || '',
+          attachmentCount: item.attachments ? 1 : 0,
+          status: normalizedStatus,
+          currentStage: effectiveCurrentStage,
+          date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          createdAt: item.created_at,
+          dbId: item.id,
+          lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          currentlyWith: { role: currentlyWithRole, name: currentlyWithName },
+          flowType: item.flow_type || 'A',
+          extraFields: item.extra_fields || {},
+          extra_fields: item.extra_fields || {},
+          raw_status: item.status,
+          can_pay_mock: Boolean(item.can_pay_mock),
+          is_payment_eligible: Boolean(item.is_payment_eligible),
+          can_acknowledge: Boolean(item.can_acknowledge || item.is_awaiting_acknowledgement),
+          is_awaiting_acknowledgement: Boolean(item.is_awaiting_acknowledgement || item.can_acknowledge),
+          approved_amount: item.approved_amount,
+          requested_amount: Number(item.requested_amount ?? item.total_estimated_cost ?? 0),
+          request_id: item.request_id || item.id,
+          rawRequest: item,
+          vendor: item.vendor,
+          total_estimated_cost: item.total_estimated_cost,
+          payment_justification_detail: item.payment_justification_detail,
+          request_operation: item.request_operation,
+          created_by_detail: item.created_by_detail,
+          department_detail: item.department_detail,
+          request_type: item.request_type,
+          software_name: item.software_name,
+          current_plan: item.current_plan,
+          required_plan: item.required_plan,
+          existing_cost: item.existing_cost,
+          business_requirement: item.business_requirement,
+          research_estimation: item.research_estimation,
+          finance_approved_amount: item.finance_approved_amount,
+          payment_method: item.payment_method,
+          payment_reference: item.payment_reference,
+          payment_date: item.payment_date,
+          payment_status: item.payment_status,
+          payment_notes: item.payment_notes,
+          confirmed_by_team_lead: item.confirmed_by_team_lead,
+          confirmed_at: item.confirmed_at,
+          timeline: item.timeline || [],
+          final_approval_by: item.final_approval_by || item.extra_fields?.final_approval_by,
+          approval_path: item.approval_path || item.final_approval_by || item.extra_fields?.final_approval_by,
+          renewal_eligibility: item.renewal_eligibility,
+          history: Array.isArray(item.approval_history) && item.approval_history.length > 0
+            ? item.approval_history.map((h: any) => ({
+                date: h.created_at || h.timestamp || '',
+                actorRole: h.user_role || 'User',
+                actorName: h.performed_by_detail ? `${h.performed_by_detail.first_name} ${h.performed_by_detail.last_name}` : (h.performed_by_detail?.username || h.user_role || 'User'),
+                action: h.action || 'Updated',
+                remark: h.comments || '',
+              }))
+            : Array.isArray(item.approval_steps)
+            ? item.approval_steps.map((s: any) => ({
+                date: s.created_at || '',
+                actorRole: s.role || 'User',
+                actorName: s.actor_detail?.first_name ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : 'User',
+                action: s.decision || 'Updated',
+                remark: s.notes || '',
+              }))
+            : [],
+        }
+      })
+      const sorted = sortRequestsNewestFirst(mapped)
+      // console.log removed — was serializing entire array on every poll tick
+      setRequests(sorted)
+
+      try {
+        setPaymentsError(null)
+        // Use the pre-fetched payments result from the parallel Promise.allSettled above
+        const payRes = paymentsResult.status === 'fulfilled' ? paymentsResult.value : null
+        const rawPayments = payRes ? (Array.isArray(payRes.data) ? payRes.data : payRes.data?.results || []) : []
+
+        
+        const mappedPayments: PaymentRecord[] = rawPayments.map((rp: any) => {
+          const req = sorted.find(r => String(r.dbId) === String(rp.purchase_request) || String(r.id) === String(rp.purchase_request))
+          
+          let st = rp.status
+          if (st === 'SUCCESS' || st === 'MOCK_SUCCESS' || st === 'PAID') st = 'Paid'
+          if (st === 'Pending' || st === 'Processing') st = 'Processing'
+          
           return {
-            id: item.request_id || (item.id ? `REQ-${item.id}` : `REQ-${Math.floor(1000 + Math.random() * 9000)}`),
-            title: item.title,
-            category: item.category,
-            subcategory: item.subcategory || '',
-            description: item.description || '',
-            quantity: item.quantity !== undefined && item.quantity !== null ? item.quantity : 1,
-            estimatedCost: costVal,
-            requiredBy: item.required_by || new Date().toISOString().split('T')[0],
-            department: item.department_detail?.name || 'IT & Infrastructure',
-            deliveryLocation: item.delivery_location || 'Pune HQ',
-            priority: item.priority || 'Medium',
-            preferredVendor: item.preferred_vendor || '',
-            justification: item.justification || '',
-            attachmentCount: item.attachments ? 1 : 0,
-            status: normalized,
-            currentStage: stageNum,
-            date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-            lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
-            currentlyWith: { role: prog.currentlyWith, name: prog.currentStageName },
-            flowType: item.flow_type || 'A',
-            extraFields: item.extra_fields || {},
-            history: Array.isArray(item.approval_steps)
-              ? item.approval_steps.map((s: any) => ({
-                  date: s.created_at || '',
-                  actorRole: s.role || 'User',
-                  actorName: s.actor_detail?.first_name ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : (s.actor_detail?.username || 'User'),
-                  action: s.decision || 'Updated',
-                  remark: s.notes || s.reason_detail?.text || '',
-                }))
-              : [],
+            id: rp.payment_id || String(rp.id),
+            requestId: req?.id || String(rp.purchase_request),
+            title: req?.title || 'Unknown Request',
+            vendor: rp.vendor_name || req?.preferredVendor || rp.vendor_detail?.name || 'Unknown Vendor',
+            amount: Number(rp.amount) || 0,
+            status: st,
+            paymentStage: 'Payment Processed',
+            dueDate: req?.requiredBy || rp.payment_date || rp.created_at?.split('T')[0] || '',
+            receiptUploaded: Boolean(rp.payment_proof),
+            flowType: req?.flowType || 'A',
+            releaseReason: rp.notes || '',
+            releasedBy: { role: 'System', name: rp.payment_method || 'Bank' },
+            receiptDetails: {
+              itemName: req?.software_name || req?.title || rp.purchase_request_detail?.software_name || rp.purchase_request_detail?.title || 'Item',
+              actualAmount: Number(rp.amount) || 0,
+              purchaseDate: rp.payment_date || rp.created_at?.split('T')[0] || '',
+              fileName: rp.reference_number || 'Reference',
+              notes: rp.notes || '',
+              submittedAt: rp.created_at?.split('T')[0] || ''
+            },
+            purchaseRequestDetail: (() => {
+              const base = rp.purchase_request_detail || (req ? { ...req, request_id: req.id } : null) || {}
+              if (!base.payment_justification_detail && req?.payment_justification_detail) {
+                base.payment_justification_detail = req.payment_justification_detail
+              }
+              if (!base.extra_fields && (req?.extra_fields || req?.extraFields)) {
+                base.extra_fields = req.extra_fields || req.extraFields
+              }
+              if (!base.created_by_detail && req?.created_by_detail) {
+                base.created_by_detail = req.created_by_detail
+              }
+              if (!base.department_detail && req?.department_detail) {
+                base.department_detail = req.department_detail
+              }
+              return base
+            })()
+          } as PaymentRecord
+        })
+
+        // ALSO: Include all Software/SaaS requests that have completed/approved/justified payment statuses
+        const existingReqIds = new Set(mappedPayments.map(p => String(p.requestId)))
+        
+        sorted.forEach((req: any) => {
+          const reqIdStr = String(req.id || '')
+          const dbIdStr = String(req.dbId || '')
+          if (!existingReqIds.has(reqIdStr) && !existingReqIds.has(dbIdStr)) {
+            const isSoft = (
+              (req.category || '').toLowerCase().includes('software') ||
+              (req.category || '').toLowerCase().includes('saas') ||
+              (req.category || '').toLowerCase().includes('cloud') ||
+              (req.category || '').toLowerCase().includes('license') ||
+              (req.category || '').toLowerCase().includes('subscription') ||
+              Boolean(req.software_name) ||
+              req.flowType === 'B'
+            )
+            
+            const rawSt = (req.raw_status || req.status || '').toUpperCase()
+            const extra = req.extra_fields || req.extraFields || {}
+            const pj = req.payment_justification_detail || extra.payment_justification || {}
+            const hasPaymentInfo = (
+              Boolean(extra.software_receipt_id || extra.receipt_no) ||
+              ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED'].includes(rawSt) ||
+              Boolean(extra.team_lead_acknowledged) ||
+              Boolean(req.confirmed_by_team_lead) ||
+              Boolean(pj.is_acknowledged)
+            )
+
+            if (isSoft && hasPaymentInfo) {
+              const amt = Number(pj.actual_purchase_amount || pj.final_payable_amount || extra.actual_purchase_amount || extra.final_payable_amount || req.finance_approved_amount || req.approved_amount || req.estimatedCost || 0)
+              const receiptId = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${req.id}`
+              const refNo = extra.software_receipt_id || extra.receipt_no || req.payment_reference || extra.payment_reference || `TXN-${req.id}`
+              const payDate = extra.receipt_generated_at?.split('T')[0] || extra.acknowledged_at?.split('T')[0] || pj.payment_date || extra.mock_payment_date?.split('T')[0] || req.requiredBy || req.date || ''
+
+              let st = 'Paid'
+              if (rawSt === 'ADMIN_APPROVED' || rawSt === 'PAYMENT_APPROVED') {
+                st = 'Processing'
+              }
+
+              mappedPayments.push({
+                id: receiptId,
+                requestId: req.id,
+                title: req.title,
+                vendor: pj.vendor_name || req.preferredVendor || req.vendor || 'Microsoft Corporation',
+                amount: amt,
+                status: st,
+                paymentStage: 'Payment Processed',
+                dueDate: payDate,
+                receiptUploaded: true,
+                flowType: req.flowType || 'A',
+                releaseReason: req.justification || '',
+                releasedBy: { role: 'System', name: pj.payment_method || 'Corporate Credit Card' },
+                receiptDetails: {
+                  itemName: req.software_name || req.title,
+                  actualAmount: amt,
+                  purchaseDate: payDate,
+                  fileName: refNo,
+                  notes: pj.why_required || req.business_requirement || '',
+                  submittedAt: payDate
+                },
+                purchaseRequestDetail: {
+                  ...req,
+                  request_id: req.id,
+                  software_name: req.software_name || req.title,
+                  payment_justification_detail: pj || req.payment_justification_detail,
+                  extra_fields: req.extra_fields || req.extraFields || {},
+                  created_by_detail: req.created_by_detail || { first_name: 'Team', last_name: 'Lead', role: 'Team Lead' },
+                  department_detail: req.department_detail || { name: req.department || 'Engineering' }
+                }
+              } as PaymentRecord)
+              existingReqIds.add(reqIdStr)
+            }
           }
         })
-        setRequests(mapped)
-      }
-
-      if (payRes.status === 'fulfilled') {
-        setPayments(Array.isArray(payRes.value.data) ? payRes.value.data : payRes.value.data?.results || [])
-      }
-
-      if (notifRes.status === 'fulfilled') {
-        const rawNotifs = Array.isArray(notifRes.value.data) ? notifRes.value.data : notifRes.value.data?.results || []
-        setNotifications(rawNotifs.map((n: any) => ({
-          id: n.id,
-          title: n.title,
-          message: n.message,
-          timestamp: n.timestamp || 'Just now',
-          dateGroup: 'Today',
-          isRead: Boolean(n.is_read || n.isRead),
-          requestId: n.request_id || n.requestId,
-          type: (n.category || 'Approvals') as any,
-          targetRole: savedRole
-        })))
+        
+        setPayments(mappedPayments)
+      } catch (payErr: any) {
+        console.warn('Failed to fetch payments in ProcurementContext', payErr)
+        setPaymentsError(payErr?.message || 'Failed to fetch payments')
       }
     } catch (e) {
       console.warn('Backend requests fetch fallback:', e)
+      setIsPaymentsLoading(false)
+      setPaymentsError('Failed to fetch requests or payments')
+    } finally {
+      isFetchingRef.current = false
+      setIsPaymentsLoading(false)
     }
   }
 
   useEffect(() => {
     refreshBackendRequests()
-    const handleUpdate = () => refreshBackendRequests()
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        refreshBackendRequests()
-      }
-    }
-    window.addEventListener('kss_backend_updated', handleUpdate)
-    window.addEventListener('focus', handleUpdate)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        return
-      }
+    const unsubscribe = subscribeGlobalDataSync(() => {
       refreshBackendRequests()
-    }, 3000)
+    })
+    
+    // Poll every 30 seconds — 5s was hammering the backend (12× per minute per tab).
+    // Global sync (subscribeGlobalDataSync) handles immediate cross-tab updates.
+    const pollInterval = setInterval(() => {
+      refreshBackendRequests()
+    }, 30000)
 
     return () => {
-      window.removeEventListener('kss_backend_updated', handleUpdate)
-      window.removeEventListener('focus', handleUpdate)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      clearInterval(interval)
+      unsubscribe()
+      clearInterval(pollInterval)
     }
   }, [])
 
-  const addRequest = (
+  const addRequest = async (
     reqData: Omit<PurchaseRequest, 'id' | 'date' | 'lastUpdated' | 'currentlyWith' | 'history'> & { id?: string }
-  ): PurchaseRequest => {
+  ): Promise<PurchaseRequest> => {
     const today = new Date().toISOString().split('T')[0]
-    const nextId = reqData.id || `REQ-${Math.floor(1000 + Math.random() * 9000)}`
     const isDraft = reqData.status === 'Draft'
+
+    const createdData = await createTeamLeadRequest({
+      title: reqData.title,
+      category: reqData.category,
+      subcategory: reqData.subcategory || 'General',
+      description: reqData.description,
+      quantity: reqData.quantity,
+      required_by: reqData.requiredBy || today,
+      department: reqData.department || profile.department || 'IT & Infrastructure',
+      delivery_location: reqData.deliveryLocation || 'Pune HQ',
+      priority: reqData.priority || 'Medium',
+      preferred_vendor: reqData.preferredVendor || '',
+      justification: reqData.justification || '',
+      requested_amount: reqData.estimatedCost || reqData.existing_cost || 0,
+      total_estimated_cost: reqData.estimatedCost || reqData.existing_cost || 0,
+      flow_type: reqData.flowType || 'A',
+      request_type: reqData.request_type,
+      software_name: reqData.software_name,
+      current_plan: reqData.current_plan,
+      required_plan: reqData.required_plan,
+      existing_cost: reqData.existing_cost,
+      business_requirement: reqData.business_requirement,
+      extra_fields: reqData.extraFields || {},
+    })
+
+    const actualId = createdData?.request_id || createdData?.id || reqData.id || `REQ-${Date.now()}`
 
     const newReq: PurchaseRequest = {
       ...reqData,
-      id: nextId,
-      date: today,
+      id: actualId,
+      dbId: createdData?.id,
+      createdAt: createdData?.created_at || new Date().toISOString(),
+      date: createdData?.created_at ? createdData.created_at.split('T')[0] : today,
       lastUpdated: today,
+      status: isDraft ? 'Draft' : 'Pending',
+      currentStage: createdData?.current_stage || (isDraft ? 0 : 2),
       currentlyWith: isDraft
         ? { role: 'Team Lead', name: `${profile.firstName} ${profile.lastName} (Draft)` }
         : { role: 'Manager', name: 'Sarah Manager' },
@@ -337,36 +681,27 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ],
     }
 
-    setRequests((prev) => [newReq, ...prev])
+    setRequests((prev) => sortRequestsNewestFirst([newReq, ...prev.filter(r => r.id !== actualId)]))
+    triggerGlobalDataSync('request_created')
+    // PERFORMANCE FIX: Removed duplicate refreshBackendRequests() call here.
+    // triggerGlobalDataSync fires refreshBackendRequests via subscribeGlobalDataSync listener.
+    // Calling it again here was causing double API fetching on every request submission.
 
-    // Persist to PostgreSQL backend via Django REST API
-    createTeamLeadRequest({
-      title: reqData.title,
-      category: reqData.category,
-      subcategory: reqData.subcategory || '',
-      description: reqData.description,
-      quantity: reqData.quantity,
-      required_by: reqData.requiredBy || today,
-      delivery_location: reqData.deliveryLocation || 'Pune HQ',
-      priority: reqData.priority || 'Medium',
-      preferred_vendor: reqData.preferredVendor || '',
-      justification: reqData.justification || '',
-      total_estimated_cost: Number(reqData.estimatedCost) || 0,
-      flow_type: reqData.flowType || 'A',
-      extra_fields: reqData.extraFields || {},
-    })
-      .then((res) => {
-        if (res && (res.request_id || res.id)) {
-          const realId = res.request_id || `REQ-${res.id}`
-          setRequests((prev) => prev.map(r => r.id === nextId ? { ...r, id: realId } : r))
-        }
-        refreshBackendRequests()
-        window.dispatchEvent(new Event('kss_backend_updated'))
-      })
-      .catch((e) => {
-        console.warn('Backend persist warning:', e)
-        window.dispatchEvent(new Event('kss_backend_updated'))
-      })
+
+    if (!isDraft) {
+      const newNotif: NotificationRecord = {
+        id: Date.now(),
+        title: `Approval Required for ${actualId}`,
+        message: `${newReq.title}${newReq.estimatedCost ? ` (₹${newReq.estimatedCost.toLocaleString('en-US', { minimumFractionDigits: 2 })})` : ''} awaits Manager Approval.`,
+        timestamp: 'Just now',
+        dateGroup: 'Today',
+        isRead: false,
+        requestId: actualId,
+        type: 'Approvals',
+        targetRole: 'MANAGER',
+      }
+      setNotifications((prev) => [newNotif, ...prev])
+    }
 
     return newReq
   }
@@ -399,8 +734,27 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
     )
 
-    refreshBackendRequests()
-    window.dispatchEvent(new Event('kss_backend_updated'))
+    setNotifications((prev) => [
+      {
+        id: Date.now(),
+        title: `Approval Required for ${id}`,
+        message: `Resubmitted request ${id} is now awaiting Manager approval.`,
+        timestamp: 'Just now',
+        dateGroup: 'Today',
+        isRead: false,
+        requestId: id,
+        type: 'Approvals',
+        targetRole: 'MANAGER',
+      },
+      ...prev,
+    ])
+
+    resubmitTeamLeadRequest(id, updatedData)
+      .then(() => {
+        refreshBackendRequests()
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
+      .catch((err) => console.warn('Backend request resubmit sync error:', err))
   }
 
   const uploadReceipt = (paymentId: string, receiptData: ReceiptSubmissionPayload | File) => {
@@ -651,6 +1005,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         notifications,
         profile,
         addRequest,
+        refreshBackendRequests,
         resubmitRequest,
         uploadReceipt,
         assignVendorToRequest,
@@ -662,6 +1017,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         updateNotificationPreferences,
         notificationPreferences,
         updateProfile,
+        isPaymentsLoading,
+        paymentsError,
       }}
     >
       {children}

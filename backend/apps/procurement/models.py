@@ -62,13 +62,12 @@ class GoodsReceipt(TimeStampedModel):
     delivery_date = models.DateField(null=True, blank=True)
     delivery_location = models.CharField(max_length=255, blank=True, default='')
     product_name = models.CharField(max_length=255, blank=True, default='')
-    ordered_quantity = models.IntegerField(null=True, blank=True)
-    received_quantity = models.IntegerField(null=True, blank=True)
+    ordered_quantity = models.IntegerField(null=True, blank=True, default=1)
+    received_quantity = models.IntegerField(null=True, blank=True, default=1)
     receipt_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Pending Verification', db_index=True)
     notes = models.TextField(blank=True, default='')
-    # Explicit verification tracking (set when manager clicks Verify)
-    verified_by_name = models.CharField(max_length=200, blank=True, default='')
+    verified_by_name = models.CharField(max_length=255, blank=True, default='')
     verified_at = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):

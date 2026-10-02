@@ -21,6 +21,7 @@ import { MyRequestsPage } from '../portals/teamlead/MyRequestsPage'
 import { CreateRequestPage } from '../portals/teamlead/CreateRequestPage'
 import { RequestHistoryPage } from '../portals/teamlead/RequestHistoryPage'
 import { PaymentStatusPage } from '../portals/teamlead/PaymentStatusPage'
+import { RenewalsPage } from '../portals/teamlead/RenewalsPage'
 
 // Manager Portal Pages
 import { ManagerDashboard } from '../portals/manager/ManagerDashboard'
@@ -135,6 +136,7 @@ function TeamLeadRoutes() {
       <Route path="create-request" element={<CreateRequestPage />} />
       <Route path="request-history" element={<RequestHistoryPage />} />
       <Route path="payment-status" element={<PaymentStatusPage />} />
+      <Route path="renewals" element={<RenewalsPage />} />
       <Route path="notifications" element={<SharedNotificationsPage />} />
       <Route path="profile" element={<SharedProfilePage />} />
       <Route path="*" element={<Navigate to="/portal/team_lead/dashboard" replace />} />

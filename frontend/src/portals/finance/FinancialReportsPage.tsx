@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import { useSearchParams } from 'react-router-dom'
 import { useFinanceData } from '../../context/ManagerDataContext'
+import { useAuth } from '../../context/AuthContext'
 import { downloadPaymentLedgerPdf, getPaymentLedgerPdfBlobUrl } from '../../utils/paymentLedgerPdfGenerator'
 import { formatDate } from '../../utils/formatDate'
 
@@ -37,69 +38,6 @@ interface InvoiceExceptionItem {
   status: 'Under Investigation' | 'Held for Credit Note' | 'Vendor Re-invoicing' | 'Warehouse Inspection'
 }
 
-const SAMPLE_EXCEPTIONS: InvoiceExceptionItem[] = [
-  {
-    id: 'EXC-2026-081',
-    docRef: 'INV-DEL-9842',
-    vendor: 'Dell Technologies Enterprise',
-    category: 'IT Hardware',
-    department: 'IT',
-    exceptionReason: 'PO-GRN Quantity Mismatch (10 PO vs 9 Received)',
-    invoiceAmount: 350000,
-    discrepancyAmount: 35000,
-    agingDays: 4,
-    status: 'Held for Credit Note',
-  },
-  {
-    id: 'EXC-2026-078',
-    docRef: 'INV-AWS-2026',
-    vendor: 'Amazon Web Services India',
-    category: 'SaaS & Cloud',
-    department: 'IT',
-    exceptionReason: 'GST Surcharge Rate Discrepancy (18% vs 12% quoted)',
-    invoiceAmount: 580000,
-    discrepancyAmount: 24500,
-    agingDays: 6,
-    status: 'Vendor Re-invoicing',
-  },
-  {
-    id: 'EXC-2026-064',
-    docRef: 'INV-LOGI-3301',
-    vendor: 'Logitech Peripheral Corp',
-    category: 'Peripherals',
-    department: 'IT',
-    exceptionReason: 'Price Index Variance vs Master Agreement',
-    invoiceAmount: 112000,
-    discrepancyAmount: 8200,
-    agingDays: 2,
-    status: 'Under Investigation',
-  },
-  {
-    id: 'EXC-2026-059',
-    docRef: 'INV-SAMS-1109',
-    vendor: 'Samsung Display Systems',
-    category: 'Displays',
-    department: 'IT',
-    exceptionReason: 'Missing Physical Gate Entry Receipt (GRN)',
-    invoiceAmount: 240000,
-    discrepancyAmount: 240000,
-    agingDays: 8,
-    status: 'Warehouse Inspection',
-  },
-  {
-    id: 'EXC-2026-042',
-    docRef: 'INV-FURN-4402',
-    vendor: 'FurniCo Office Solutions',
-    category: 'Furniture & Equipment',
-    department: 'Operations',
-    exceptionReason: 'Damaged packaging noted on gate receipt',
-    invoiceAmount: 185000,
-    discrepancyAmount: 22000,
-    agingDays: 12,
-    status: 'Held for Credit Note',
-  },
-]
-
 const DEPARTMENT_OPTIONS = [
   { id: 'ALL', label: 'All Departments' },
   { id: 'IT', label: 'IT & Infrastructure' },
@@ -110,8 +48,11 @@ const DEPARTMENT_OPTIONS = [
 ]
 
 export const FinancialReportsPage: React.FC = () => {
-  const { budgets, payments, allRequests, financeKPIs, paymentData } = useFinanceData()
+  const { user } = useAuth()
+  const { budgets, payments, allRequests, financeKPIs, paymentData, complaints, invoices } = useFinanceData()
   const [searchParams, setSearchParams] = useSearchParams()
+
+  const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Treasury Controller'
 
   // State: Report Type
   const [reportType, setReportType] = useState<ReportType>('budget_utilization')
@@ -138,7 +79,7 @@ export const FinancialReportsPage: React.FC = () => {
     try {
       await downloadPaymentLedgerPdf({
         payments: filteredPayments.length > 0 ? filteredPayments : payments,
-        actorName: 'David Finance (Treasury Controller)',
+        actorName,
         statusFilter: selectedDept === 'ALL' ? 'ALL' : selectedDept,
       })
     } catch (err) {
@@ -153,7 +94,7 @@ export const FinancialReportsPage: React.FC = () => {
     try {
       const url = await getPaymentLedgerPdfBlobUrl({
         payments: filteredPayments.length > 0 ? filteredPayments : payments,
-        actorName: 'David Finance (Treasury Controller)',
+        actorName,
         statusFilter: selectedDept === 'ALL' ? 'ALL' : selectedDept,
       })
       setPreviewPdfUrl(url)
@@ -379,9 +320,49 @@ export const FinancialReportsPage: React.FC = () => {
     return { totalAmount, paidAmount, pendingAmount, taxHandled }
   }, [filteredPayments])
 
+  // Derived Real Exceptions from live complaints and disputed/pending invoices
+  const derivedExceptions = useMemo<InvoiceExceptionItem[]>(() => {
+    const list: InvoiceExceptionItem[] = []
+    complaints?.forEach((c: any, idx: number) => {
+      const unitCost = Number(c.unitPrice || c.pricePerUnit || 0)
+      const invoiceAmt = Number(c.totalAmount || (unitCost > 0 ? unitCost * Number(c.defectiveQuantity || 1) : 0))
+      list.push({
+        id: `EXC-${c.id || idx + 1}`,
+        docRef: c.poNumber || `PO-2026-${idx + 1}`,
+        vendor: c.vendor || 'Authorized Supplier',
+        category: c.complaintType || 'Procurement',
+        department: c.department || 'Operations',
+        exceptionReason: `${c.complaintType}: ${c.issueDescription?.substring(0, 50) || 'Quality or Delivery Discrepancy'}`,
+        invoiceAmount: invoiceAmt,
+        discrepancyAmount: Math.round(invoiceAmt * 0.2),
+        agingDays: Math.max(1, Math.floor((Date.now() - new Date(c.createdDate || new Date().toISOString().split('T')[0]).getTime()) / (1000 * 60 * 60 * 24))),
+        status: (c.status === 'Resolved' ? 'Held for Credit Note' : 'Under Investigation') as any
+      })
+    })
+    invoices?.forEach((inv: any, idx: number) => {
+      const invStatus = (inv.status || '').toUpperCase()
+      if (invStatus === 'REJECTED' || invStatus === 'DISPUTED' || invStatus === 'ON_HOLD' || invStatus === 'PENDING') {
+        const invAmt = Number(inv.total_amount || inv.amount || 0)
+        list.push({
+          id: `EXC-INV-${inv.id || idx + 1}`,
+          docRef: inv.invoice_number || `INV-${inv.id || idx + 1}`,
+          vendor: inv.vendor_name || inv.vendor || 'Enterprise Vendor',
+          category: inv.category || 'General Procurement',
+          department: inv.department || 'IT',
+          exceptionReason: inv.rejection_reason || 'Pending verification against Purchase Order',
+          invoiceAmount: invAmt,
+          discrepancyAmount: Math.round(invAmt * 0.10),
+          agingDays: 4,
+          status: invStatus === 'REJECTED' ? 'Vendor Re-invoicing' : 'Under Investigation'
+        })
+      }
+    })
+    return list
+  }, [complaints, invoices])
+
   // Filtered Exceptions
   const filteredExceptions = useMemo(() => {
-    return SAMPLE_EXCEPTIONS.filter((e) => {
+    return derivedExceptions.filter((e) => {
       const matchDept =
         selectedDept === 'ALL' ||
         e.department.toLowerCase() === selectedDept.toLowerCase() ||
@@ -396,7 +377,7 @@ export const FinancialReportsPage: React.FC = () => {
 
       return matchDept && matchSearch
     })
-  }, [selectedDept, tableSearch])
+  }, [derivedExceptions, selectedDept, tableSearch])
 
   // Exceptions Totals
   const exceptionTotals = useMemo(() => {

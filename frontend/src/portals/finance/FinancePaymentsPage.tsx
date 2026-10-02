@@ -41,7 +41,7 @@ export const FinancePaymentsPage: React.FC = () => {
     setTimeout(() => setToast(null), 3500)
   }
 
-  const actorName = user ? `${user.first_name} ${user.last_name}` : 'David Finance'
+  const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
 
   const handleExportPdf = async () => {
     setIsExportingPdf(true)

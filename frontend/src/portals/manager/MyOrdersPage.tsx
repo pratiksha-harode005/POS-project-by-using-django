@@ -35,6 +35,7 @@ export interface ManagerOrder {
   created_at?: string
   time: string
   status: 'Pending' | 'Approved' | 'Rejected' | 'In Procurement' | 'Completed'
+  raw_status?: string
   currentStage: number // 0 to 9
   currentlyWith: string
   lastUpdated: string
@@ -46,318 +47,12 @@ export interface ManagerOrder {
   invoiceNumber?: string
   documentsVerified?: boolean
   history?: StepHistoryItem[]
-  isForwardedToFinance?: boolean
-  forwardReason?: string
   financeStatus?: string
   paymentStatus?: string
+  timeline?: any[]
+  isForwardedToFinance?: boolean
   rawRequest?: any
 }
-
-const INITIAL_ORDERS: ManagerOrder[] = [
-  {
-    id: 'REQ-2026-001',
-    title: 'High Performance Laptops for Engineering Team',
-    description: '10x high-spec 14-inch mobile workstations with 32GB RAM for local LLM compilation, machine learning model prototyping, and developer productivity.',
-    category: 'IT Hardware & Infrastructure',
-    quantity: 10,
-    unit: 'Units',
-    estCost: '₹3,50,000',
-    rawCost: 350000,
-    unitPrice: '₹35,000 / unit',
-    vendor: 'Dell Technologies Enterprise',
-    deliveryLocation: 'Bangalore Campus, Innovation Tower, Floor 4',
-    budgetCode: 'CAPEX-ENG-2026-Q3',
-    date: '2026-09-10',
-    time: '10:14 AM',
-    status: 'In Procurement',
-    currentStage: 6, // Stage 7: Delivery
-    currentlyWith: 'Logistics & Receiving Dock',
-    lastUpdated: '2026-09-11 10:45 AM',
-    department: 'Engineering',
-    requester: 'Sarah Manager',
-    priority: 'High',
-    poNumber: 'PO-2026-4582',
-    grnNumber: 'GRN-2026-2214',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Sarah Manager (Manager)',
-        action: 'Created & Submitted Request',
-        timestamp: '2026-09-10 10:14 AM',
-        note: '10x high-spec laptops requested for machine learning builds and compiler workloads.',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager (Self-Verified)',
-        action: 'Department Need Approved',
-        timestamp: '2026-09-10 11:30 AM',
-        note: 'Verified against team headcount growth and technical specs.',
-      },
-      {
-        stageNumber: 3,
-        stageName: 'Finance Approval',
-        actor: 'Mark Finance (Finance Controller)',
-        action: 'Capex Certified & Approved',
-        timestamp: '2026-09-10 03:20 PM',
-        note: 'Budget allocation verified under CAPEX-ENG-2026-Q3.',
-      },
-      {
-        stageNumber: 4,
-        stageName: 'Admin Approval',
-        actor: 'David Admin (Head of Operations)',
-        action: 'Executive Sign-off Granted',
-        timestamp: '2026-09-10 05:00 PM',
-      },
-      {
-        stageNumber: 5,
-        stageName: 'RFQ Sent',
-        actor: 'Procurement Desk',
-        action: 'RFQ #982 Issued to Approved Vendors',
-        timestamp: '2026-09-11 09:00 AM',
-      },
-      {
-        stageNumber: 6,
-        stageName: 'Vendor Quotes Received',
-        actor: 'Dell Technologies Enterprise',
-        action: 'Quotation QUO-4582 ($35,000) Ingested',
-        timestamp: '2026-09-11 10:00 AM',
-        note: 'Best price-to-warranty ratio selected among 3 supplier bids.',
-      },
-      {
-        stageNumber: 7,
-        stageName: 'Delivery',
-        actor: 'Logistics & Receiving Dock',
-        action: 'Goods Received & Inspected at Central Dock',
-        timestamp: '2026-09-11 10:45 AM',
-        note: 'Dock intake verified against packing slip and serial numbers.',
-      },
-    ],
-  },
-  {
-    id: 'REQ-2026-012',
-    title: 'Cloud Infrastructure Yearly Enterprise Renewal (AWS & GCP)',
-    description: 'Annual compute and object storage reservation contract extension for core microservices, multi-region Kubernetes clusters, and database backups.',
-    category: 'Software & SaaS',
-    quantity: 1,
-    unit: 'Annual Contract',
-    estCost: '₹5,80,000',
-    rawCost: 580000,
-    unitPrice: '₹5,80,000 / year',
-    vendor: 'Amazon Web Services India Pvt Ltd',
-    deliveryLocation: 'Virtual Cloud Enterprise Tenant',
-    budgetCode: 'OPEX-CLOUD-2026-ANNUAL',
-    date: '2026-09-08',
-    time: '09:30 AM',
-    status: 'Pending',
-    currentStage: 2, // Stage 3: Finance Approval
-    currentlyWith: 'Finance Review — Mark Finance',
-    lastUpdated: '2026-09-11 09:15 AM',
-    department: 'DevOps & IT',
-    requester: 'Sarah Manager',
-    priority: 'Critical',
-    poNumber: 'PO-2026-4190',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Sarah Manager (Manager)',
-        action: 'Submitted Renewal Contract Request',
-        timestamp: '2026-09-08 09:30 AM',
-        note: '32% discount commitment secured for upfront yearly reservation.',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager (Manager)',
-        action: 'Approved & Recommended to Finance',
-        timestamp: '2026-09-08 02:15 PM',
-        note: 'Approved. Forwarded for high-value OPEX verification.',
-      },
-      {
-        stageNumber: 3,
-        stageName: 'Finance Approval',
-        actor: 'Mark Finance (Finance Controller)',
-        action: 'Under Financial Review',
-        timestamp: '2026-09-11 09:15 AM',
-        note: 'Verifying quarterly cashflow allocation for upfront annual payment.',
-      },
-    ],
-  },
-  {
-    id: 'REQ-2026-018',
-    title: 'Standing Desks & Ergonomic Accessories for Operations Floor',
-    description: '20x motorized dual-motor height-adjustable desks with cable management and monitor arm mounts for ergonomic workplace standard compliance.',
-    category: 'Furniture & Facilities',
-    quantity: 20,
-    unit: 'Sets',
-    estCost: '₹2,85,000',
-    rawCost: 285000,
-    unitPrice: '₹14,250 / set',
-    vendor: 'Featherlite Commercial Furniture',
-    deliveryLocation: 'Operations Wing, 2nd Floor, Facility Central',
-    budgetCode: 'FAC-FURN-2026-Q3',
-    date: '2026-09-07',
-    time: '11:20 AM',
-    status: 'Pending',
-    currentStage: 1, // Stage 2: Manager Approval
-    currentlyWith: 'Manager — Sarah Manager (Self-Review)',
-    lastUpdated: '2026-09-11 08:30 AM',
-    department: 'Operations',
-    requester: 'Sarah Manager',
-    priority: 'Medium',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Sarah Manager (Manager)',
-        action: 'Request Drafted & Submitted',
-        timestamp: '2026-09-07 11:20 AM',
-        note: 'Ergonomic audit recommendation for operations desk setup.',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager (Manager)',
-        action: 'In Progress — Verifying Space Plan',
-        timestamp: '2026-09-11 08:30 AM',
-      },
-    ],
-  },
-  {
-    id: 'REQ-2026-003',
-    title: 'Enterprise CRM Software Annual License (50 Seats)',
-    description: '50x enterprise sales CRM user licenses with sales pipeline automation, custom reporting dashboards, and Slack integration add-on.',
-    category: 'Software & SaaS',
-    quantity: 50,
-    unit: 'User Seats',
-    estCost: '₹1,20,000',
-    rawCost: 120000,
-    unitPrice: '₹2,400 / seat / year',
-    vendor: 'Salesforce Enterprise Solutions',
-    deliveryLocation: 'Corporate Digital Workspace',
-    budgetCode: 'SAAS-SUBS-2026',
-    date: '2026-09-01',
-    time: '09:00 AM',
-    status: 'Completed',
-    currentStage: 9, // Stage 10: Payment Settled
-    currentlyWith: 'Finance Accounts — Complete',
-    lastUpdated: '2026-09-09 04:00 PM',
-    department: 'Sales & BD',
-    requester: 'Sarah Manager',
-    priority: 'Medium',
-    poNumber: 'PO-2026-3980',
-    grnNumber: 'GRN-2026-1940',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Sarah Manager',
-        action: 'Created Request',
-        timestamp: '2026-09-01 09:00 AM',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager',
-        action: 'Approved',
-        timestamp: '2026-09-02 11:30 AM',
-      },
-      {
-        stageNumber: 3,
-        stageName: 'Finance Approval',
-        actor: 'Mark Finance',
-        action: 'Approved',
-        timestamp: '2026-09-03 02:15 PM',
-      },
-      {
-        stageNumber: 7,
-        stageName: 'Delivery',
-        actor: 'IT Systems Admin',
-        action: 'License Keys Provisioned & Validated',
-        timestamp: '2026-09-04 10:00 AM',
-      },
-      {
-        stageNumber: 8,
-        stageName: 'Invoice',
-        actor: 'Finance Accounts',
-        action: 'Invoice Reconciled & Validated',
-        timestamp: '2026-09-05 02:00 PM',
-      },
-      {
-        stageNumber: 9,
-        stageName: 'Verification and Order Complete',
-        actor: 'Procurement Audit Desk',
-        action: 'Order Reconciled & Certified',
-        timestamp: '2026-09-06 03:00 PM',
-        note: 'Order verified and operational compliance achieved.',
-      },
-      {
-        stageNumber: 10,
-        stageName: 'Payment',
-        actor: 'Finance Treasury',
-        action: 'Final Payment Disbursed & Settled',
-        timestamp: '2026-09-09 04:00 PM',
-        note: 'Payment processed and disbursed. Requisition fully settled.',
-      },
-    ],
-  },
-  {
-    id: 'REQ-2026-024',
-    title: 'Server Room Precision Cooling Units & Annual Maintenance',
-    description: '2x 5.5-ton precision split air conditioning units with continuous humidity control and automatic failover switch for primary datacenter rack array.',
-    category: 'Facilities & Hardware',
-    quantity: 2,
-    unit: 'Units',
-    estCost: '₹4,10,000',
-    rawCost: 410000,
-    unitPrice: '₹2,05,000 / unit',
-    vendor: 'Daikin Commercial HVAC Systems',
-    deliveryLocation: 'Central Server Room B, Basement Level',
-    budgetCode: 'CAPEX-DC-2026',
-    date: '2026-09-05',
-    time: '02:40 PM',
-    status: 'In Procurement',
-    currentStage: 4, // Stage 5: RFQ Sent
-    currentlyWith: 'Procurement — Vendor RFQ Desk',
-    lastUpdated: '2026-09-10 03:15 PM',
-    department: 'Infrastructure',
-    requester: 'Sarah Manager',
-    priority: 'High',
-    history: [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Sarah Manager',
-        action: 'Submitted Request',
-        timestamp: '2026-09-05 02:40 PM',
-      },
-      {
-        stageNumber: 2,
-        stageName: 'Manager Approval',
-        actor: 'Sarah Manager',
-        action: 'Approved & Justified',
-        timestamp: '2026-09-06 10:00 AM',
-      },
-      {
-        stageNumber: 3,
-        stageName: 'Finance Approval',
-        actor: 'Mark Finance',
-        action: 'Capex Approved',
-        timestamp: '2026-09-08 04:30 PM',
-      },
-      {
-        stageNumber: 5,
-        stageName: 'RFQ Sent',
-        actor: 'Procurement Desk',
-        action: 'RFQ #994 Active with 3 HVAC Vendors',
-        timestamp: '2026-09-10 03:15 PM',
-        note: 'Awaiting vendor sealed technical proposals.',
-      },
-    ],
-  },
-]
 
 export const MyOrdersPage: React.FC = () => {
   const { user } = useAuth()
@@ -389,6 +84,17 @@ export const MyOrdersPage: React.FC = () => {
       const isCompleted = (req.status as string) === 'completed' || (req as any).paymentStatus === 'paid' || (req as any).financeStatus === 'completed'
       const isInProcurement = req.status === 'assigned_to_vendor' || req.status === 'vendor_accepted' || req.status === 'delivered'
       const isRejected = req.status === 'rejected' || req.status === 'finance_rejected' || req.status === 'vendor_rejected'
+      const isSoftware = req.category?.toLowerCase().includes('software') || req.category?.toLowerCase().includes('saas') || req.request_type === 'software'
+      const isApproved =
+        req.status === 'approved' ||
+        (req.status as string) === 'payment_approved' ||
+        (req.status as string) === 'payment_justification_submitted' ||
+        (req.status as string) === 'payment_justified' ||
+        req.status === 'finance_review' ||
+        req.status === 'recommended_to_finance' ||
+        req.status === 'finance_approved' ||
+        req.raw_status === 'MANAGER_APPROVED' ||
+        req.raw_status === 'PAYMENT_APPROVED'
       
       const isForwarded =
         req.status === 'recommended_to_finance' ||
@@ -407,7 +113,7 @@ export const MyOrdersPage: React.FC = () => {
       if (isCompleted) status = 'Completed'
       else if (isInProcurement) status = 'In Procurement'
       else if (isRejected) status = 'Rejected'
-      else if (req.status === 'approved' || req.status === 'finance_approved' || (req.currentStage && req.currentStage >= 4)) status = 'Approved'
+      else if (isApproved) status = 'Approved'
       else status = 'Pending'
 
       const qty = req.quantity || 1
@@ -415,34 +121,15 @@ export const MyOrdersPage: React.FC = () => {
       const unitPriceVal = qty > 0 ? Math.round(totalCost / qty) : totalCost
       const deptClean = (req.department || 'IT').toUpperCase().replace(/\s+/g, '')
 
-      const poNum = req.poNumber || (req as any).po_number || (req as any).po_id
-      const grnNum = req.grnNumber || (req as any).grn_number || (req as any).receipt_id
-      const invNum = (req as any).invoiceNumber || (req as any).invoice_number || (req as any).invoice_id
-
-      const isDocsVerified = Boolean(
-        (req as any).isVerified ||
-        (req as any).documentsVerified ||
-        (req as any).is_invoice_verified ||
-        (req.currentStage && req.currentStage >= 8) ||
-        (typeof window !== 'undefined' && (() => {
-          try {
-            const invs: string[] = JSON.parse(localStorage.getItem('kss_manager_verified_invoices') || '[]')
-            const grns: string[] = JSON.parse(localStorage.getItem('kss_manager_verified_grns') || '[]')
-            const cleanId = (req.id || '').replace(/^(REQ-|PO-)/, '').toUpperCase()
-            const hasInv = invs.some((i: string) => i.toUpperCase().includes(cleanId))
-            const hasGr = grns.some((g: string) => g.toUpperCase().includes(cleanId))
-            return hasInv && hasGr
-          } catch { return false }
-        })())
+      const effectiveCurrentlyWith = req.currentlyWith || (req as any).currently_with || (
+        isSoftware
+          ? (req.status === 'approved' || req.raw_status === 'MANAGER_APPROVED' ? 'Team Lead — Mock Payment Required' :
+             (req.status as string) === 'payment_approved' || req.raw_status === 'PAYMENT_APPROVED' ? 'Team Lead — Awaiting Payment Justification' :
+             (req.status as string) === 'payment_justification_submitted' || req.raw_status === 'PAYMENT_JUSTIFICATION_SUBMITTED' ? 'Manager — Verifying Justification' :
+             (req.status as string) === 'payment_justified' || req.raw_status === 'PAYMENT_JUSTIFIED' ? 'Team Lead — Awaiting Final Acknowledgment' :
+             isCompleted ? 'Completed & Archived' : 'Manager Sign-off')
+          : (status === 'Approved' || status === 'In Procurement' ? 'Procurement Sourcing Desk' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team')
       )
-
-      let effectiveStage = (req.currentStage !== undefined && req.currentStage !== null)
-        ? req.currentStage
-        : (isCompleted ? (req.category === 'Software' ? 5 : 9) : isInProcurement ? 6 : (req.status === 'approved' ? 4 : 1))
-
-      if (isDocsVerified && effectiveStage < 8 && !isCompleted && status !== 'Rejected') {
-        effectiveStage = 8
-      }
 
       return {
         id: req.id,
@@ -462,22 +149,19 @@ export const MyOrdersPage: React.FC = () => {
         created_at: req.created_at || req.createdAt || req.date,
         time: '10:00 AM',
         status: status,
-        currentStage: effectiveStage,
-        currentlyWith: isForwarded ? 'Finance Department Review' : (status === 'Approved' || status === 'In Procurement' ? 'Procurement Sourcing Desk' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team'),
+        raw_status: req.raw_status,
+        financeStatus: req.financeStatus,
+        paymentStatus: req.paymentStatus,
+        currentStage: req.currentStage || (status === 'Approved' || status === 'In Procurement' ? 4 : (isCompleted ? 9 : 1)),
+        currentlyWith: effectiveCurrentlyWith,
         lastUpdated: req.date,
         department: req.department,
         requester: req.requester,
         priority: (req.priority as any) || 'Medium',
+        timeline: req.timeline || [],
+        history: req.history || [],
         isForwardedToFinance: isForwarded,
-        forwardReason: (req as any).recommendationReason || (req as any).notes || 'Forwarded to Finance for budget and disbursement clearance',
-        financeStatus: (req as any).financeStatus || (isForwarded ? 'Pending Finance Approval' : undefined),
-        paymentStatus: req.paymentStatus,
-        history: req.history,
-        poNumber: poNum,
-        grnNumber: grnNum,
-        invoiceNumber: invNum,
-        documentsVerified: isDocsVerified,
-        rawRequest: req
+        rawRequest: req,
       }
     })
 
@@ -495,7 +179,7 @@ export const MyOrdersPage: React.FC = () => {
 
   // Set of expanded order IDs
   // By default, open the first order so the user immediately sees the tracking workflow
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['REQ-2026-001']))
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
   // Toggle single order expand
   const toggleExpand = (id: string) => {
@@ -1232,13 +916,13 @@ export const MyOrdersPage: React.FC = () => {
                         category={order.category}
                         title={order.title}
                         currentStage={order.currentStage}
-                        status={order.rawRequest?.status || order.status}
+                        status={order.raw_status || order.status}
                         currentlyWith={order.currentlyWith}
+                        financeStatus={order.financeStatus || order.rawRequest?.financeStatus}
+                        paymentStatus={order.paymentStatus || order.rawRequest?.paymentStatus}
                         lastUpdated={order.lastUpdated}
                         history={order.history || order.rawRequest?.history}
                         approval_steps={order.rawRequest?.approval_steps || (order as any).approval_steps}
-                        financeStatus={order.financeStatus || order.rawRequest?.financeStatus}
-                        paymentStatus={order.paymentStatus || order.rawRequest?.paymentStatus}
                         poNumber={order.poNumber || order.rawRequest?.po_number || order.rawRequest?.poNumber}
                         grnNumber={order.grnNumber || order.rawRequest?.grn_number || order.rawRequest?.grnNumber}
                         invoiceNumber={order.invoiceNumber || order.rawRequest?.invoice_number || order.rawRequest?.invoiceNumber}
