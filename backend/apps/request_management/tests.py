@@ -258,6 +258,66 @@ class ProcurementApprovalWorkflowTests(APITestCase):
         self.assertEqual(pr.status, PurchaseRequest.STATUS_SENT_BACK)
         self.assertEqual(pr.current_approval_level, PurchaseRequest.LEVEL_EMPLOYEE)
         self.assertEqual(pr.current_stage, 0)
+
+    def test_manager_approve_rejects_duplicate_approval_for_same_request(self):
+        """A manager can only approve a request once, even if the same API is called again."""
+        pr = self._create_employee_request(amount="120000.00")
+
+        self.client.force_authenticate(user=self.team_lead)
+        self.client.post(f'/api/team-lead/requests/{pr.id}/approve/', {'comments': 'Approved by Team Lead.'}, format='json')
+
+        self.client.force_authenticate(user=self.manager)
+        first = self.client.post(
+            f'/api/manager/requests/{pr.id}/approve/',
+            {'comments': 'Approved by Manager.', 'approved_amount': '120000.00'},
+            format='json'
+        )
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+
+        repeat = self.client.post(
+            f'/api/manager/requests/{pr.id}/approve/',
+            {'comments': 'Duplicate approval attempt.', 'approved_amount': '120000.00'},
+            format='json'
+        )
+        self.assertEqual(repeat.status_code, status.HTTP_409_CONFLICT, repeat.data)
+        self.assertIn('already been completed', str(repeat.data.get('error', '')).lower())
+
+    def test_team_lead_mock_payment_rejects_duplicate_execution(self):
+        """Mock payment can be processed only once per request; a second execution must be rejected."""
+        pr = self._create_employee_request(amount="95000.00")
+        pr.status = PurchaseRequest.STATUS_PAYMENT_APPROVED
+        pr.current_approval_level = PurchaseRequest.LEVEL_TEAM_LEAD
+        pr.current_stage = 5
+        pr.request_type = 'New Purchase'
+        pr.category = 'Software & SaaS'
+        pr.assigned_team_lead = self.team_lead
+        pr.save(update_fields=['status', 'current_approval_level', 'current_stage', 'request_type', 'category', 'assigned_team_lead'])
+
+        self.client.force_authenticate(user=self.team_lead)
+        first = self.client.post(
+            f'/api/team-lead/requests/{pr.id}/mock-payment/',
+            {
+                'payment_reference': 'MOCK-PAY-001',
+                'amount': '95000.00',
+                'payment_method': 'UPI',
+                'notes': 'Initial mock payment.'
+            },
+            format='json'
+        )
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+
+        repeat = self.client.post(
+            f'/api/team-lead/requests/{pr.id}/mock-payment/',
+            {
+                'payment_reference': 'MOCK-PAY-002',
+                'amount': '95000.00',
+                'payment_method': 'UPI',
+                'notes': 'Duplicate attempt.'
+            },
+            format='json'
+        )
+        self.assertEqual(repeat.status_code, status.HTTP_409_CONFLICT, repeat.data)
+        self.assertIn('already been processed', str(repeat.data.get('error', '')).lower())
         self.assertTrue(pr.approval_history.filter(action='SEND_BACK').exists())
 
     def test_workflow_10_admin_sees_complete_history(self):

@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { useFinanceData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
@@ -13,14 +15,19 @@ const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 export const FinancePurchaseRequestsPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { allRequests, approveFinanceRequest } = useFinanceData()
+  const { allRequests, refreshData, approveFinanceRequest } = useFinanceData()
   const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
 
   const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
 
   // State
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [deptFilter, setDeptFilter] = useState(searchParams.get('dept') || 'ALL')
+  const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
 
   // Approval modal state (Image 2)
   const [approveModalReq, setApproveModalReq] = useState<ProcurementRequest | null>(null)
@@ -62,9 +69,13 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
     return Array.from(new Set(allRequests.map((r) => r.department)))
   }, [allRequests])
 
+  // Segmented filter counts
+  const softwareCount = useMemo(() => allRequests.filter(r => isSoftwareRequest(r)).length, [allRequests])
+  const hardwareCount = useMemo(() => allRequests.filter(r => isHardwareRequest(r)).length, [allRequests])
+
   // Filtered & Sorted List
   const filteredRequests = useMemo(() => {
-    return allRequests
+    const matching = allRequests
       .filter((r) => {
         const matchesSearch =
           r.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -76,22 +87,46 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
         const matchesPriority = priorityFilter === 'ALL' || r.priority === priorityFilter
         const matchesStatus =
           statusFilter === 'ALL' ||
-          (statusFilter === 'Pending' && (r.status.includes('pending') || r.status.includes('finance_review') || r.status.includes('sent_to_finance'))) ||
-          (statusFilter === 'Approved' && (r.status === 'approved' || r.status === 'finance_approved' || r.financeStatus === 'Approved')) ||
-          (statusFilter === 'Rejected' && (r.status === 'rejected' || r.status === 'finance_rejected'))
+          (statusFilter === 'Pending' && (r.status.includes('pending') || r.status.includes('finance_review') || r.status.includes('sent_to_finance') || r.financeStatus === 'Awaiting Finance Action')) ||
+          (statusFilter === 'Approved' && (
+            r.status === 'approved' ||
+            r.status === 'finance_approved' ||
+            r.status === 'payment_approved' ||
+            r.status === 'payment_justification_submitted' ||
+            r.status === 'payment_justified' ||
+            r.status === 'payment_completed' ||
+            r.status === 'completed' ||
+            r.financeStatus === 'Approved' ||
+            r.financeStatus === 'Paid' ||
+            r.financeStatus === 'Completed' ||
+            ['FINANCE_APPROVED', 'PAYMENT_APPROVED', 'PAYMENT_PROCESSED', 'PAYMENT_JUSTIFICATION_SUBMITTED', 'PAYMENT_JUSTIFIED', 'PAYMENT_COMPLETED', 'COMPLETED', 'TEAM_LEAD_CONFIRMED'].includes((r as any).raw_status || '')
+          )) ||
+          (statusFilter === 'Rejected' && (r.status === 'rejected' || r.status === 'finance_rejected' || r.financeStatus === 'Rejected'))
 
-        return matchesSearch && matchesDept && matchesPriority && matchesStatus
+        const matchesType = requestType === 'all'
+          ? true
+          : requestType === 'software'
+          ? isSoftwareRequest(r)
+          : isHardwareRequest(r)
+
+        return matchesSearch && matchesDept && matchesPriority && matchesStatus && matchesType
       })
-      .sort((a, b) => {
-        if (sortField === 'amount') {
-          return sortAsc ? a.amount - b.amount : b.amount - a.amount
-        } else {
-          return sortAsc
-            ? new Date(a.date).getTime() - new Date(b.date).getTime()
-            : new Date(b.date).getTime() - new Date(a.date).getTime()
-        }
-      })
-  }, [allRequests, search, deptFilter, priorityFilter, statusFilter, sortField, sortAsc])
+
+    if (sortField === 'date' && !sortAsc) {
+      return sortRequestsNewestFirst(matching)
+    }
+
+    return matching.sort((a, b) => {
+      if (sortField === 'amount') {
+        return sortAsc ? a.amount - b.amount : b.amount - a.amount
+      } else {
+        const timeA = new Date((a as any).createdAt || a.date || 0).getTime()
+        const timeB = new Date((b as any).createdAt || b.date || 0).getTime()
+        if (timeB !== timeA) return sortAsc ? timeA - timeB : timeB - timeA
+        return String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
+      }
+    })
+  }, [allRequests, search, deptFilter, priorityFilter, statusFilter, requestType, sortField, sortAsc])
 
   // Pagination slice — when pageSize is ALL, all records are displayed
   const actualPageSize = pageSize === 'ALL' ? (filteredRequests.length || 1) : pageSize
@@ -135,6 +170,20 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
           <CheckSquare size={14} />
           Review Pending Approvals
         </button>
+      </div>
+
+      {/* Request Type Segmented Filter */}
+      <div className="flex items-center justify-between">
+        <RequestTypeFilter
+          value={requestType}
+          onChange={(newType) => {
+            setRequestType(newType)
+            setCurrentPage(1)
+          }}
+          totalCount={allRequests.length}
+          softwareCount={softwareCount}
+          hardwareCount={hardwareCount}
+        />
       </div>
 
       {/* Filter and Search Bar */}

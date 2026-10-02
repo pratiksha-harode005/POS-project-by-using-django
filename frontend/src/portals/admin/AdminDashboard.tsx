@@ -1549,6 +1549,7 @@ export const AdminDashboard: React.FC = () => {
                 title={trackingReq.title}
                 lastUpdated={trackingReq.date}
                 history={trackingReq.history}
+                timeline={(trackingReq as any).timeline}
               />
             </div>
 

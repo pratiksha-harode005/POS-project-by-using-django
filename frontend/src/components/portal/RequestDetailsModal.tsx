@@ -5,6 +5,9 @@ import {
   FileText, ChevronDown, Check, Info, Cpu, Layers
 } from 'lucide-react'
 import type { ProcurementRequest } from '../../context/ManagerDataContext'
+import { useManagerData } from '../../context/ManagerDataContext'
+import { TrackingStepper } from './TrackingStepper'
+import { getRecommendationStatus } from '../../utils/workflowUtils'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -29,10 +32,61 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
   recommendLabel = 'Recommend to Higher Authority',
   isFinancePortal = false,
 }) => {
+  let allRequests: ProcurementRequest[] = []
+  try {
+    const mgr = useManagerData()
+    allRequests = mgr.allRequests || []
+  } catch (e) {
+    allRequests = []
+  }
+
   if (!isOpen || !request) return null
 
   const subcategory = request.subcategory || 'Office Equipment'
-  const warranty = '1 Year' // or derived from request if there was a warranty field
+  
+  const isSoft = (
+    (request.category || '').toLowerCase().includes('software') ||
+    (request.category || '').toLowerCase().includes('saas') ||
+    (request.category || '').toLowerCase().includes('cloud') ||
+    (request.category || '').toLowerCase().includes('license') ||
+    (request.category || '').toLowerCase().includes('subscription') ||
+    Boolean((request as any).softwareName)
+  )
+
+  let detailLabel = 'Category Detail: Warranty Period *'
+  let detailValue = '1 Year'
+
+  if (isSoft) {
+    detailLabel = 'Subscription Type *'
+    const pjSub = (request as any).payment_justification_detail?.subscription_type || request.extraFields?.payment_justification?.subscription_type || request.extraFields?.subscription_type || (request as any).subscription_type
+    const rc = pjSub || request.extraFields?.renewalCycle || (request as any).renewalCycle
+
+    if (rc) {
+      const s = String(rc).trim().toLowerCase()
+      if (s.includes('one')) detailValue = 'One-Time'
+      else if (s.includes('year') || s.includes('annual')) detailValue = 'Annual'
+      else if (s.includes('month')) detailValue = 'Monthly'
+      else detailValue = rc
+    } else {
+      const sDate = request.extraFields?.start_date || (request as any).start_date
+      const eDate = request.extraFields?.end_date || (request as any).end_date
+      let diffDays: number | null = null
+      if (sDate && eDate) {
+        try {
+          const d1 = new Date(sDate)
+          const d2 = new Date(eDate)
+          diffDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
+        } catch {}
+      }
+      if (diffDays !== null && diffDays > 0 && diffDays <= 45) detailValue = 'Monthly'
+      else if (diffDays !== null && diffDays >= 300) detailValue = 'Annual'
+      else detailValue = 'Annual'
+    }
+  } else if (request.extraFields?.warrantyPeriod) {
+    detailValue = request.extraFields.warrantyPeriod
+  }
+
+  const warranty = detailValue
 
   const quantity = request.quantity || 1
   const requiredByDate = request.requiredBy || '2026-09-30'
@@ -78,13 +132,13 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
         deliveryTimeline: '2 to 4 Business Days',
       }
     }
-    if (t.includes('software') || t.includes('saas') || t.includes('cloud')) {
+    if (isSoft || t.includes('software') || t.includes('saas') || t.includes('cloud')) {
       return {
-        modelName: 'Enterprise SaaS Annual Multi-Seat Production License & Cloud Capacity',
+        modelName: (request as any).softwareName || 'Enterprise SaaS Multi-Seat Production License & Cloud Capacity',
         partNumber: 'SKU-SW-CORP-2026',
         technicalSpecs: 'Dedicated Tenant Deployment, SSO/SAML 2.0 Integration, 99.99% Uptime SLA, Audit Logging, Automated Daily Encrypted Backups.',
         unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} 24x7 Premium Enterprise Technical SLA Support with Dedicated Account Manager`,
+        warrantyTerms: detailValue,
         certifications: 'SOC 2 Type II, ISO 27001, GDPR, HIPAA Certified',
         deliveryTimeline: 'Instant Digital Provisioning within 2 Hours of Finance Clearance',
       }
@@ -101,6 +155,7 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
   }
 
   const product = getProductDetails()
+  const recInfo = request ? getRecommendationStatus(request) : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
@@ -115,19 +170,29 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
                 <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-md">
                   {request.id}
                 </span>
-                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                  request.status === 'pending_approval' || request.financeStatus === 'pending'
-                    ? 'bg-amber-100 text-amber-900 border-amber-300'
-                    : request.status === 'approved' || request.financeStatus === 'approved'
-                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                    : request.status === 'recommended_to_admin'
-                    ? 'bg-purple-100 text-purple-900 border-purple-300'
-                    : 'bg-rose-100 text-rose-900 border-rose-300'
-                }`}>
-                  {request.financeStatus
-                    ? `Finance: ${request.financeStatus.toUpperCase()}`
-                    : request.status.replace(/_/g, ' ').toUpperCase()}
-                </span>
+                {recInfo?.isRecommended ? (
+                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 shadow-2xs ${
+                    recInfo.isRecommendedToAdmin
+                      ? 'bg-purple-100 text-purple-950 border-purple-300'
+                      : 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                  }`}>
+                    <ArrowUpRight size={11} /> {recInfo.statusLabel}
+                  </span>
+                ) : (
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                    request.status === 'pending_approval' || request.financeStatus === 'pending'
+                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                      : request.status === 'approved' || request.financeStatus === 'approved'
+                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                      : request.status === 'recommended_to_admin'
+                      ? 'bg-purple-100 text-purple-900 border-purple-300'
+                      : 'bg-rose-100 text-rose-900 border-rose-300'
+                  }`}>
+                    {request.financeStatus
+                      ? `Finance: ${request.financeStatus.toUpperCase()}`
+                      : request.status.replace(/_/g, ' ').toUpperCase()}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
                 Fill in request details for approval & procurement workflow.
@@ -146,6 +211,54 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
 
         {/* Modal Form Body — Exact 1:1 Layout from Image 1 */}
         <div className="p-8 space-y-4 text-xs max-h-[78vh] overflow-y-auto">
+          {/* Recommendation Banner if present */}
+          {recInfo?.isRecommended && (
+            <div className={`p-3.5 rounded-xl border text-xs flex items-center justify-between shadow-2xs ${
+              recInfo.isRecommendedToAdmin
+                ? 'bg-purple-50 border-purple-300 text-purple-950'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-950'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-lg text-white flex items-center justify-center flex-shrink-0 shadow-xs ${
+                  recInfo.isRecommendedToAdmin ? 'bg-purple-600' : 'bg-emerald-600'
+                }`}>
+                  <ArrowUpRight size={18} />
+                </div>
+                <div>
+                  <span className="font-black text-sm">{recInfo.statusLabel}</span>
+                  <p className="text-[11px] font-medium opacity-90 mt-0.5">
+                    {recInfo.reason}
+                  </p>
+                  <p className="text-[10px] font-bold opacity-80 mt-1">
+                    Source: {recInfo.portalName} ({recInfo.actorName}) • Date: {recInfo.date}
+                  </p>
+                </div>
+              </div>
+              <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wide border ${
+                recInfo.isRecommendedToAdmin
+                  ? 'bg-purple-200 text-purple-950 border-purple-300'
+                  : 'bg-emerald-200 text-emerald-950 border-emerald-300'
+              }`}>
+                {recInfo.shortBadgeLabel}
+              </span>
+            </div>
+          )}
+
+          {/* Tracking Progress Bar */}
+          <div className="pb-2">
+            <TrackingStepper
+              category={request.category}
+              title={request.title}
+              status={request.raw_status || request.status}
+              currentlyWith={request.currentlyWith || (request as any).currently_with}
+              financeStatus={request.financeStatus}
+              paymentStatus={request.paymentStatus}
+              lastUpdated={request.date}
+              history={request.history}
+              timeline={(request as any).timeline}
+            />
+          </div>
+
           {/* 1. Request Title * */}
           <div>
             <label className="block font-bold text-gray-700 mb-1">1. Request Title *</label>
@@ -188,7 +301,7 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
           {/* Category Detail: Warranty Period * (Image 1 Callout Box) */}
           <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200 space-y-1.5 shadow-2xs">
             <label className="block font-bold text-blue-900 text-xs">
-              Category Detail: Warranty Period *
+              {detailLabel}
             </label>
             <div className="relative">
               <input
@@ -235,7 +348,78 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
               <input
                 type="text"
                 readOnly
-                value={fmt(request.amount)}
+                value={fmt(
+                  (() => {
+                    const check = (...vals: any[]) => {
+                      for (const v of vals) {
+                        if (v !== undefined && v !== null && v !== '') {
+                          const num = Number(v)
+                          if (!isNaN(num) && num > 0) return num
+                        }
+                      }
+                      return 0
+                    }
+
+                    const isRenewalOrUpgrade = 
+                      (request as any).request_operation === 'RENEWAL' ||
+                      (request as any).request_operation === 'UPGRADE' ||
+                      (request as any).rawRequest?.request_operation === 'RENEWAL' ||
+                      (request as any).rawRequest?.request_operation === 'UPGRADE' ||
+                      (request.title || '').toLowerCase().startsWith('renewal:') ||
+                      (request.title || '').toLowerCase().startsWith('upgrade:') ||
+                      (request.title || '').toLowerCase().startsWith('renew:')
+
+                    if (isRenewalOrUpgrade) {
+                      const origId = (request as any).original_request || 
+                                     (request as any).parent_request || 
+                                     request.rawRequest?.original_request || 
+                                     request.rawRequest?.parent_request || 
+                                     request.rawRequest?.original_request_id || 
+                                     request.rawRequest?.parent_request_id
+
+                      let root = allRequests.find((r: any) => 
+                        (origId && (r.id === origId || r.request_id === origId || r.rawRequest?.id === origId))
+                      )
+
+                      if (!root && request.title) {
+                        const cleanTitle = request.title.replace(/^(renewal|upgrade|renew):\s*/i, '').trim().toLowerCase()
+                        root = allRequests.find((r: any) => 
+                          r.id !== request.id &&
+                          r.title &&
+                          r.title.toLowerCase().trim() === cleanTitle
+                        )
+                      }
+
+                      if (root) {
+                        const rootCost = check(
+                          root.total_estimated_cost,
+                          root.requested_amount,
+                          root.amount,
+                          root.approved_amount,
+                          root.rawRequest?.total_estimated_cost,
+                          root.rawRequest?.requested_amount,
+                          root.rawRequest?.approved_amount
+                        )
+                        if (rootCost > 0) return rootCost
+                      }
+                    }
+
+                    return check(
+                      (request as any).original_estimated_cost,
+                      request.rawRequest?.original_estimated_cost,
+                      request.total_estimated_cost,
+                      request.requested_amount,
+                      request.amount,
+                      (request as any).existing_cost,
+                      request.extraFields?.original_estimated_cost,
+                      request.extraFields?.existingCost,
+                      request.extraFields?.payment_justification?.existing_cost,
+                      request.rawRequest?.total_estimated_cost,
+                      request.rawRequest?.requested_amount,
+                      request.rawRequest?.existing_cost
+                    )
+                  })()
+                )}
                 className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-bold text-gray-900 outline-none cursor-default"
               />
               <span className="text-[10px] text-gray-400 block mt-1">
@@ -290,15 +474,7 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
 
           {/* 9. Delivery Location * & 10. Priority * */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block font-bold text-gray-700 mb-1">9. Delivery Location *</label>
-              <input
-                type="text"
-                readOnly
-                value={deliveryLocation}
-                className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-gray-800 outline-none cursor-default"
-              />
-            </div>
+
             <div>
               <label className="block font-bold text-gray-700 mb-1">10. Priority *</label>
               <div className="relative">
@@ -393,7 +569,7 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-[11px]">
                 <div className="flex items-center gap-2 text-slate-700 bg-white p-2 rounded-lg border border-slate-200">
                   <ShieldCheck size={14} className="text-blue-600 flex-shrink-0" />
-                  <span><strong>Warranty / SLA:</strong> {product.warrantyTerms}</span>
+                  <span><strong>{isSoft ? 'Subscription:' : 'Warranty / SLA:'}</strong> {product.warrantyTerms}</span>
                 </div>
                 <div className="flex items-center gap-2 text-slate-700 bg-white p-2 rounded-lg border border-slate-200">
                   <CheckCircle size={14} className="text-emerald-600 flex-shrink-0" />
@@ -402,6 +578,57 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Software / SaaS Payment Justification Details (if submitted) */}
+          {(request as any).extra_fields?.payment_justification && (() => {
+            const j = (request as any).extra_fields.payment_justification
+            const isVerified = (request as any).raw_status === 'PAYMENT_JUSTIFIED' || Boolean((request as any).extra_fields?.justification_verified_at)
+            return (
+              <div className="bg-violet-50/90 border border-violet-300 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-violet-200">
+                  <span className="font-bold text-xs text-violet-950 flex items-center gap-1.5">
+                    <FileText size={15} className="text-violet-600" />
+                    Team Lead Payment Justification & Proofs
+                  </span>
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                    isVerified ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300'
+                  }`}>
+                    {isVerified ? '✓ Verified' : 'Awaiting Manager Verification'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 text-xs">
+                  <div className="bg-white p-2 rounded-lg border border-violet-100">
+                    <span className="text-[10px] text-violet-500 font-bold block uppercase">Software</span>
+                    <span className="font-semibold text-slate-900">{j.software_name || request.title}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-violet-100">
+                    <span className="text-[10px] text-violet-500 font-bold block uppercase">Plan</span>
+                    <span className="font-semibold text-slate-900">{j.subscription_plan || '—'}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-violet-100">
+                    <span className="text-[10px] text-violet-500 font-bold block uppercase">Payment Ref</span>
+                    <span className="font-mono font-bold text-violet-900">{j.payment_reference || '—'}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-violet-100">
+                    <span className="text-[10px] text-violet-500 font-bold block uppercase">Paid Amount</span>
+                    <span className="font-black text-slate-900">₹{Number(j.payment_amount || request.amount || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+                {j.business_justification && (
+                  <div className="bg-white p-2.5 rounded-lg border border-violet-100 text-xs">
+                    <span className="text-[10px] text-violet-500 font-bold block uppercase mb-0.5">Business Justification</span>
+                    <p className="text-slate-700">{j.business_justification}</p>
+                  </div>
+                )}
+                {j.proof_description && (
+                  <div className="bg-white p-2.5 rounded-lg border border-violet-100 text-xs">
+                    <span className="text-[10px] text-violet-500 font-bold block uppercase mb-0.5">Proof Description</span>
+                    <p className="text-slate-700">{j.proof_description}</p>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Requester & Submission Metadata Footer Strip */}
           <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between text-xs text-slate-700 font-semibold gap-2">

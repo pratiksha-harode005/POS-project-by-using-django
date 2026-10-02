@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Inbox, CheckCircle, XCircle, ArrowUpRight, Search,
@@ -7,6 +7,8 @@ import {
 import { useManagerData } from '../../context/ManagerDataContext'
 import { ActionModal, ModalActionType } from '../../components/portal/ActionModal'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
 import type { ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
@@ -23,11 +25,16 @@ export const RequestArrivalPage: React.FC = () => {
     arrivedRequests,
     myApprovals,
     rejectedRequests,
+    refreshData,
     acceptRequest,
     approveRequest,
     rejectRequest,
     recommendToFinance
   } = useManagerData()
+
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
 
   // Tab synchronization from URL query param
   const tabFromUrl = searchParams.get('tab')?.toUpperCase()
@@ -36,6 +43,7 @@ export const RequestArrivalPage: React.FC = () => {
     : 'PENDING'
 
   const [statusFilter, setStatusFilter] = useState<FilterStatus>(initial)
+  const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
   const [search, setSearch] = useState('')
   const [deptFilter, setDeptFilter] = useState('All')
   const [priorityFilter, setPriorityFilter] = useState('All')
@@ -59,13 +67,14 @@ export const RequestArrivalPage: React.FC = () => {
     }, { replace: true })
   }
 
-  // Combine all requests safely without duplicates
+  // Combine all requests safely without duplicates, sorted newest first
   const allRequests = useMemo(() => {
     const map = new Map<string, ProcurementRequest>()
     arrivedRequests.forEach(r => map.set(r.id, r))
     myApprovals.forEach(r => map.set(r.id, r))
     rejectedRequests.forEach(r => map.set(r.id, r))
-    return Array.from(map.values())
+    const list = Array.from(map.values())
+    return sortRequestsNewestFirst(list)
   }, [arrivedRequests, myApprovals, rejectedRequests])
 
   // Active pool based on tab
@@ -77,15 +86,19 @@ export const RequestArrivalPage: React.FC = () => {
     return allRequests
   }, [statusFilter, allRequests, arrivedRequests, myApprovals, rejectedRequests])
 
+  // Type counts for segmented filter
+  const softwareCount = useMemo(() => activeList.filter(r => isSoftwareRequest(r)).length, [activeList])
+  const hardwareCount = useMemo(() => activeList.filter(r => isHardwareRequest(r)).length, [activeList])
+
   // Departments for dropdown
   const departments = useMemo(() => {
     return ['All', ...Array.from(new Set(activeList.map(r => r.department)))]
   }, [activeList])
   const priorities = ['All', 'Critical', 'High', 'Medium', 'Low']
 
-  // Search and filtered items
+  // Search, dropdown, and type filtered — strictly newest first
   const filtered = useMemo(() => {
-    return activeList.filter(r => {
+    const matching = activeList.filter(r => {
       const matchSearch =
         !search ||
         r.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -93,9 +106,15 @@ export const RequestArrivalPage: React.FC = () => {
         r.requester.toLowerCase().includes(search.toLowerCase())
       const matchDept = deptFilter === 'All' || r.department === deptFilter
       const matchPriority = priorityFilter === 'All' || r.priority === priorityFilter
-      return matchSearch && matchDept && matchPriority
+      const matchType = requestType === 'all'
+        ? true
+        : requestType === 'software'
+        ? isSoftwareRequest(r)
+        : isHardwareRequest(r)
+      return matchSearch && matchDept && matchPriority && matchType
     })
-  }, [activeList, search, deptFilter, priorityFilter])
+    return sortRequestsNewestFirst(matching)
+  }, [activeList, search, deptFilter, priorityFilter, requestType])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -267,6 +286,20 @@ export const RequestArrivalPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Request Type Segmented Filter */}
+      <div className="flex items-center justify-between">
+        <RequestTypeFilter
+          value={requestType}
+          onChange={(newType) => {
+            setRequestType(newType)
+            setPage(1)
+          }}
+          totalCount={activeList.length}
+          softwareCount={softwareCount}
+          hardwareCount={hardwareCount}
+        />
+      </div>
+
       {/* Search & Secondary Filter Bar */}
       <div className="flex flex-wrap gap-3 items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
         <div className="relative flex-1 min-w-48">
@@ -337,7 +370,7 @@ export const RequestArrivalPage: React.FC = () => {
           </div>
         ) : (
           paged.map((req) => {
-            const isApproved = statusFilter === 'APPROVED' || req.status === 'approved' || req.status === 'finance_approved'
+            const isApproved = statusFilter === 'APPROVED' || req.status === 'approved' || req.status === 'finance_approved' || (req.status as string) === 'payment_approved' || (req.status as string) === 'payment_justification_submitted' || (req.status as string) === 'payment_justified' || (req.status as string) === 'payment_completed' || (req.status as string) === 'completed'
             const isRejected = statusFilter === 'REJECTED' || req.status === 'rejected' || req.status === 'finance_rejected'
             const isPending = !isApproved && !isRejected
 
@@ -472,11 +505,20 @@ export const RequestArrivalPage: React.FC = () => {
             >
               ← Prev
             </button>
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              const p = Math.max(1, Math.min(page - 2 + i, totalPages - 4 + i))
-              return (
+            {(() => {
+              const maxButtons = 5
+              let startPage = Math.max(1, page - 2)
+              let endPage = Math.min(totalPages, startPage + maxButtons - 1)
+              if (endPage - startPage + 1 < maxButtons) {
+                startPage = Math.max(1, endPage - maxButtons + 1)
+              }
+              const pageNumbers: number[] = []
+              for (let p = startPage; p <= endPage; p++) {
+                pageNumbers.push(p)
+              }
+              return pageNumbers.map((p) => (
                 <button
-                  key={p}
+                  key={`page-${p}`}
                   onClick={() => setPage(p)}
                   className={`px-3 py-1.5 rounded-xl border font-medium ${
                     page === p
@@ -486,8 +528,8 @@ export const RequestArrivalPage: React.FC = () => {
                 >
                   {p}
                 </button>
-              )
-            })}
+              ))
+            })()}
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}

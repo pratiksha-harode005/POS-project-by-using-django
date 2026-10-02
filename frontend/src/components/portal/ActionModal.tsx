@@ -64,7 +64,7 @@ export const ActionModal: React.FC<ActionModalProps> = ({
   const titleMap: Record<ModalActionType, string> = {
     APPROVE: 'Approve Request',
     REJECT: 'Reject Request',
-    RECOMMEND: 'Recommend / Escalate Request',
+    RECOMMEND: 'Recommend to Higher Authority',
     RETURN: 'Return Request to Team Lead',
   }
 
@@ -159,11 +159,11 @@ export const ActionModal: React.FC<ActionModalProps> = ({
                 : actionType === 'REJECT'
                 ? 'bg-red-600 hover:bg-red-700'
                 : actionType === 'RECOMMEND'
-                ? 'bg-blue-600 hover:bg-blue-700'
+                ? 'bg-purple-600 hover:bg-purple-700'
                 : 'bg-amber-600 hover:bg-amber-700'
             }`}
           >
-            Confirm {actionType.replace('_', ' ')}
+            {actionType === 'RECOMMEND' ? 'Confirm Recommendation to Higher Authority' : `Confirm ${actionType.replace('_', ' ')}`}
           </button>
         </div>
       </div>

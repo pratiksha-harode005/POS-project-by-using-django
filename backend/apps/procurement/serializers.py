@@ -5,8 +5,18 @@ from apps.vendor_management.serializers import VendorSerializer
 from apps.users.serializers import UserSerializer
 
 
+class PurchaseOrderBasicSerializer(serializers.ModelSerializer):
+    vendor_detail = VendorSerializer(source='vendor', read_only=True)
+    purchase_request_detail = PurchaseRequestSerializer(source='purchase_request', read_only=True)
+
+    class Meta:
+        model = PurchaseOrder
+        fields = ['id', 'po_id', 'total_amount', 'status', 'order_date', 'expected_delivery', 'vendor_detail', 'purchase_request_detail']
+
+
 class GoodsReceiptSerializer(serializers.ModelSerializer):
     received_by_detail = UserSerializer(source='received_by', read_only=True)
+    purchase_order_detail = PurchaseOrderBasicSerializer(source='purchase_order', read_only=True)
 
     class Meta:
         model = GoodsReceipt

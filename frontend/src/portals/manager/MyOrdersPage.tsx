@@ -29,6 +29,7 @@ export interface ManagerOrder {
   date: string
   time: string
   status: 'Pending' | 'Approved' | 'Rejected' | 'In Procurement' | 'Completed'
+  raw_status?: string
   currentStage: number // 0 to 9
   currentlyWith: string
   lastUpdated: string
@@ -38,6 +39,9 @@ export interface ManagerOrder {
   poNumber?: string
   grnNumber?: string
   history?: StepHistoryItem[]
+  financeStatus?: string
+  paymentStatus?: string
+  timeline?: any[]
 }
 
 export const MyOrdersPage: React.FC = () => {
@@ -50,18 +54,39 @@ export const MyOrdersPage: React.FC = () => {
       const isCompleted = (req.status as string) === 'completed' || req.status === 'delivered'
       const isInProcurement = req.status === 'assigned_to_vendor' || req.status === 'vendor_accepted'
       const isRejected = req.status === 'rejected' || req.status === 'finance_rejected' || req.status === 'vendor_rejected'
+      const isSoftware = req.category?.toLowerCase().includes('software') || req.category?.toLowerCase().includes('saas') || req.request_type === 'software'
+      const isApproved =
+        req.status === 'approved' ||
+        (req.status as string) === 'payment_approved' ||
+        (req.status as string) === 'payment_justification_submitted' ||
+        (req.status as string) === 'payment_justified' ||
+        req.status === 'finance_review' ||
+        req.status === 'recommended_to_finance' ||
+        req.status === 'finance_approved' ||
+        req.raw_status === 'MANAGER_APPROVED' ||
+        req.raw_status === 'PAYMENT_APPROVED'
       
       let status: 'Pending' | 'Approved' | 'Rejected' | 'In Procurement' | 'Completed' = 'Pending'
       if (isCompleted) status = 'Completed'
       else if (isInProcurement) status = 'In Procurement'
       else if (isRejected) status = 'Rejected'
-      else if (req.status === 'approved' || req.status === 'finance_review' || req.status === 'recommended_to_finance' || req.status === 'finance_approved') status = 'Approved'
+      else if (isApproved) status = 'Approved'
       else status = 'Pending'
 
       const qty = req.quantity || 1
       const totalCost = req.amount || req.approvalParams?.approvedAmount || 0
       const unitPriceVal = qty > 0 ? Math.round(totalCost / qty) : totalCost
       const deptClean = (req.department || 'IT').toUpperCase().replace(/\s+/g, '')
+
+      const effectiveCurrentlyWith = req.currentlyWith || (req as any).currently_with || (
+        isSoftware
+          ? (req.status === 'approved' || req.raw_status === 'MANAGER_APPROVED' ? 'Team Lead — Mock Payment Required' :
+             (req.status as string) === 'payment_approved' || req.raw_status === 'PAYMENT_APPROVED' ? 'Team Lead — Awaiting Payment Justification' :
+             (req.status as string) === 'payment_justification_submitted' || req.raw_status === 'PAYMENT_JUSTIFICATION_SUBMITTED' ? 'Manager — Verifying Justification' :
+             (req.status as string) === 'payment_justified' || req.raw_status === 'PAYMENT_JUSTIFIED' ? 'Team Lead — Awaiting Final Acknowledgment' :
+             isCompleted ? 'Completed & Archived' : 'Manager Sign-off')
+          : (status === 'Approved' || status === 'In Procurement' ? 'Procurement Sourcing Desk' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team')
+      )
 
       return {
         id: req.id,
@@ -79,12 +104,17 @@ export const MyOrdersPage: React.FC = () => {
         date: req.date,
         time: '10:00 AM',
         status: status,
-        currentStage: status === 'Approved' || status === 'In Procurement' ? 4 : (req.currentStage ? req.currentStage : (isCompleted ? 9 : 1)),
-        currentlyWith: status === 'Approved' || status === 'In Procurement' ? 'Procurement Sourcing Desk' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team',
+        raw_status: req.raw_status,
+        financeStatus: req.financeStatus,
+        paymentStatus: req.paymentStatus,
+        currentStage: req.currentStage || (status === 'Approved' || status === 'In Procurement' ? 4 : (isCompleted ? 9 : 1)),
+        currentlyWith: effectiveCurrentlyWith,
         lastUpdated: req.date,
         department: req.department,
         requester: req.requester,
         priority: (req.priority as any) || 'Medium',
+        timeline: req.timeline || [],
+        history: req.history || [],
       }
     })
   }, [allRequests])
@@ -700,10 +730,13 @@ export const MyOrdersPage: React.FC = () => {
                         category={order.category}
                         title={order.title}
                         currentStage={order.currentStage}
-                        status={order.status}
+                        status={order.raw_status || order.status}
                         currentlyWith={order.currentlyWith}
+                        financeStatus={order.financeStatus}
+                        paymentStatus={order.paymentStatus}
                         lastUpdated={order.lastUpdated}
                         history={order.history}
+                        timeline={order.timeline}
                       />
                     </div>
                   </div>

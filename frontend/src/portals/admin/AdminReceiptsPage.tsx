@@ -1,45 +1,118 @@
 import React, { useState, useMemo } from 'react'
 import {
   FileCheck, Search, Filter, Calendar, Building, CheckCircle,
-  AlertTriangle, Eye, X, Printer, ShieldCheck, CheckSquare
+  AlertTriangle, Eye, X, Printer, ShieldCheck, CheckSquare,
+  Laptop, HardDrive, Cpu, Package, CreditCard, Sparkles, Layers,
+  ArrowUpRight, DollarSign, Download, User, Tag, Clock, Check
 } from 'lucide-react'
 import { useManagerData, GoodsReceiptItem } from '../../context/ManagerDataContext'
+import { UnifiedReceiptModal } from '../../components/portal/UnifiedReceiptModal'
 
 export const AdminReceiptsPage: React.FC = () => {
   const { receipts, verifyReceipt, purchaseOrders } = useManagerData()
 
+  // Receipt Category Filter: ALL | SOFTWARE | HARDWARE
+  const [receiptTypeFilter, setReceiptTypeFilter] = useState<'ALL' | 'SOFTWARE' | 'HARDWARE'>('ALL')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [selectedReceipt, setSelectedReceipt] = useState<GoodsReceiptItem | null>(null)
+  const [selectedReceiptPayment, setSelectedReceiptPayment] = useState<any | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const { payments } = useManagerData()
 
   const showToast = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 3000)
   }
 
-  // Filtered GRNs
+  const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+
+  // Categorize receipts into software and hardware
+  const isSoftwareReceipt = (r: GoodsReceiptItem) => {
+    const idStr = String(r.id || r.grnNumber || '')
+    if (idStr.startsWith('RCP-SW-') || idStr.startsWith('SR-') || idStr.includes('-SW-')) return true
+    if (r.receiptType === 'SOFTWARE') return true
+    const cat = (r.category || '').toLowerCase()
+    const prod = (r.product || '').toLowerCase()
+    const swName = (r.softwareName || '').toLowerCase()
+    const loc = (r.warehouseLocation || '').toLowerCase()
+    if (
+      cat.includes('software') ||
+      cat.includes('saas') ||
+      cat.includes('cloud') ||
+      cat.includes('license') ||
+      cat.includes('subscription') ||
+      prod.includes('subscription') ||
+      prod.includes('license') ||
+      prod.includes('software') ||
+      Boolean(r.softwareName) ||
+      swName.length > 0 ||
+      loc.includes('digital') ||
+      loc.includes('cloud') ||
+      loc.includes('saas')
+    ) {
+      return true
+    }
+    if (r.receiptType === 'HARDWARE') return false
+    return false
+  }
+
+  // Summary Metrics
+  const softwareReceiptsList = useMemo(() => receipts.filter(isSoftwareReceipt), [receipts])
+  const hardwareReceiptsList = useMemo(() => receipts.filter(r => !isSoftwareReceipt(r)), [receipts])
+
+  const totalSoftwareSpend = useMemo(() => {
+    return softwareReceiptsList.reduce((acc, r) => acc + (r.amount || 0), 0)
+  }, [softwareReceiptsList])
+
+  const totalHardwareUnits = useMemo(() => {
+    return hardwareReceiptsList.reduce((acc, r) => acc + (r.receivedQuantity || 0), 0)
+  }, [hardwareReceiptsList])
+
+  const verifiedCount = useMemo(() => {
+    return receipts.filter(r => r.status === 'Verified').length
+  }, [receipts])
+
+  // Filtered Receipts based on Type Filter, Search, and Status Filter
   const filteredReceipts = useMemo(() => {
     return receipts.filter(r => {
+      // 1. Receipt Type Filter (SOFTWARE vs HARDWARE vs ALL)
+      const isSw = isSoftwareReceipt(r)
+      if (receiptTypeFilter === 'SOFTWARE' && !isSw) return false
+      if (receiptTypeFilter === 'HARDWARE' && isSw) return false
+
+      // 2. Status Filter
+      const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter
+      if (!matchesStatus) return false
+
+      // 3. Search Query
+      if (!search.trim()) return true
       const term = search.toLowerCase()
-      const matchesSearch =
+      return (
         r.grnNumber.toLowerCase().includes(term) ||
         r.poNumber.toLowerCase().includes(term) ||
         r.vendor.toLowerCase().includes(term) ||
         r.product.toLowerCase().includes(term) ||
-        r.receivedBy.toLowerCase().includes(term)
-
-      const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter
-      return matchesSearch && matchesStatus
+        r.receivedBy.toLowerCase().includes(term) ||
+        (r.softwareName && r.softwareName.toLowerCase().includes(term)) ||
+        (r.paymentReference && r.paymentReference.toLowerCase().includes(term)) ||
+        (r.requester && r.requester.toLowerCase().includes(term)) ||
+        (r.department && r.department.toLowerCase().includes(term))
+      )
     })
-  }, [receipts, search, statusFilter])
+  }, [receipts, receiptTypeFilter, search, statusFilter])
 
   // Handle Verify Action
   const handleVerify = (r: GoodsReceiptItem) => {
     verifyReceipt(r.id, 'Priyanka Sharma (Admin)')
-    showToast(`✓ Goods Receipt ${r.grnNumber} verified successfully!`)
+    showToast(`✓ ${isSoftwareReceipt(r) ? 'Software Receipt' : 'Goods Receipt'} ${r.grnNumber} verified successfully!`)
     if (selectedReceipt?.id === r.id) {
-      setSelectedReceipt({ ...selectedReceipt, status: 'Verified', inspectionStatus: 'Passed', receivedBy: 'Priyanka Sharma (Admin)' })
+      setSelectedReceipt({
+        ...selectedReceipt,
+        status: 'Verified',
+        inspectionStatus: 'Passed',
+        receivedBy: 'Priyanka Sharma (Admin)'
+      })
     }
   }
 
@@ -56,34 +129,210 @@ export const AdminReceiptsPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <FileCheck size={12} /> WAREHOUSE INTAKE
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border flex items-center gap-1.5 ${
+              receiptTypeFilter === 'SOFTWARE'
+                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                : receiptTypeFilter === 'HARDWARE'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+            }`}>
+              {receiptTypeFilter === 'SOFTWARE' ? (
+                <>
+                  <Laptop size={13} className="text-purple-600" /> SOFTWARE INTAKE &amp; LICENSES
+                </>
+              ) : receiptTypeFilter === 'HARDWARE' ? (
+                <>
+                  <FileCheck size={13} className="text-emerald-600" /> WAREHOUSE INTAKE (GRN)
+                </>
+              ) : (
+                <>
+                  <Layers size={13} className="text-indigo-600" /> ENTERPRISE PROCUREMENT RECEIPTS
+                </>
+              )}
             </span>
-            <span className="text-xs text-slate-400 font-medium">{receipts.length} Recorded Deliveries</span>
+            <span className="text-xs text-slate-400 font-medium">
+              {filteredReceipts.length} {receiptTypeFilter === 'SOFTWARE' ? 'Software Receipts' : receiptTypeFilter === 'HARDWARE' ? 'Hardware Receipts' : 'Total Receipts'} Saved
+            </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1">
-            Goods Receipts (GRN) & Delivery Verification
+            {receiptTypeFilter === 'SOFTWARE'
+              ? 'Software Receipts & License Verification'
+              : receiptTypeFilter === 'HARDWARE'
+              ? 'Hardware Receipts (GRN) & Delivery Verification'
+              : 'Procurement Receipts & Delivery Verification'}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Audit received physical shipments, track inspection QA results, log damaged quantities, and endorse formal GRN certificates.
+            {receiptTypeFilter === 'SOFTWARE'
+              ? 'Audit digital SaaS subscriptions, cloud licenses, software payment proofs, and endorse formal compliance vouchers.'
+              : receiptTypeFilter === 'HARDWARE'
+              ? 'Audit received physical shipments, track inspection QA results, log damaged quantities, and endorse formal GRN certificates.'
+              : 'Audit received physical hardware shipments and digital software subscriptions across the organization.'}
           </p>
+        </div>
+
+        {/* Quick Filter Pill Buttons in Header */}
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 self-start sm:self-auto shrink-0 shadow-2xs">
+          <button
+            onClick={() => setReceiptTypeFilter('ALL')}
+            className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
+              receiptTypeFilter === 'ALL'
+                ? 'bg-white text-indigo-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Layers size={14} />
+            <span>All Receipts</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+              receiptTypeFilter === 'ALL' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'
+            }`}>
+              {receipts.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setReceiptTypeFilter('SOFTWARE')}
+            className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
+              receiptTypeFilter === 'SOFTWARE'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-purple-700'
+            }`}
+          >
+            <Laptop size={14} />
+            <span>Software Receipts</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+              receiptTypeFilter === 'SOFTWARE' ? 'bg-purple-800 text-purple-100' : 'bg-purple-100 text-purple-700'
+            }`}>
+              {softwareReceiptsList.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setReceiptTypeFilter('HARDWARE')}
+            className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
+              receiptTypeFilter === 'HARDWARE'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-emerald-700'
+            }`}
+          >
+            <Package size={14} />
+            <span>Hardware Receipts</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+              receiptTypeFilter === 'HARDWARE' ? 'bg-emerald-800 text-emerald-100' : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              {hardwareReceiptsList.length}
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* Filter Bar */}
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Receipts */}
+        <div
+          onClick={() => setReceiptTypeFilter('ALL')}
+          className={`cursor-pointer p-4 rounded-2xl border transition-all ${
+            receiptTypeFilter === 'ALL'
+              ? 'bg-indigo-50/70 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-2xs'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">All Receipts</span>
+            <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+              <Layers size={16} />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-slate-900 mt-2">{receipts.length}</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            Combined Hardware &amp; Software receipts
+          </div>
+        </div>
+
+        {/* Software Receipts */}
+        <div
+          onClick={() => setReceiptTypeFilter('SOFTWARE')}
+          className={`cursor-pointer p-4 rounded-2xl border transition-all ${
+            receiptTypeFilter === 'SOFTWARE'
+              ? 'bg-purple-50/70 border-purple-300 ring-2 ring-purple-500/20 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-purple-200 hover:shadow-2xs'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center gap-1">
+              <Laptop size={12} /> Software Receipts
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
+              <Sparkles size={16} />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-purple-900 mt-2">{softwareReceiptsList.length} Saved</div>
+          <div className="text-[11px] text-purple-700/80 mt-0.5 font-medium">
+            Total Valuation: {fmt(totalSoftwareSpend)}
+          </div>
+        </div>
+
+        {/* Hardware Receipts */}
+        <div
+          onClick={() => setReceiptTypeFilter('HARDWARE')}
+          className={`cursor-pointer p-4 rounded-2xl border transition-all ${
+            receiptTypeFilter === 'HARDWARE'
+              ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-emerald-200 hover:shadow-2xs'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
+              <Package size={12} /> Hardware Receipts (GRN)
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <FileCheck size={16} />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-emerald-900 mt-2">{hardwareReceiptsList.length} Saved</div>
+          <div className="text-[11px] text-emerald-700/80 mt-0.5 font-medium">
+            {totalHardwareUnits} Physical Units Inwarded
+          </div>
+        </div>
+
+        {/* Verification Rate */}
+        <div className="p-4 rounded-2xl border border-slate-200 bg-white">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Verification Status</span>
+            <div className="w-8 h-8 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center">
+              <ShieldCheck size={16} />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-slate-900 mt-2">
+            {verifiedCount} <span className="text-sm font-semibold text-slate-400">/ {receipts.length}</span>
+          </div>
+          <div className="text-[11px] text-teal-700 font-semibold mt-0.5 flex items-center gap-1">
+            <Check size={13} /> {receipts.length > 0 ? Math.round((verifiedCount / receipts.length) * 100) : 0}% Formally Verified
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Bar with Search and Verification Status */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs flex flex-col md:flex-row items-center gap-3 text-xs">
+        {/* Search */}
         <div className="relative flex-1 w-full">
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by GRN Number, PO Number, Product, Vendor..."
+            placeholder={
+              receiptTypeFilter === 'SOFTWARE'
+                ? 'Search software receipts by Software Name, Ref #, Requester, Plan, Dept...'
+                : receiptTypeFilter === 'HARDWARE'
+                ? 'Search hardware receipts by GRN #, PO #, Vendor, Product, Location...'
+                : 'Search all receipts by Number, Software, Hardware, Vendor, Requester, PO...'
+            }
             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
           />
         </div>
 
+        {/* Verification Status Dropdown */}
         <div className="flex items-center gap-2 w-full md:w-auto">
           <span className="text-slate-400 font-medium whitespace-nowrap">Verification Status:</span>
           <select
@@ -91,7 +340,7 @@ export const AdminReceiptsPage: React.FC = () => {
             onChange={e => setStatusFilter(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-medium"
           >
-            <option value="ALL">All GRN Statuses</option>
+            <option value="ALL">All Statuses</option>
             <option value="Verified">Verified</option>
             <option value="Pending Verification">Pending Verification</option>
             <option value="Rejected">Rejected</option>
@@ -102,90 +351,377 @@ export const AdminReceiptsPage: React.FC = () => {
       {/* Receipts Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden text-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
-              <tr>
-                <th className="p-3.5">GRN Number</th>
-                <th className="p-3.5">PO Number</th>
-                <th className="p-3.5">Vendor Partner</th>
-                <th className="p-3.5">Received Date</th>
-                <th className="p-3.5">Product Details</th>
-                <th className="p-3.5">Ordered / Received / Damaged</th>
-                <th className="p-3.5">Inspection Status</th>
-                <th className="p-3.5">Received By</th>
-                <th className="p-3.5">Status</th>
-                <th className="p-3.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-              {filteredReceipts.map(r => (
-                <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="p-3.5 font-bold text-indigo-600 whitespace-nowrap">{r.grnNumber}</td>
-                  <td className="p-3.5 font-semibold text-slate-700 whitespace-nowrap">{r.poNumber}</td>
-                  <td className="p-3.5 font-bold text-slate-900 whitespace-nowrap">{r.vendor}</td>
-                  <td className="p-3.5 whitespace-nowrap text-slate-600">{r.receivedDate}</td>
-                  <td className="p-3.5 max-w-xs">
-                    <p className="font-semibold text-slate-900 leading-tight">{r.product}</p>
-                    <span className="text-[10px] text-slate-400">{r.warehouseLocation || 'Main Warehouse'}</span>
-                  </td>
-                  <td className="p-3.5 whitespace-nowrap">
-                    <div className="font-bold text-slate-900">{r.receivedQuantity} / {r.orderedQuantity} Units</div>
-                    {r.damagedQuantity > 0 ? (
-                      <span className="text-rose-600 font-bold text-[10px]">{r.damagedQuantity} Damaged</span>
-                    ) : (
-                      <span className="text-emerald-700 text-[10px]">0 Defects</span>
-                    )}
-                  </td>
-                  <td className="p-3.5 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      r.inspectionStatus === 'Passed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                      r.inspectionStatus === 'Inspection Pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                      'bg-rose-50 text-rose-700 border border-rose-200'
-                    }`}>
-                      {r.inspectionStatus}
-                    </span>
-                  </td>
-                  <td className="p-3.5 whitespace-nowrap text-slate-600">{r.receivedBy}</td>
-                  <td className="p-3.5 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      r.status === 'Verified' ? 'bg-emerald-100 text-emerald-800' :
-                      r.status === 'Pending Verification' ? 'bg-amber-100 text-amber-800' :
-                      'bg-rose-100 text-rose-800'
-                    }`}>
-                      {r.status}
-                    </span>
-                  </td>
-                  <td className="p-3.5 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        onClick={() => setSelectedReceipt(r)}
-                        className="px-2.5 py-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
-                      >
-                        <Eye size={12} className="inline mr-1" /> View
-                      </button>
-                      {r.status !== 'Verified' && (
-                        <button
-                          onClick={() => handleVerify(r)}
-                          className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-2xs"
-                        >
-                          Verify
-                        </button>
-                      )}
-                    </div>
-                  </td>
+          {filteredReceipts.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <FileCheck size={24} />
+              </div>
+              <h3 className="font-bold text-slate-700 text-sm">No receipts match your search or filter criteria</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Try switching between Software Receipt and Hardware Receipt filters, or clear your search term.
+              </p>
+            </div>
+          ) : receiptTypeFilter === 'SOFTWARE' ? (
+            // ── SOFTWARE RECEIPTS VIEW TABLE ──
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-purple-50/70 border-b border-purple-100 text-purple-900 font-bold uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th className="p-3.5">Receipt / Ref #</th>
+                  <th className="p-3.5">Software &amp; License Name</th>
+                  <th className="p-3.5">Subscription Plan / Tier</th>
+                  <th className="p-3.5">Payment Date</th>
+                  <th className="p-3.5">Requester &amp; Dept</th>
+                  <th className="p-3.5">Disbursed Amount</th>
+                  <th className="p-3.5">Payment Mode &amp; Proof</th>
+                  <th className="p-3.5">Status</th>
+                  <th className="p-3.5 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                {filteredReceipts.map(r => (
+                  <tr key={r.id} className="hover:bg-purple-50/30 transition-colors">
+                    <td className="p-3.5 font-bold text-purple-700 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <Laptop size={13} className="text-purple-600 shrink-0" />
+                        <span>{r.grnNumber}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-normal block mt-0.5">{r.poNumber}</span>
+                    </td>
+                    <td className="p-3.5 max-w-xs">
+                      <p className="font-bold text-slate-900 leading-tight">
+                        {r.softwareName || r.product}
+                      </p>
+                      <span className="text-[10px] text-purple-600 font-semibold">{r.vendor}</span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                        {r.requiredPlan || r.currentPlan || 'Enterprise License'}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">{r.requestType || 'Annual Subscription'}</span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap text-slate-600">
+                      <div className="flex items-center gap-1">
+                        <Calendar size={12} className="text-slate-400" />
+                        <span>{r.receivedDate}</span>
+                      </div>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <p className="font-semibold text-slate-900">{r.requester || r.receivedBy}</p>
+                      <span className="text-[10px] text-slate-500">{r.department || 'Engineering'}</span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className="font-black text-slate-900 text-xs">
+                        {r.amount ? fmt(r.amount) : '₹48,000'}
+                      </span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap text-slate-600">
+                      <p className="font-semibold text-slate-800 text-[11px]">{r.paymentMethod || 'Not recorded'}</p>
+                      <span className="text-[10px] font-mono text-purple-700 font-medium">{r.paymentReference || 'Not recorded'}</span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 w-fit ${
+                        r.status === 'Verified'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : r.status === 'Pending Verification'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {r.status === 'Verified' && <CheckCircle size={10} />}
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="p-3.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => {
+                            const rAny = r as any
+                            let pay = payments.find((p: any) => p.requestId === rAny.requestId || p.requestId === rAny.id || p.purchaseRequestDetail?.id === rAny.id || p.purchaseRequestDetail?.request_id === rAny.requestId)
+                            const reqObj = rAny.rawRequest || rAny
+                            const pj = rAny.payment_justification_detail || reqObj.payment_justification_detail || reqObj.extra_fields?.payment_justification
+                            if (pay) {
+                              pay = {
+                                ...pay,
+                                purchaseRequestDetail: {
+                                  ...(pay.purchaseRequestDetail || reqObj),
+                                  payment_justification_detail: pj || pay.purchaseRequestDetail?.payment_justification_detail,
+                                  extra_fields: reqObj.extra_fields || pay.purchaseRequestDetail?.extra_fields || {}
+                                }
+                              }
+                            } else {
+                              pay = {
+                                id: rAny.paymentReference || `PAY-${rAny.requestId || rAny.id}`,
+                                requestId: rAny.requestId || rAny.id,
+                                amount: Number(rAny.actualAmount || rAny.amount || reqObj.finance_approved_amount || reqObj.approved_amount || 0),
+                                status: rAny.status || 'Paid',
+                                dueDate: rAny.date,
+                                payment_method: rAny.paymentMethod || 'Corporate Card',
+                                reference_number: rAny.paymentReference || `TXN-${rAny.id}`,
+                                purchaseRequestDetail: {
+                                  ...reqObj,
+                                  payment_justification_detail: pj,
+                                  extra_fields: reqObj.extra_fields || reqObj.extraFields || {}
+                                },
+                                receiptDetails: {
+                                  fileName: `RCP-${rAny.requestId || rAny.id}`,
+                                  itemName: rAny.itemName || rAny.title || rAny.softwareName || rAny.product || 'Software Item',
+                                }
+                              } as any
+                            }
+                            setSelectedReceiptPayment(pay)
+                          }}
+                          className="px-2.5 py-1 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200 cursor-pointer"
+                        >
+                          <Eye size={12} className="inline mr-1" /> View Receipt
+                        </button>
+                        {r.status !== 'Verified' && (
+                          <button
+                            onClick={() => handleVerify(r)}
+                            className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-2xs"
+                          >
+                            Verify
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : receiptTypeFilter === 'HARDWARE' ? (
+            // ── HARDWARE RECEIPTS (GRN) VIEW TABLE ──
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-emerald-50/70 border-b border-emerald-100 text-emerald-900 font-bold uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th className="p-3.5">GRN Number</th>
+                  <th className="p-3.5">PO Number</th>
+                  <th className="p-3.5">Vendor Partner</th>
+                  <th className="p-3.5">Received Date</th>
+                  <th className="p-3.5">Product &amp; Warehouse Dock</th>
+                  <th className="p-3.5">Ordered / Received / Damaged</th>
+                  <th className="p-3.5">Inspection Status</th>
+                  <th className="p-3.5">Received By</th>
+                  <th className="p-3.5">Status</th>
+                  <th className="p-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                {filteredReceipts.map(r => (
+                  <tr key={r.id} className="hover:bg-emerald-50/20 transition-colors">
+                    <td className="p-3.5 font-bold text-emerald-700 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <Package size={13} className="text-emerald-600 shrink-0" />
+                        <span>{r.grnNumber}</span>
+                      </div>
+                    </td>
+                    <td className="p-3.5 font-semibold text-slate-700 whitespace-nowrap">{r.poNumber}</td>
+                    <td className="p-3.5 font-bold text-slate-900 whitespace-nowrap">{r.vendor}</td>
+                    <td className="p-3.5 whitespace-nowrap text-slate-600">{r.receivedDate}</td>
+                    <td className="p-3.5 max-w-xs">
+                      <p className="font-semibold text-slate-900 leading-tight">{r.product}</p>
+                      <span className="text-[10px] text-emerald-700 font-medium">{r.warehouseLocation || 'Main Warehouse Bay 4'}</span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <div className="font-bold text-slate-900">{r.receivedQuantity} / {r.orderedQuantity} Units</div>
+                      {r.damagedQuantity > 0 ? (
+                        <span className="text-rose-600 font-bold text-[10px]">{r.damagedQuantity} Damaged</span>
+                      ) : (
+                        <span className="text-emerald-700 text-[10px] font-semibold">0 Defects Verified</span>
+                      )}
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        r.inspectionStatus === 'Passed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        r.inspectionStatus === 'Inspection Pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                        'bg-rose-50 text-rose-700 border border-rose-200'
+                      }`}>
+                        {r.inspectionStatus}
+                      </span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap text-slate-600">{r.receivedBy}</td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 w-fit ${
+                        r.status === 'Verified' ? 'bg-emerald-100 text-emerald-800' :
+                        r.status === 'Pending Verification' ? 'bg-amber-100 text-amber-800' :
+                        'bg-rose-100 text-rose-800'
+                      }`}>
+                        {r.status === 'Verified' && <CheckCircle size={10} />}
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="p-3.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setSelectedReceipt(r)}
+                          className="px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
+                        >
+                          <Eye size={12} className="inline mr-1" /> View GRN
+                        </button>
+                        {r.status !== 'Verified' && (
+                          <button
+                            onClick={() => handleVerify(r)}
+                            className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-2xs"
+                          >
+                            Verify
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            // ── COMBINED (ALL) RECEIPTS VIEW TABLE ──
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th className="p-3.5">Category</th>
+                  <th className="p-3.5">Receipt / Ref #</th>
+                  <th className="p-3.5">Item / Requisition Details</th>
+                  <th className="p-3.5">Vendor / Requester</th>
+                  <th className="p-3.5">Date</th>
+                  <th className="p-3.5">Valuation / Quantities</th>
+                  <th className="p-3.5">QA / Verification</th>
+                  <th className="p-3.5">Status</th>
+                  <th className="p-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                {filteredReceipts.map(r => {
+                  const isSw = isSoftwareReceipt(r)
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 w-fit ${
+                          isSw
+                            ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        }`}>
+                          {isSw ? <Laptop size={11} /> : <Package size={11} />}
+                          {isSw ? 'SOFTWARE' : 'HARDWARE'}
+                        </span>
+                      </td>
+                      <td className="p-3.5 font-bold whitespace-nowrap">
+                        <span className={isSw ? 'text-purple-700' : 'text-indigo-600'}>{r.grnNumber}</span>
+                        <span className="text-[10px] text-slate-400 block font-normal">{r.poNumber}</span>
+                      </td>
+                      <td className="p-3.5 max-w-xs">
+                        <p className="font-semibold text-slate-900 leading-tight">
+                          {isSw ? (r.softwareName || r.product) : r.product}
+                        </p>
+                        <span className="text-[10px] text-slate-400">
+                          {isSw ? (r.requiredPlan || r.currentPlan || 'SaaS License') : (r.warehouseLocation || 'Main Dock')}
+                        </span>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <p className="font-bold text-slate-900">{r.vendor}</p>
+                        <span className="text-[10px] text-slate-500">{isSw ? (r.requester || r.receivedBy) : r.receivedBy}</span>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap text-slate-600">{r.receivedDate}</td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        {isSw ? (
+                          <div>
+                            <span className="font-bold text-slate-900">{r.amount ? fmt(r.amount) : '₹48,000'}</span>
+                            <span className="text-[10px] text-slate-400 block">{r.orderedQuantity || 1} Seat(s)</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-slate-900">{r.receivedQuantity} / {r.orderedQuantity} Units</span>
+                            <span className="text-[10px] text-emerald-700 block font-semibold">0 Defects</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          r.inspectionStatus === 'Passed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                          'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}>
+                          {r.inspectionStatus}
+                        </span>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 w-fit ${
+                          r.status === 'Verified' ? 'bg-emerald-100 text-emerald-800' :
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {r.status === 'Verified' && <CheckCircle size={10} />}
+                          {r.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {isSw ? (
+                            <button
+                              onClick={() => {
+                                const rAny = r as any
+                                let pay = payments.find((p: any) => p.requestId === rAny.requestId || p.requestId === rAny.id || p.purchaseRequestDetail?.id === rAny.id || p.purchaseRequestDetail?.request_id === rAny.requestId)
+                                if (!pay) {
+                                  const reqObj = rAny.rawRequest || rAny
+                                  const pj = rAny.payment_justification_detail || reqObj.payment_justification_detail || reqObj.extra_fields?.payment_justification || {}
+                                  const extra = reqObj.extra_fields || reqObj.extraFields || rAny.extra_fields || {}
+                                  pay = {
+                                    id: rAny.paymentReference || `PAY-${rAny.requestId || rAny.id}`,
+                                    requestId: rAny.requestId || rAny.id,
+                                    amount: Number(rAny.actualAmount || rAny.amount || reqObj.finance_approved_amount || reqObj.approved_amount || 0),
+                                    status: rAny.status || 'Paid',
+                                    dueDate: rAny.date,
+                                    payment_method: rAny.paymentMethod || 'Corporate Card',
+                                    reference_number: rAny.paymentReference || `TXN-${rAny.id}`,
+                                    purchaseRequestDetail: {
+                                      ...reqObj,
+                                      requested_amount: reqObj.requested_amount ?? pj.requested_amount ?? extra.requested_amount,
+                                      approved_amount: reqObj.approved_amount ?? pj.finance_approved_amount,
+                                      payment_justification_detail: pj,
+                                      extra_fields: extra
+                                    },
+                                    receiptDetails: {
+                                      fileName: `RCP-${rAny.requestId || rAny.id}`,
+                                      itemName: rAny.itemName || rAny.title || rAny.softwareName || rAny.product || 'Software Item',
+                                    }
+                                  } as any
+                                }
+                                setSelectedReceiptPayment(pay)
+                              }}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors border border-blue-700 cursor-pointer"
+                            >
+                              View Receipt
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setSelectedReceipt(r)}
+                              className="px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
+                            >
+                              <Eye size={12} className="inline mr-1" /> View GRN
+                            </button>
+                          )}
+                          {r.status !== 'Verified' && (
+                            <button
+                              onClick={() => handleVerify(r)}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-2xs"
+                            >
+                              Verify
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
-      {/* Comprehensive Enterprise GRN Dossier Modal */}
+      {/* ── DETAIL MODAL (SOFTWARE OR HARDWARE) ── */}
       {selectedReceipt && (() => {
+        const isSw = isSoftwareReceipt(selectedReceipt)
         const linkedPO = purchaseOrders.find(p => p.poNumber === selectedReceipt.poNumber)
         const acceptedQty = selectedReceipt.receivedQuantity - selectedReceipt.damagedQuantity
-        const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
+        // ═════════════════════════════════════════════════════════════════════
+        // HARDWARE GOODS RECEIPT NOTE (GRN) MODAL
+        // ═════════════════════════════════════════════════════════════════════
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
             <div className="bg-white rounded-3xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] text-xs">
@@ -194,8 +730,8 @@ export const AdminReceiptsPage: React.FC = () => {
               <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white shrink-0">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                      {selectedReceipt.grnNumber}
+                    <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
+                      <Package size={12} /> {selectedReceipt.grnNumber}
                     </span>
                     <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/20 text-blue-200 border border-blue-400/30">
                       PO: {selectedReceipt.poNumber}
@@ -221,14 +757,14 @@ export const AdminReceiptsPage: React.FC = () => {
                   </div>
 
                   <h2 className="text-lg font-black text-white tracking-tight mt-1">
-                    Goods Receipt Certificate (GRN)
+                    Goods Receipt Certificate (GRN) — Physical Delivery
                   </h2>
                   <p className="text-slate-300 text-xs flex items-center gap-2 flex-wrap">
                     <span>Product: <b>{selectedReceipt.product}</b></span>
                     <span>•</span>
                     <span>Received Date: <b>{selectedReceipt.receivedDate}</b></span>
                     <span>•</span>
-                    <span className="text-emerald-300 font-semibold">Warehouse: {selectedReceipt.warehouseLocation || 'Main Depot Bay 3'}</span>
+                    <span className="text-emerald-300 font-semibold">Warehouse: {selectedReceipt.warehouseLocation || 'Main Depot Bay 4'}</span>
                   </p>
                 </div>
 
@@ -262,9 +798,9 @@ export const AdminReceiptsPage: React.FC = () => {
                       <span>Receiving Inward Warehouse &amp; Dock (Consignee)</span>
                     </div>
                     <div className="space-y-1 text-slate-700">
-                      <strong className="text-slate-900 block text-xs">Central Logistics Depot — {selectedReceipt.warehouseLocation || 'Main Depot Bay 3'}</strong>
+                      <strong className="text-slate-900 block text-xs">Central Logistics Depot — {selectedReceipt.warehouseLocation || 'Main Depot Bay 4'}</strong>
                       <p className="text-[11px] text-slate-500">
-                        Facility Dock: <span className="font-semibold text-slate-800">Inward Receiving Bay #3</span> • Gate Pass: <span className="font-mono text-slate-800 font-semibold">GP-2026-{selectedReceipt.grnNumber.slice(-3)}</span>
+                        Facility Dock: <span className="font-semibold text-slate-800">Inward Receiving Bay #4</span> • Gate Pass: <span className="font-mono text-slate-800 font-semibold">GP-2026-{selectedReceipt.grnNumber.slice(-3)}</span>
                       </p>
                       <p className="text-[11px] text-slate-500">
                         Receiving Officer: <span className="text-slate-900 font-semibold">{selectedReceipt.receivedBy}</span> (Stores Directorate)
@@ -286,7 +822,7 @@ export const AdminReceiptsPage: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <strong className="text-slate-900 text-xs">{selectedReceipt.vendor}</strong>
                         <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Verified Vendor
+                          Verified OEM
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500">
@@ -351,14 +887,14 @@ export const AdminReceiptsPage: React.FC = () => {
                         100% Quantity Matched (Zero Variance)
                       </span>
                       <p className="text-[11px] text-emerald-800 mt-0.5">
-                        Delivered against PO <strong className="font-semibold">{selectedReceipt.poNumber}</strong> • Total Consignment Valuation: <strong className="font-semibold">{linkedPO ? fmt(linkedPO.totalAmount) : '₹3,50,000'}</strong>
+                        Delivered against PO <strong className="font-semibold">{selectedReceipt.poNumber}</strong> • Total Consignment Valuation: <strong className="font-semibold">{linkedPO ? fmt(linkedPO.totalAmount) : (selectedReceipt.amount ? fmt(selectedReceipt.amount) : '₹3,50,000')}</strong>
                       </p>
                     </div>
 
                     <div className="sm:text-right border-t sm:border-t-0 sm:border-l border-emerald-200 pt-2 sm:pt-0 sm:pl-4">
                       <span className="text-[10px] font-bold uppercase text-emerald-800 block">Inventory Disposition</span>
                       <span className="text-xs font-black text-emerald-950">
-                        {selectedReceipt.warehouseLocation || 'Main Depot Bay 3'}
+                        {selectedReceipt.warehouseLocation || 'Main Depot Bay 4'}
                       </span>
                       <span className="text-[10px] text-emerald-700 block font-medium">Ready for Department Allocation</span>
                     </div>
@@ -494,7 +1030,7 @@ export const AdminReceiptsPage: React.FC = () => {
                         <CheckCircle size={13} className="text-emerald-600" />
                       </div>
                       <strong className="text-slate-900 text-xs block">{selectedReceipt.poNumber}</strong>
-                      <span className="text-[10px] text-emerald-700 font-semibold">Matched: {linkedPO ? fmt(linkedPO.totalAmount) : '₹3,50,000'}</span>
+                      <span className="text-[10px] text-emerald-700 font-semibold">Matched: {linkedPO ? fmt(linkedPO.totalAmount) : (selectedReceipt.amount ? fmt(selectedReceipt.amount) : '₹3,50,000')}</span>
                     </div>
 
                     <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
@@ -581,6 +1117,13 @@ export const AdminReceiptsPage: React.FC = () => {
           </div>
         )
       })()}
+
+      {selectedReceiptPayment && (
+        <UnifiedReceiptModal
+          payment={selectedReceiptPayment}
+          onClose={() => setSelectedReceiptPayment(null)}
+        />
+      )}
     </div>
   )
 }

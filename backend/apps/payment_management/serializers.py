@@ -2,11 +2,13 @@ from rest_framework import serializers
 from .models import Payment
 from apps.invoice_management.serializers import InvoiceSerializer
 from apps.vendor_management.serializers import VendorSerializer
+from apps.request_management.serializers import PurchaseRequestSerializer
 
 
 class PaymentSerializer(serializers.ModelSerializer):
     invoice_detail = InvoiceSerializer(source='invoice', read_only=True)
     vendor_detail = VendorSerializer(source='vendor', read_only=True)
+    purchase_request_detail = PurchaseRequestSerializer(source='purchase_request', read_only=True)
 
     class Meta:
         model = Payment

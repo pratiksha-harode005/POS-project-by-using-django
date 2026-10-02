@@ -49,6 +49,13 @@ class GoodsReceipt(TimeStampedModel):
     delivery_date = models.DateField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Verified')
     notes = models.TextField(blank=True)
+    delivery_location = models.CharField(max_length=255, default='Digital Provisioning / Cloud')
+    product_name = models.CharField(max_length=255, default='', blank=True)
+    ordered_quantity = models.IntegerField(null=True, blank=True, default=1)
+    received_quantity = models.IntegerField(null=True, blank=True, default=1)
+    receipt_date = models.DateField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by_name = models.CharField(max_length=255, blank=True, default='')
 
     def save(self, *args, **kwargs):
         if not self.receipt_id:

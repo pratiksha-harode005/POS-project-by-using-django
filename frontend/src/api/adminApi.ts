@@ -3,11 +3,11 @@ import { ApiRequestParams } from './managerApi'
 
 export const getAdminDashboardStats = async () => {
   try {
-    const res = await apiClient.get('/admin/requests/')
+    const res = await apiClient.get('/admin/requests/', { params: { page_size: 100 } })
     return res.data
   } catch {
     try {
-      const fallback = await apiClient.get('/requests/')
+      const fallback = await apiClient.get('/requests/', { params: { page_size: 100 } })
       return fallback.data
     } catch {
       return null
@@ -17,11 +17,11 @@ export const getAdminDashboardStats = async () => {
 
 export const getAdminRequests = async (params?: ApiRequestParams) => {
   try {
-    const res = await apiClient.get('/admin/requests/', { params })
+    const res = await apiClient.get('/admin/requests/', { params: { ...params, page_size: 100 } })
     return res.data
   } catch {
     try {
-      const fallback = await apiClient.get('/requests/', { params })
+      const fallback = await apiClient.get('/requests/', { params: { ...params, page_size: 100 } })
       return fallback.data
     } catch {
       return { results: [], count: 0 }
@@ -51,7 +51,7 @@ export const getAdminRequestHistory = async (id: string | number) => {
 
 export const getAdminUsers = async (params?: ApiRequestParams) => {
   try {
-    const res = await apiClient.get('/users/', { params })
+    const res = await apiClient.get('/users/', { params: { ...params, page_size: 100 } })
     return res.data
   } catch {
     return { results: [], count: 0 }
@@ -60,7 +60,7 @@ export const getAdminUsers = async (params?: ApiRequestParams) => {
 
 export const getAdminVendors = async (params?: ApiRequestParams) => {
   try {
-    const res = await apiClient.get('/vendors/', { params })
+    const res = await apiClient.get('/vendors/', { params: { ...params, page_size: 100 } })
     return res.data
   } catch {
     return { results: [], count: 0 }
@@ -69,7 +69,7 @@ export const getAdminVendors = async (params?: ApiRequestParams) => {
 
 export const getAdminPurchaseOrders = async (params?: ApiRequestParams) => {
   try {
-    const res = await apiClient.get('/procurement/purchase-orders/', { params })
+    const res = await apiClient.get('/procurement/purchase-orders/', { params: { ...params, page_size: 100 } })
     return res.data
   } catch {
     return { results: [], count: 0 }
@@ -134,3 +134,34 @@ export const sendBackAdminRequestApi = async (id: string | number, feedback: str
     }
   }
 }
+
+export const saveAdminResearchApi = async (id: string | number, data: any) => {
+  try {
+    const res = await apiClient.post(`/admin/requests/${id}/save-research/`, data)
+    return res.data
+  } catch {
+    try {
+      const fallback = await apiClient.post(`/requests/${id}/save_research/`, data)
+      return fallback.data
+    } catch (err: any) {
+      console.error('Failed to save admin research:', err)
+      throw err
+    }
+  }
+}
+
+export const saveAdminCostEstimationApi = async (id: string | number, data: any) => {
+  try {
+    const res = await apiClient.post(`/admin/requests/${id}/save-cost-estimation/`, data)
+    return res.data
+  } catch {
+    try {
+      const fallback = await apiClient.post(`/requests/${id}/save_pre_estimation/`, data)
+      return fallback.data
+    } catch (err: any) {
+      console.error('Failed to save admin cost estimation:', err)
+      throw err
+    }
+  }
+}
+
