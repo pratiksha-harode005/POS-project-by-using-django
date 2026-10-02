@@ -61,7 +61,10 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
             'received_by',
             'purchase_order',
             'purchase_order__vendor',
-            'purchase_order__vendor__category'
+            'purchase_order__vendor__category',
+            'purchase_order__purchase_request',
+            'purchase_order__purchase_request__created_by',
+            'purchase_order__purchase_request__department'
         ).order_by('-created_at')
         if user.role == 'VENDOR':
             if hasattr(user, 'vendor_profile') and user.vendor_profile:

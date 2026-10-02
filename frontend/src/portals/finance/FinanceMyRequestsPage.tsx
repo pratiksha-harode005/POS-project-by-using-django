@@ -523,6 +523,7 @@ export const FinanceMyRequestsPage: React.FC = () => {
                         currentlyWith={order.currentlyWith}
                         lastUpdated={order.lastUpdated}
                         history={order.history}
+                        timeline={(order as any).timeline}
                       />
                     </div>
                   </div>

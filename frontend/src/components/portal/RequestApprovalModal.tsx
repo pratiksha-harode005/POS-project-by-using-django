@@ -26,6 +26,20 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
 }) => {
   if (!isOpen || !request) return null
 
+  // Check if request is Software & SaaS
+  const isSoftwareSaas =
+    request.category === 'Software & SaaS' ||
+    request.category?.toLowerCase() === 'software & saas' ||
+    request.category?.toLowerCase().includes('software') ||
+    request.category?.toLowerCase().includes('saas') ||
+    request.flowType === 'B'
+
+  // Dynamic field numbering
+  const numJustification = isSoftwareSaas ? 5 : 7
+  const numImpact = isSoftwareSaas ? 6 : 8
+  const numRisk = isSoftwareSaas ? 7 : 9
+  const numComments = isSoftwareSaas ? 8 : 10
+
   // 1. Requested Amount (read-only)
   const requestedAmount = request.amount
 
@@ -85,25 +99,14 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   const handleConfirm = (e: React.FormEvent) => {
     e.preventDefault()
 
-    const numApproved = typeof approvedAmount === 'number' ? approvedAmount : parseFloat(String(approvedAmount)) || 0
-
-    // Validate fields
-    if (!numApproved || numApproved <= 0) {
-      setValidationError('Approved amount must be greater than zero.')
-      return
-    }
-
-    if (requestedAmount > 0 && numApproved > requestedAmount) {
-      setValidationError(`Approved amount (${fmt(numApproved)}) cannot exceed requested amount (${fmt(requestedAmount)}).`)
-      return
-    }
+    const numApproved = requestedAmount > 0 ? requestedAmount : (request?.amount || 0)
 
     if (!costCenter.trim()) {
       setValidationError('Cost center is required to allocate department expenditure.')
       return
     }
 
-    if (!vendor.trim()) {
+    if (!isSoftwareSaas && !vendor.trim()) {
       setValidationError('Vendor name is required for procurement validation.')
       return
     }
@@ -130,8 +133,8 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
       approvedAmount: numApproved,
       budgetAvailable,
       costCenter: costCenter.trim(),
-      vendor: vendor.trim(),
-      commercialEvaluation,
+      vendor: isSoftwareSaas ? (vendor.trim() || request.vendor || 'Direct Software Provider') : vendor.trim(),
+      commercialEvaluation: isSoftwareSaas ? 'Not Required' : commercialEvaluation,
       businessJustification: businessJustification.trim(),
       businessImpact: businessImpact.trim(),
       riskCompliance,
@@ -189,12 +192,12 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
 
         <form onSubmit={handleConfirm} className="p-6 space-y-5 text-xs max-h-[75vh] overflow-y-auto [scrollbar-width:thin]">
           {/* Error Message */}
-          {validationError && (
+          {validationError ? (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold flex items-center gap-2 animate-shake">
               <AlertCircle size={16} className="flex-shrink-0 text-rose-600" />
               <span>{validationError}</span>
             </div>
-          )}
+          ) : null}
 
           {/* ── PART A: FINANCIAL VALIDATION ── */}
           <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-3">
@@ -215,29 +218,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
                 <span className="text-[10px] text-slate-400 mt-0.5 block">Sum total requested by user</span>
               </div>
 
-              {/* 2. Approved Amount */}
-              <div>
-                <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                  2. Approved Amount (₹) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={approvedAmount}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    if (val === '') {
-                      setApprovedAmount('')
-                    } else {
-                      const num = parseFloat(val)
-                      setApprovedAmount(isNaN(num) ? '' : num)
-                    }
-                  }}
-                  className="w-full px-3.5 py-2 bg-white rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 font-mono font-bold text-sm text-slate-900"
-                  required
-                />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Actual authorized amount (cannot exceed requested)</span>
-              </div>
+              {/* 2. Approved Amount Removed */}
 
               {/* 3. Budget Available */}
               <div>
@@ -262,21 +243,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
                     <span>Yes, Budget Confirmed</span>
                   </label>
 
-                  <label className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border cursor-pointer font-bold transition-all ${
-                    budgetAvailable === 'No'
-                      ? 'bg-rose-50 border-rose-300 text-rose-800 ring-1 ring-rose-400'
-                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                  }`}>
-                    <input
-                      type="radio"
-                      name="budgetAvailable"
-                      value="No"
-                      checked={budgetAvailable === 'No'}
-                      onChange={() => setBudgetAvailable('No')}
-                      className="hidden"
-                    />
-                    <span>No (Exception Required)</span>
-                  </label>
+                  {/* "No (Exception Required)" Option Removed */}
                 </div>
               </div>
 
@@ -298,48 +265,50 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
             </div>
           </div>
 
-          {/* ── PART B: PROCUREMENT VALIDATION ── */}
-          <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-3">
-            <div className="flex items-center gap-2 text-slate-900 font-bold border-b border-slate-100 pb-2">
-              <Building size={16} className="text-blue-600" />
-              <span className="uppercase tracking-wider text-[11px]">Procurement Validation</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {/* 5. Vendor */}
-              <div>
-                <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                  5. Contracted / Target Vendor <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={vendor}
-                  onChange={(e) => setVendor(e.target.value)}
-                  placeholder="e.g. Dell Technologies Enterprise"
-                  className="w-full px-3.5 py-2 bg-white rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-medium text-xs text-slate-900"
-                  required
-                />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Designated supplier who receives the PO</span>
+          {/* ── PART B: PROCUREMENT VALIDATION (Omitted for Software & SaaS) ── */}
+          {!isSoftwareSaas ? (
+            <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-3">
+              <div className="flex items-center gap-2 text-slate-900 font-bold border-b border-slate-100 pb-2">
+                <Building size={16} className="text-blue-600" />
+                <span className="uppercase tracking-wider text-[11px]">Procurement Validation</span>
               </div>
 
-              {/* 6. Commercial Evaluation */}
-              <div>
-                <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                  6. Commercial Evaluation Status <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={commercialEvaluation}
-                  onChange={(e) => setCommercialEvaluation(e.target.value as any)}
-                  className="w-full px-3.5 py-2 bg-white rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-medium text-xs text-slate-900"
-                >
-                  <option value="Completed">Completed (Market Quotes Evaluated)</option>
-                  <option value="Pending">Pending (Quotes Awaiting Review)</option>
-                  <option value="Not Required">Not Required (Sole Supplier / Rate Contract)</option>
-                </select>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Price benchmarking &amp; supplier quote validation</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* 5. Vendor */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
+                    5. Contracted / Target Vendor <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={vendor}
+                    onChange={(e) => setVendor(e.target.value)}
+                    placeholder="e.g. Dell Technologies Enterprise"
+                    className="w-full px-3.5 py-2 bg-white rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-medium text-xs text-slate-900"
+                    required
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">Designated supplier who receives the PO</span>
+                </div>
+
+                {/* 6. Commercial Evaluation */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
+                    6. Commercial Evaluation Status <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={commercialEvaluation}
+                    onChange={(e) => setCommercialEvaluation(e.target.value as any)}
+                    className="w-full px-3.5 py-2 bg-white rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-medium text-xs text-slate-900"
+                  >
+                    <option value="Completed">Completed (Market Quotes Evaluated)</option>
+                    <option value="Pending">Pending (Quotes Awaiting Review)</option>
+                    <option value="Not Required">Not Required (Sole Supplier / Rate Contract)</option>
+                  </select>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">Price benchmarking &amp; supplier quote validation</span>
+                </div>
               </div>
             </div>
-          </div>
+          ) : null}
 
           {/* ── PART C: BUSINESS JUSTIFICATION ── */}
           <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-3">
@@ -349,10 +318,10 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
             </div>
 
             <div className="space-y-3">
-              {/* 7. Business Justification */}
+              {/* Business Justification */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                  7. Business Justification <span className="text-rose-500">*</span>
+                  {numJustification}. Business Justification <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   rows={2}
@@ -365,10 +334,10 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
                 <span className="text-[10px] text-slate-400 mt-0.5 block">Documented commercial and technical reason for purchase</span>
               </div>
 
-              {/* 8. Business Impact */}
+              {/* Business Impact */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                  8. Business Impact (If Disapproved) <span className="text-rose-500">*</span>
+                  {numImpact}. Business Impact (If Disapproved) <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   rows={2}
@@ -391,10 +360,10 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {/* 9. Risk & Compliance */}
+              {/* Risk & Compliance */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                  9. Risk &amp; Policy Compliance <span className="text-rose-500">*</span>
+                  {numRisk}. Risk &amp; Policy Compliance <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={riskCompliance}
@@ -415,19 +384,19 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
                   Authorized Reviewer Identity
                 </label>
                 <div className="px-3.5 py-2 bg-slate-100 rounded-xl border border-slate-200 text-slate-800 font-semibold flex items-center justify-between">
-                  <span>Sarah Manager</span>
+                  <span>{approverName || (portalType === 'ADMIN' ? 'David Admin' : portalType === 'FINANCE' ? 'Mark Finance Officer' : 'Sarah Manager')}</span>
                   <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-bold">
-                    Dept Manager
+                    {portalType === 'ADMIN' ? 'Executive Admin' : portalType === 'FINANCE' ? 'Finance Officer' : 'Dept Manager'}
                   </span>
                 </div>
                 <span className="text-[10px] text-slate-400 mt-0.5 block">Timestamped on confirmation</span>
               </div>
             </div>
 
-            {/* 10. Approval Comments */}
+            {/* Approval Comments */}
             <div className="pt-2">
               <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                10. Approval Comments &amp; Sign-off Notes <span className="text-rose-500">*</span>
+                {numComments}. Approval Comments &amp; Sign-off Notes <span className="text-rose-500">*</span>
               </label>
               <textarea
                 rows={2}

@@ -1,15 +1,18 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   CheckCircle, XCircle, Clock, AlertTriangle,
   FileText, ArrowRight, ShieldCheck, User, Building, Calendar,
-  Paperclip, DollarSign, X, Check, ArrowUpRight, Eye, Layers
+  Paperclip, DollarSign, X, Check, ArrowUpRight, Eye, Layers, CreditCard
 } from 'lucide-react'
 import { useFinanceData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
 import { useAuth } from '../../context/AuthContext'
 import { RequestDetailsModal } from '../../components/portal/RequestDetailsModal'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { ProcessPaymentModal } from '../../components/portal/ProcessPaymentModal'
+import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst, getRecommendationStatus } from '../../utils/workflowUtils'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -45,6 +48,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     approvedFinanceRequests,
     rejectedFinanceRequests,
     allRequests,
+    refreshData,
     budgets,
     approveFinanceRequest,
     rejectFinanceRequest,
@@ -53,23 +57,38 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     recommendToHigherAuthority
   } = useFinanceData()
 
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
+
   const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
 
   // Tab Filter State: ALL | Pending | Approved | Rejected
   type FilterStatus = 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('ALL')
+  const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
 
   // Requests in the Finance approval lifecycle
   const allFinanceRequests = useMemo(() => {
-    return [
+    const list = [
       ...pendingFinancialApprovals,
       ...approvedFinanceRequests,
       ...rejectedFinanceRequests,
-    ].filter((item, idx, self) => idx === self.findIndex(t => t.id === item.id))
-  }, [pendingFinancialApprovals, approvedFinanceRequests, rejectedFinanceRequests])
+      ...allRequests.filter(r => 
+        r.financeStatus || 
+        r.status.startsWith('finance_') || 
+        r.status.startsWith('payment_') || 
+        r.status === 'approved' || 
+        r.status === 'recommended_to_admin' || 
+        r.status === 'completed' ||
+        ['FINANCE_APPROVED', 'ADMIN_APPROVED', 'PAYMENT_APPROVED', 'PAYMENT_PROCESSED', 'PAYMENT_JUSTIFICATION_SUBMITTED', 'PAYMENT_JUSTIFIED', 'PAYMENT_COMPLETED', 'COMPLETED', 'TEAM_LEAD_CONFIRMED', 'RECOMMENDED_TO_FINANCE', 'FINANCE_REVIEW'].includes((r as any).raw_status || '')
+      )
+    ]
+    return list.filter((item, idx, self) => idx === self.findIndex(t => t.id === item.id))
+  }, [pendingFinancialApprovals, approvedFinanceRequests, rejectedFinanceRequests, allRequests])
 
-  // Computed requests matching the active filter
-  const displayedRequests = useMemo(() => {
+  // Active pool matching the status filter
+  const rawList = useMemo(() => {
     if (statusFilter === 'ALL') return allFinanceRequests
     if (statusFilter === 'PENDING') return pendingFinancialApprovals
     if (statusFilter === 'APPROVED') return approvedFinanceRequests
@@ -77,10 +96,26 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     return allFinanceRequests
   }, [statusFilter, allFinanceRequests, pendingFinancialApprovals, approvedFinanceRequests, rejectedFinanceRequests])
 
+  // Segmented filter counts
+  const softwareCount = useMemo(() => rawList.filter(r => isSoftwareRequest(r)).length, [rawList])
+  const hardwareCount = useMemo(() => rawList.filter(r => isHardwareRequest(r)).length, [rawList])
+
+  // Computed requests matching active status & type filter, sorted strictly newest first
+  const displayedRequests = useMemo(() => {
+    const matching = rawList.filter(r => {
+      if (requestType === 'all') return true
+      if (requestType === 'software') return isSoftwareRequest(r)
+      return isHardwareRequest(r)
+    })
+    return sortRequestsNewestFirst(matching)
+  }, [rawList, requestType])
+
   // Modal State
   const [activeReq, setActiveReq] = useState<ProcurementRequest | null>(null)
   const [modalAction, setModalAction] = useState<ActionType | null>(null)
   const [showDossierModal, setShowDossierModal] = useState(false)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [paymentReq, setPaymentReq] = useState<ProcurementRequest | null>(null)
   const [reason, setReason] = useState(REJECTION_REASONS[0])
   const [comment, setComment] = useState('')
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null)
@@ -115,8 +150,8 @@ export const PendingFinancialApprovalPage: React.FC = () => {
 
   const handleConfirmFinancialDossier = (params: ApprovalParameters) => {
     if (!activeReq) return
-    approveFinanceRequest(activeReq.id, params.approvalComments, actorName)
-    showToast(`✓ Request ${activeReq.id} approved successfully! Routed to PO generation.`)
+    approveFinanceRequest(activeReq.id, params.approvalComments, actorName, params)
+    showToast(`✓ Request ${activeReq.id} approved successfully! Approved Amount: ${fmt(params.approvedAmount)}. Routed to Payment.`)
     setShowDossierModal(false)
     setActiveReq(null)
   }
@@ -288,6 +323,17 @@ export const PendingFinancialApprovalPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Request Type Segmented Filter */}
+      <div className="flex items-center justify-between">
+        <RequestTypeFilter
+          value={requestType}
+          onChange={setRequestType}
+          totalCount={rawList.length}
+          softwareCount={softwareCount}
+          hardwareCount={hardwareCount}
+        />
+      </div>
+
       {/* Requests List */}
       <div className="space-y-4">
         {displayedRequests.length === 0 ? (
@@ -339,8 +385,27 @@ export const PendingFinancialApprovalPage: React.FC = () => {
             const budgetAvailable = matchedBudget ? matchedBudget.available : 0
             const hasSufficientBudget = matchedBudget ? budgetAvailable >= req.amount : false
 
-            const isApproved = req.status === 'approved' || req.status === 'finance_approved'
-            const isRejected = req.status === 'rejected' || req.status === 'finance_rejected'
+            const recInfo = getRecommendationStatus(req)
+            const isApproved =
+              req.status === 'approved' ||
+              req.status === 'finance_approved' ||
+              req.status === 'payment_approved' ||
+              req.status === 'payment_justification_submitted' ||
+              req.status === 'payment_justified' ||
+              req.status === 'payment_completed' ||
+              req.status === 'completed' ||
+              req.financeStatus === 'Approved' ||
+              req.financeStatus === 'Paid' ||
+              req.financeStatus === 'Completed' ||
+              req.financeStatus === 'Admin Approved' ||
+              ['FINANCE_APPROVED', 'ADMIN_APPROVED', 'PAYMENT_APPROVED', 'PAYMENT_PROCESSED', 'PAYMENT_JUSTIFICATION_SUBMITTED', 'PAYMENT_JUSTIFIED', 'PAYMENT_COMPLETED', 'COMPLETED', 'TEAM_LEAD_CONFIRMED'].includes((req as any).raw_status || '')
+
+            const isRejected =
+              req.status === 'rejected' ||
+              req.status === 'finance_rejected' ||
+              req.financeStatus === 'Rejected' ||
+              ['REJECTED', 'FINANCE_REJECTED'].includes((req as any).raw_status || '')
+
             const isPending = !isApproved && !isRejected
             const isNew = isUnread(req.id) && !isApproved && !isRejected
 
@@ -375,7 +440,15 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                       >
                         {req.priority} Priority
                       </span>
-                      {isApproved ? (
+                      {recInfo.isRecommendedToAdmin ? (
+                        <span className="text-[10px] font-black text-purple-950 bg-purple-100 px-3 py-0.5 rounded-full border border-purple-300 shadow-2xs flex items-center gap-1">
+                          <ArrowUpRight size={11} /> {recInfo.statusLabel}
+                        </span>
+                      ) : recInfo.isRecommendedToFinance && !isApproved && !isRejected ? (
+                        <span className="text-[10px] font-black text-emerald-950 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
+                          <ArrowUpRight size={11} /> {recInfo.statusLabel}
+                        </span>
+                      ) : isApproved ? (
                         <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
                           <CheckCircle size={11} /> {req.financeStatus || 'Finance Approved'}
                         </span>
@@ -383,16 +456,12 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                         <span className="text-[10px] font-black text-rose-900 bg-rose-100 px-3 py-0.5 rounded-full border border-rose-300 shadow-2xs flex items-center gap-1">
                           <XCircle size={11} /> {req.financeStatus || 'Rejected'}
                         </span>
-                      ) : req.status === 'recommended_to_admin' ? (
-                        <span className="text-[10px] font-black text-purple-950 bg-purple-100 px-3 py-0.5 rounded-full border border-purple-300 shadow-2xs flex items-center gap-1">
-                          <ArrowUpRight size={11} /> Recommended to Admin
-                        </span>
                       ) : (
                         <span className="text-[10px] font-black text-amber-900 bg-amber-100 px-3 py-0.5 rounded-full border border-amber-300 shadow-2xs flex items-center gap-1">
                           {req.financeStatus || 'Awaiting Finance Review'}
                         </span>
                       )}
-                      {req.recommendationReason && req.status !== 'recommended_to_admin' && !isApproved && !isRejected && (
+                      {req.recommendationReason && !recInfo.isRecommended && !isApproved && !isRejected && (
                         <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
                           Escalated by Manager
                         </span>
@@ -416,7 +485,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                 </div>
 
                 {/* Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-slate-50/70 p-4 rounded-xl border border-slate-200">
+                <div className={`grid grid-cols-1 ${isApproved || isRejected ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 text-xs bg-slate-50/70 p-4 rounded-xl border border-slate-200`}>
                   {/* Column 1: Endorsement or Approval/Rejection Actor */}
                   <div className="space-y-1">
                     <span className="text-slate-500 font-bold block uppercase text-[10px]">
@@ -454,38 +523,25 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Column 2: Budget Headroom or Status */}
-                  <div className="space-y-1">
-                    <span className="text-slate-500 font-bold block uppercase text-[10px]">
-                      {isApproved ? 'Payment / PO Status' : isRejected ? 'Audit Rationale' : 'Live Budget Verification'}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {isApproved ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs">
-                          Disbursement: {req.paymentStatus || 'Pending'}
-                        </span>
-                      ) : isRejected ? (
-                        <span className="text-rose-700 font-bold flex items-center gap-1 truncate" title={req.rejectionReason}>
-                          <AlertTriangle size={14} /> {req.rejectionReason || 'Policy Disapproval'}
-                        </span>
-                      ) : !matchedBudget ? (
-                        <span className="text-slate-700 bg-slate-100 border border-slate-300 font-extrabold px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs">
-                          <Check size={14} className="text-slate-500" /> Unallocated Budget
-                        </span>
-                      ) : hasSufficientBudget ? (
-                        <span className="text-emerald-900 bg-emerald-100 border border-emerald-300 font-extrabold px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs">
-                          <Check size={14} className="text-emerald-700" /> Headroom: {fmt(budgetAvailable)}
-                        </span>
-                      ) : (
-                        <span className="text-rose-900 bg-rose-100 border border-rose-300 font-extrabold px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs">
-                          <AlertTriangle size={14} className="text-rose-700" /> Over Budget: Avail {fmt(budgetAvailable)}
-                        </span>
-                      )}
+                  {/* Column 2: Status for Approved or Rejected */}
+                  {(isApproved || isRejected) && (
+                    <div className="space-y-1">
+                      <span className="text-slate-500 font-bold block uppercase text-[10px]">
+                        {isApproved ? 'Payment / PO Status' : 'Audit Rationale'}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {isApproved ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs">
+                            Disbursement: {req.paymentStatus || 'Pending'}
+                          </span>
+                        ) : (
+                          <span className="text-rose-700 font-bold flex items-center gap-1 truncate" title={req.rejectionReason}>
+                            <AlertTriangle size={14} /> {req.rejectionReason || 'Policy Disapproval'}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-[11px] text-slate-600 font-semibold">
-                      Budget Category: {req.department} • {req.category}
-                    </p>
-                  </div>
+                  )}
 
                   {/* Column 3: Date & Supporting Documents */}
                   <div className="space-y-1">
@@ -518,9 +574,9 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                         <CheckCircle size={18} />
                       </div>
                       <div>
-                        <span className="font-bold text-emerald-950">Expenditure Authorized & Released</span>
+                        <span className="font-bold text-emerald-950">Finance Approved</span>
                         <p className="text-[11px] text-emerald-700">
-                          {req.financeComment || 'Budget headroom verified. Released for PO generation and invoice processing.'}
+                          {req.financeComment || 'Budget headroom verified. Approved for PO generation or mock payment.'}
                         </p>
                       </div>
                     </div>
@@ -550,23 +606,42 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* Higher Authority Banner if recommended to admin */}
-                {statusFilter === 'PENDING' && req.status === 'recommended_to_admin' && (
-                  <div className="bg-purple-50/90 border border-purple-200 rounded-xl p-3 flex items-center justify-between text-xs text-purple-900">
+                {/* Recommended to Finance Banner */}
+                {recInfo.isRecommendedToFinance && !isApproved && !isRejected && (
+                  <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-950 shadow-2xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <ArrowUpRight size={18} />
+                      </div>
+                      <div>
+                        <span className="font-black text-emerald-950">Recommended to Finance — {recInfo.portalName}</span>
+                        <p className="text-[11px] text-emerald-800 font-medium">
+                          {recInfo.reason || 'Requisition forwarded by Manager for commercial review & financial approval.'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-md bg-emerald-200 text-emerald-950 text-[10px] font-black uppercase tracking-wide border border-emerald-300">
+                      Recommended to Finance
+                    </span>
+                  </div>
+                )}
+
+                {/* Recommended to Admin Banner */}
+                {recInfo.isRecommendedToAdmin && (
+                  <div className="bg-purple-50 border border-purple-300 rounded-xl p-3 flex items-center justify-between text-xs text-purple-950 shadow-2xs">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
                         <ArrowUpRight size={18} />
                       </div>
                       <div>
-                        <span className="font-bold text-purple-950">Recommended to Higher Authority (Admin)</span>
-                        <p className="text-[11px] text-purple-700">
-                          {req.recommendationReason}
-                          {req.financeComment ? ` • Notes: "${req.financeComment}"` : ''}
+                        <span className="font-black text-purple-950">Recommended to Admin — {recInfo.portalName}</span>
+                        <p className="text-[11px] text-purple-800 font-medium">
+                          {recInfo.reason || 'Requisition forwarded to Administrator for higher authority review and executive approval.'}
                         </p>
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 rounded-md bg-purple-200/80 text-purple-900 text-[10px] font-extrabold uppercase tracking-wide">
-                      Awaiting Admin Sign-off
+                    <span className="px-2.5 py-1 rounded-md bg-purple-200 text-purple-950 text-[10px] font-black uppercase tracking-wide border border-purple-300">
+                      Recommended to Admin
                     </span>
                   </div>
                 )}
@@ -594,53 +669,69 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                   {/* Actions for PENDING */}
                   {(statusFilter === 'PENDING' || (statusFilter === 'ALL' && isPending)) && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      {/* Right 1: View */}
-                      <button
-                        onClick={() => handleOpenViewDetails(req)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 shadow-2xs transition-all cursor-pointer"
-                      >
-                        <Eye size={14} /> View
-                      </button>
+                      {recInfo.isRecommendedToAdmin ? (
+                        <>
+                          <button
+                            onClick={() => handleOpenViewDetails(req)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 shadow-2xs transition-all cursor-pointer"
+                          >
+                            <Eye size={14} /> View
+                          </button>
+                          <span className="text-xs font-bold text-purple-950 bg-purple-100 border border-purple-300 px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                            <ArrowUpRight size={14} /> {recInfo.statusLabel}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {/* Right 1: View */}
+                          <button
+                            onClick={() => handleOpenViewDetails(req)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 shadow-2xs transition-all cursor-pointer"
+                          >
+                            <Eye size={14} /> View
+                          </button>
 
-                      {/* Right 2: Approve */}
-                      <button
-                        onClick={() => openAction(req, 'APPROVE')}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-                      >
-                        <CheckCircle size={14} /> Approve
-                      </button>
+                          {/* Right 2: Approve */}
+                          <button
+                            onClick={() => openAction(req, 'APPROVE')}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                          >
+                            <CheckCircle size={14} /> Approve
+                          </button>
 
-                      {/* Right 3: Reject */}
-                      <button
-                        onClick={() => openAction(req, 'REJECT')}
-                        className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-                      >
-                        <XCircle size={14} /> Reject
-                      </button>
+                          {/* Right 3: Reject */}
+                          <button
+                            onClick={() => openAction(req, 'REJECT')}
+                            className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                          >
+                            <XCircle size={14} /> Reject
+                          </button>
 
-                      {/* Right 4: Send Back */}
-                      <button
-                        onClick={() => openAction(req, 'SEND_BACK')}
-                        className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-                        title="Send back request for clarification or revision"
-                      >
-                        <AlertTriangle size={14} /> Send Back
-                      </button>
+                          {/* Right 4: Send Back */}
+                          <button
+                            onClick={() => openAction(req, 'SEND_BACK')}
+                            className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                            title="Send back request for clarification or revision"
+                          >
+                            <AlertTriangle size={14} /> Send Back
+                          </button>
 
-                      {/* Right 5: Recommend to Higher Authority */}
-                      <button
-                        onClick={() => openAction(req, 'RECOMMEND_ADMIN')}
-                        className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-                        title="Forward request to Admin for higher authority review and approval"
-                      >
-                        <ArrowUpRight size={14} /> Recommend to Higher Authority
-                      </button>
+                          {/* Right 5: Recommend to Higher Authority */}
+                          <button
+                            onClick={() => openAction(req, 'RECOMMEND_ADMIN')}
+                            className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                            title="Forward request to Admin for higher authority review and approval"
+                          >
+                            <ArrowUpRight size={14} /> Recommend to Higher Authority
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
 
                   {/* Actions for APPROVED */}
                   {(statusFilter === 'APPROVED' || (statusFilter === 'ALL' && isApproved)) && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => handleOpenViewDetails(req)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 shadow-2xs transition-all cursor-pointer"
@@ -648,8 +739,33 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                         <Eye size={13} /> View
                       </button>
                       <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-xl flex items-center gap-1">
-                        <CheckCircle size={13} /> Authorized & Released
+                        <CheckCircle size={13} /> Finance Approved
                       </span>
+
+                      {/* Process Payment CTA if not yet paid */}
+                      {req.paymentStatus !== 'Paid' && (req as any).raw_status !== 'PAYMENT_COMPLETED' && (req as any).raw_status !== 'PAYMENT_PROCESSED' && (req as any).raw_status !== 'PAYMENT_JUSTIFICATION_SUBMITTED' && (req as any).raw_status !== 'PAYMENT_JUSTIFIED' && (req as any).raw_status !== 'COMPLETED' && (req as any).raw_status !== 'TEAM_LEAD_CONFIRMED' ? (
+                        req.category === 'Software & SaaS' ? (
+                          <span className="text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-3 py-1 rounded-xl flex items-center gap-1 shadow-2xs">
+                            <Clock size={12} className="text-amber-700" /> Awaiting Team Lead Mock Payment
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentReq(req)
+                              setShowPaymentModal(true)
+                            }}
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                          >
+                            <CreditCard size={14} /> Process Payment
+                          </button>
+                        )
+                      ) : (
+                        <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-xl flex items-center gap-1 shadow-2xs">
+                          <CheckCircle size={12} className="text-emerald-700" /> Payment Disbursed: {(req as any).payment_reference || 'Mock Paid'}
+                        </span>
+                      )}
+
                       <button
                         onClick={() => navigate(`/portal/finance/request-details?id=${req.id}`)}
                         className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-xl transition-all cursor-pointer"
@@ -865,6 +981,19 @@ export const PendingFinancialApprovalPage: React.FC = () => {
           setActiveReq(null)
         }}
         onConfirm={handleConfirmFinancialDossier}
+      />
+
+      {/* Process Payment Settlement Modal (Stage 8) */}
+      <ProcessPaymentModal
+        isOpen={showPaymentModal}
+        request={paymentReq}
+        onClose={() => {
+          setShowPaymentModal(false)
+          setPaymentReq(null)
+        }}
+        onSuccess={(utr: string) => {
+          showToast(`✓ Payment disbursed & recorded in treasury ledger! UTR: ${utr}`, 'success')
+        }}
       />
     </div>
   )

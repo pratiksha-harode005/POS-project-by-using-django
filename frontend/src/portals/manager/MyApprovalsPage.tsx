@@ -1,7 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { CheckCircle, XCircle, ArrowUpRight, Search, Filter } from 'lucide-react'
 import { useManagerData } from '../../context/ManagerDataContext'
 import { ActionModal, ModalActionType } from '../../components/portal/ActionModal'
+import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
 import type { ProcurementRequest } from '../../context/ManagerDataContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
@@ -13,16 +15,35 @@ const statusBadge: Record<string, string> = {
 }
 
 export const MyApprovalsPage: React.FC = () => {
-  const { myApprovals, rejectRequest, recommendToFinance } = useManagerData()
+  const { myApprovals, refreshData, rejectRequest, recommendToFinance } = useManagerData()
+
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
+
   const [search, setSearch] = useState('')
+  const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
   const [activeReq, setActiveReq] = useState<ProcurementRequest | null>(null)
   const [modalAction, setModalAction] = useState<ModalActionType | null>(null)
 
-  const filtered = myApprovals.filter(r =>
-    !search ||
-    r.title.toLowerCase().includes(search.toLowerCase()) ||
-    r.id.toLowerCase().includes(search.toLowerCase())
-  )
+  const softwareCount = useMemo(() => myApprovals.filter(r => isSoftwareRequest(r)).length, [myApprovals])
+  const hardwareCount = useMemo(() => myApprovals.filter(r => isHardwareRequest(r)).length, [myApprovals])
+
+  const filtered = useMemo(() => {
+    const matching = myApprovals.filter(r => {
+      const matchesSearch =
+        !search ||
+        r.title.toLowerCase().includes(search.toLowerCase()) ||
+        r.id.toLowerCase().includes(search.toLowerCase())
+      const matchesType = requestType === 'all'
+        ? true
+        : requestType === 'software'
+        ? isSoftwareRequest(r)
+        : isHardwareRequest(r)
+      return matchesSearch && matchesType
+    })
+    return sortRequestsNewestFirst(matching)
+  }, [myApprovals, search, requestType])
 
   const handleConfirm = (data: { action: ModalActionType; reason?: string; notes?: string }) => {
     if (!activeReq) return
@@ -39,6 +60,17 @@ export const MyApprovalsPage: React.FC = () => {
         <p className="text-xs text-gray-500 mt-0.5">
           {myApprovals.length} request{myApprovals.length !== 1 ? 's' : ''} approved by you.
         </p>
+      </div>
+
+      {/* Request Type Segmented Filter */}
+      <div className="flex items-center justify-between">
+        <RequestTypeFilter
+          value={requestType}
+          onChange={setRequestType}
+          totalCount={myApprovals.length}
+          softwareCount={softwareCount}
+          hardwareCount={hardwareCount}
+        />
       </div>
 
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">

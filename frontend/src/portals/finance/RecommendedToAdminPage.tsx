@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowUpRight,
@@ -24,6 +24,8 @@ import {
 } from 'lucide-react'
 import { useManagerData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
@@ -38,13 +40,18 @@ const priorityColors: Record<string, string> = {
 export const RecommendedToAdminPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { recommendedToAdmin, adminApproveRequest } = useManagerData()
+  const { recommendedToAdmin, refreshData, adminApproveRequest } = useManagerData()
+
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
 
   const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
 
   // State
   const [search, setSearch] = useState('')
   const [statusTab, setStatusTab] = useState<'ALL' | 'PENDING' | 'APPROVED'>('ALL')
+  const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
   const [selectedDept, setSelectedDept] = useState('ALL')
   const [selectedPriority, setSelectedPriority] = useState('ALL')
   const [selectedReq, setSelectedReq] = useState<ProcurementRequest | null>(null)
@@ -67,6 +74,10 @@ export const RecommendedToAdminPage: React.FC = () => {
     return ['ALL', ...Array.from(set)]
   }, [recommendedToAdmin])
 
+  // Segmented filter counts
+  const softwareCount = useMemo(() => recommendedToAdmin.filter(r => isSoftwareRequest(r)).length, [recommendedToAdmin])
+  const hardwareCount = useMemo(() => recommendedToAdmin.filter(r => isHardwareRequest(r)).length, [recommendedToAdmin])
+
   // KPIs
   const kpis = useMemo(() => {
     const total = recommendedToAdmin.length
@@ -81,9 +92,9 @@ export const RecommendedToAdminPage: React.FC = () => {
     return { total, totalAmount, pending, approved }
   }, [recommendedToAdmin])
 
-  // Filtered List
+  // Filtered List — sorted strictly newest first
   const filteredList = useMemo(() => {
-    return recommendedToAdmin.filter(r => {
+    const matching = recommendedToAdmin.filter(r => {
       const q = search.toLowerCase()
       const matchesSearch =
         r.id.toLowerCase().includes(q) ||
@@ -102,9 +113,16 @@ export const RecommendedToAdminPage: React.FC = () => {
       if (statusTab === 'PENDING') matchesTab = isPending
       if (statusTab === 'APPROVED') matchesTab = isApproved
 
-      return matchesSearch && matchesDept && matchesPriority && matchesTab
+      const matchesType = requestType === 'all'
+        ? true
+        : requestType === 'software'
+        ? isSoftwareRequest(r)
+        : isHardwareRequest(r)
+
+      return matchesSearch && matchesDept && matchesPriority && matchesTab && matchesType
     })
-  }, [recommendedToAdmin, search, selectedDept, selectedPriority, statusTab])
+    return sortRequestsNewestFirst(matching)
+  }, [recommendedToAdmin, search, selectedDept, selectedPriority, statusTab, requestType])
 
   // Admin Approval Handler
   const handleConfirmFinancialDossier = (params: ApprovalParameters) => {
@@ -278,6 +296,17 @@ export const RecommendedToAdminPage: React.FC = () => {
           <p className="text-2xl font-bold text-slate-900 mt-2">{kpis.approved}</p>
           <p className="text-[11px] text-blue-600 font-medium mt-0.5">Ratified & cleared for execution</p>
         </div>
+      </div>
+
+      {/* Request Type Segmented Filter */}
+      <div className="flex items-center justify-between">
+        <RequestTypeFilter
+          value={requestType}
+          onChange={setRequestType}
+          totalCount={recommendedToAdmin.length}
+          softwareCount={softwareCount}
+          hardwareCount={hardwareCount}
+        />
       </div>
 
       {/* Filters and Search Bar */}

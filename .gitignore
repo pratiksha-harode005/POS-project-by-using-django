@@ -45,3 +45,14 @@ Thumbs.db
 
 # Misc
 *.tsbuildinfo
+
+# Scratch and local debug scripts
+scratch/
+backend/scratch/
+backend/check_*.py
+backend/fix_*.py
+backend/inspect_*.py
+backend/run_*.py
+backend/test_*.py
+backend/backfill_*.py
+backend/sync_existing_*.py

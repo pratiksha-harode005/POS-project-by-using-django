@@ -60,7 +60,8 @@ const VENDORS_BY_CATEGORY: Record<string, string[]> = {
 }
 
 interface CategoryConfig {
-  quantityLabel: string
+  quantityLabel?: string
+  hideQuantity?: boolean
   extraFieldKey?: string
   extraFieldLabel?: string
   extraFieldOptions?: string[]
@@ -69,7 +70,7 @@ interface CategoryConfig {
 
 const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
   'Software & SaaS': {
-    quantityLabel: 'Number of seats / licenses',
+    hideQuantity: true,
     extraFieldKey: 'renewalCycle',
     extraFieldLabel: 'Renewal Cycle',
     extraFieldOptions: ['Monthly', 'Yearly'],
@@ -162,6 +163,12 @@ export const CreateRequestPage: React.FC = () => {
       justification: '',
       attachment: null as File | null,
       extraFields: initialExtra,
+      // Software & SaaS Full Workflow Fields:
+      requestType: 'Renewal' as 'Renewal' | 'Upgrade' | 'New Purchase',
+      currentPlan: '',
+      requiredPlan: '',
+      existingCost: '' as number | '',
+      businessRequirement: '',
     }
   })
 
@@ -174,6 +181,18 @@ export const CreateRequestPage: React.FC = () => {
   const availableVendors = VENDORS_BY_CATEGORY[formData.category] || []
 
   const categoryConfig = CATEGORY_CONFIGS[formData.category] || { quantityLabel: 'Quantity' }
+  const showQuantity = !categoryConfig.hideQuantity
+
+  const numRequiredBy = showQuantity ? 6 : 5
+  const numDepartment = showQuantity ? 7 : 6
+  const numVendor = showQuantity ? 8 : 7
+  const numDelivery = showQuantity ? 9 : 8
+  const numPriority = categoryConfig.hideDeliveryLocation
+    ? (showQuantity ? 9 : 8)
+    : (showQuantity ? 10 : 9)
+  const numJustification = categoryConfig.hideDeliveryLocation
+    ? (showQuantity ? 10 : 9)
+    : (showQuantity ? 11 : 10)
 
   const handleCategoryChange = (newCat: string) => {
     const newConfig = CATEGORY_CONFIGS[newCat]
@@ -202,8 +221,15 @@ export const CreateRequestPage: React.FC = () => {
   const costNumber = Number(formData.estimatedCost) || 0
   const quantityNumber = typeof formData.quantity === 'number' ? formData.quantity : parseInt(String(formData.quantity), 10) || 1
 
-  const handleFormSubmit = (e: React.FormEvent, isDraft = false) => {
+  const [submitting, setSubmitting] = useState(false)
+  const isSubmittingRef = React.useRef(false)
+
+  const handleFormSubmit = async (e: React.FormEvent, isDraft = false) => {
     e.preventDefault()
+
+    if (submitting || isSubmittingRef.current) {
+      return
+    }
 
     // Rule #5: Subscription/Service Needed is required for SaaS/Cloud
     if (!isDraft && isSaaSOrCloud && !formData.subscriptionServiceName.trim()) {
@@ -211,40 +237,65 @@ export const CreateRequestPage: React.FC = () => {
       return
     }
 
-    // Rule #7: On submit, request moves to Manager's pending queue in real time (status=Pending, stage=1)
-    addRequest({
-      title: formData.title,
-      category: formData.category,
-      subcategory: isSaaSOrCloud
-        ? formData.subscriptionServiceName
-        : formData.subcategory,
-      description: formData.description,
-      quantity: quantityNumber,
-      estimatedCost: costNumber,
-      requiredBy: formData.requiredBy,
-      department: formData.department,
-      deliveryLocation: formData.deliveryLocation,
-      priority: formData.priority,
-      preferredVendor: formData.preferredVendor,
-      justification: formData.justification,
-      attachmentName: formData.attachment?.name,
-      attachmentCount: formData.attachment ? 1 : 0,
-      status: isDraft ? 'Draft' : 'Pending',
-      currentStage: isDraft ? 0 : 1,
-      flowType: isSaaSOrCloud ? 'B' : 'A',
-      extraFields: {
-        ...formData.extraFields,
-        ...(formData.subscriptionServiceName
-          ? { subscriptionServiceName: formData.subscriptionServiceName }
-          : {}),
-      },
-    })
+    isSubmittingRef.current = true
+    setSubmitting(true)
+    const existingCostNum = Number(formData.existingCost) || 0
+    const effectiveCost = costNumber > 0 ? costNumber : (existingCostNum > 0 ? existingCostNum : 0)
+    try {
+      await addRequest({
+        title: formData.title,
+        category: formData.category,
+        subcategory: isSaaSOrCloud
+          ? formData.subscriptionServiceName
+          : formData.subcategory,
+        description: formData.description,
+        quantity: showQuantity ? quantityNumber : 1,
+        estimatedCost: effectiveCost,
+        requiredBy: formData.requiredBy,
+        department: formData.department,
+        deliveryLocation: formData.deliveryLocation,
+        priority: formData.priority,
+        preferredVendor: formData.preferredVendor,
+        justification: formData.justification,
+        attachmentName: formData.attachment?.name,
+        attachmentCount: formData.attachment ? 1 : 0,
+        status: isDraft ? 'Draft' : 'Pending',
+        currentStage: isDraft ? 0 : 2,
+        flowType: isSaaSOrCloud ? 'B' : 'A',
+        request_type: formData.requestType,
+        software_name: isSaaSOrCloud ? formData.subscriptionServiceName : formData.title,
+        current_plan: formData.currentPlan,
+        required_plan: formData.requiredPlan,
+        existing_cost: Number(formData.existingCost) || 0,
+        business_requirement: formData.businessRequirement || formData.justification || formData.description,
+        subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
+        extraFields: {
+          ...formData.extraFields,
+          ...(formData.subscriptionServiceName
+            ? { subscriptionServiceName: formData.subscriptionServiceName }
+            : {}),
+          renewalCycle: formData.extraFields?.renewalCycle || (formData.category === 'Software & SaaS' ? 'Monthly' : undefined),
+          subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
+          requestType: formData.requestType,
+          purchase_type: formData.requestType,
+          currentPlan: formData.currentPlan,
+          requiredPlan: formData.requiredPlan,
+          existingCost: formData.existingCost,
+          businessRequirement: formData.businessRequirement,
+        },
+      })
 
-    setSubmittedStatus(isDraft ? 'Draft' : 'Pending')
-    setSubmitted(true)
-    setTimeout(() => {
-      navigate('/portal/team_lead/my-requests')
-    }, 1200)
+      setSubmittedStatus(isDraft ? 'Draft' : 'Pending')
+      setSubmitted(true)
+      setTimeout(() => {
+        navigate('/portal/team_lead/my-requests')
+      }, 1000)
+    } catch (err: any) {
+      alert(`Failed to save request to server: ${err?.response?.data?.detail || err?.message || 'Server error'}`)
+    } finally {
+      setSubmitting(false)
+      isSubmittingRef.current = false
+    }
   }
 
   return (
@@ -380,6 +431,73 @@ export const CreateRequestPage: React.FC = () => {
             </div>
           )}
 
+          {/* Software & SaaS Specifications */}
+          {isSaaSOrCloud && (
+            <div className="p-4 bg-gradient-to-r from-blue-50/70 to-indigo-50/50 rounded-xl border border-blue-200/80 space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-blue-200/60">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+                <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider">
+                  Software & SaaS Requirements Specifications
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">Request Type *</label>
+                  <select
+                    value={formData.requestType}
+                    onChange={(e) => setFormData({ ...formData, requestType: e.target.value as any })}
+                    className="w-full p-2 border rounded-lg bg-white border-blue-200 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    <option value="Renewal">Renewal (Existing Subscription)</option>
+                    <option value="Upgrade">Upgrade (Higher Tier / More Features)</option>
+                    <option value="New Purchase">New Purchase / Fresh Subscription</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">Existing Cost (₹) (Optional)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 45000"
+                    value={formData.existingCost}
+                    onChange={(e) => setFormData({ ...formData, existingCost: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                    className="w-full p-2 border rounded-lg bg-white border-blue-200 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">Current Plan</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Professional Plan - 50 Seats"
+                    value={formData.currentPlan}
+                    onChange={(e) => setFormData({ ...formData, currentPlan: e.target.value })}
+                    className="w-full p-2 border rounded-lg bg-white border-blue-200 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">Required Plan</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Enterprise Plan - 100 Seats with SAML SSO"
+                    value={formData.requiredPlan}
+                    onChange={(e) => setFormData({ ...formData, requiredPlan: e.target.value })}
+                    className="w-full p-2 border rounded-lg bg-white border-blue-200 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Business Requirement & Justification</label>
+                <textarea
+                  rows={2}
+                  placeholder="Detail the operational need, business objective, or team requirement for this software..."
+                  value={formData.businessRequirement}
+                  onChange={(e) => setFormData({ ...formData, businessRequirement: e.target.value })}
+                  className="w-full p-2 border rounded-lg bg-white border-blue-200 font-medium text-xs resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
+
           {/* 4. Description */}
           <div>
             <div className="flex justify-between items-center mb-1">
@@ -397,26 +515,28 @@ export const CreateRequestPage: React.FC = () => {
             />
           </div>
 
-          {/* 5, Cost & Required By */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block font-bold text-gray-700 mb-1">
-                5. {categoryConfig.quantityLabel} *
-              </label>
-              <input
-                type="number"
-                min={1}
-                required
-                value={formData.quantity}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    quantity: e.target.value === '' ? ('' as any) : parseInt(e.target.value, 10),
-                  })
-                }
-                className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              />
-            </div>
+          {/* Cost & Required By (and Quantity if applicable) */}
+          <div className={showQuantity ? 'grid grid-cols-1 md:grid-cols-3 gap-4' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}>
+            {showQuantity && (
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">
+                  5. {categoryConfig.quantityLabel || 'Quantity'} *
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={formData.quantity}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      quantity: e.target.value === '' ? ('' as any) : parseInt(e.target.value, 10),
+                    })
+                  }
+                  className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+            )}
 
             {/* Estimated Cost - Optional */}
             <div>
@@ -443,7 +563,7 @@ export const CreateRequestPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">6. Required By (Date) *</label>
+              <label className="block font-bold text-gray-700 mb-1">{numRequiredBy}. Required By (Date) *</label>
               <input
                 type="date"
                 required
@@ -459,7 +579,7 @@ export const CreateRequestPage: React.FC = () => {
           {/* Rule #3: Expanded Department List & Rule #4: Category Filtered Preferred Vendor */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block font-bold text-gray-700 mb-1">7. Department *</label>
+              <label className="block font-bold text-gray-700 mb-1">{numDepartment}. Department *</label>
               <select
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
@@ -475,7 +595,7 @@ export const CreateRequestPage: React.FC = () => {
 
             <div>
               <label className="block font-bold text-gray-700 mb-1">
-                {isSaaSOrCloud ? '8. Preferred Provider (Optional)' : '8. Preferred Vendor (Optional)'}
+                {isSaaSOrCloud ? `${numVendor}. Preferred Provider (Optional)` : `${numVendor}. Preferred Vendor (Optional)`}
               </label>
               <select
                 value={formData.preferredVendor}
@@ -503,24 +623,13 @@ export const CreateRequestPage: React.FC = () => {
             </div>
           </div>
 
-          {/* 9 & 10. Delivery Location & Priority (driven by categoryConfig.hideDeliveryLocation) */}
+          {/* Delivery Location & Priority (driven by categoryConfig.hideDeliveryLocation) */}
           <div className={categoryConfig.hideDeliveryLocation ? 'block' : 'grid grid-cols-2 gap-4'}>
-            {!categoryConfig.hideDeliveryLocation && (
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">9. Delivery Location *</label>
-                <input
-                  type="text"
-                  required={!categoryConfig.hideDeliveryLocation}
-                  value={formData.deliveryLocation}
-                  onChange={(e) => setFormData({ ...formData, deliveryLocation: e.target.value })}
-                  className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-            )}
+
 
             <div>
               <label className="block font-bold text-gray-700 mb-1">
-                {categoryConfig.hideDeliveryLocation ? '9. Priority *' : '10. Priority *'}
+                {numPriority}. Priority *
               </label>
               <select
                 value={formData.priority}
@@ -537,10 +646,10 @@ export const CreateRequestPage: React.FC = () => {
             </div>
           </div>
 
-          {/* 11. Business Justification */}
+          {/* Business Justification */}
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="block font-bold text-gray-700">11. Reason / Business Justification *</label>
+              <label className="block font-bold text-gray-700">{numJustification}. Reason / Business Justification *</label>
               <span className="text-[10px] text-gray-400 font-semibold">{formData.justification.length}/500</span>
             </div>
             <textarea
@@ -558,16 +667,18 @@ export const CreateRequestPage: React.FC = () => {
           <div className="pt-4 border-t border-gray-200 flex items-center justify-end gap-3">
             <button
               type="button"
+              disabled={submitting}
               onClick={(e) => handleFormSubmit(e as any, true)}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs px-5 py-2.5 rounded-lg border border-gray-300 flex items-center gap-1.5 transition-colors"
+              className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs px-5 py-2.5 rounded-lg border border-gray-300 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save size={15} /> Save as Draft
             </button>
             <button
               type="submit"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-6 py-2.5 rounded-lg shadow-md flex items-center gap-1.5 transition-all"
+              disabled={submitting}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-6 py-2.5 rounded-lg shadow-md flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <PlusCircle size={15} /> Submit Request for Approval
+              <PlusCircle size={15} /> {submitting ? 'Submitting...' : 'Submit Request for Approval'}
             </button>
           </div>
         </form>

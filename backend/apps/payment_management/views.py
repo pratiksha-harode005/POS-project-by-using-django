@@ -1,3 +1,4 @@
+from django.db import models
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -25,6 +26,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
             'invoice__purchase_order__purchase_request',
             'invoice__purchase_order__purchase_request__department',
             'invoice__purchase_order__purchase_request__created_by',
+            'purchase_request',
+            'purchase_request__department',
+            'purchase_request__created_by',
+            'purchase_request__payment_justification',
+            'purchase_request__payment_justification__submitted_by',
+            'purchase_request__payment_justification__verified_by',
         ).order_by('-created_at')
 
         if user.role == 'VENDOR':
@@ -32,7 +39,21 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 return qs.filter(vendor=user.vendor_profile)
             return qs
         elif user.role == 'TEAM_LEAD':
-            return qs.filter(purchase_request__created_by=user)
+            # Allow Team Lead to view ONLY payments linked to Team Lead's Software/SaaS requests
+            filtered_qs = qs.filter(
+                models.Q(purchase_request__created_by=user) |
+                models.Q(purchase_request__assigned_team_lead=user) |
+                models.Q(purchase_request__created_by__role='TEAM_LEAD')
+            ).filter(
+                models.Q(purchase_request__category__icontains='software') |
+                models.Q(purchase_request__category__icontains='saas') |
+                models.Q(purchase_request__category__icontains='cloud') |
+                models.Q(purchase_request__category__icontains='license') |
+                models.Q(purchase_request__category__icontains='subscription') |
+                (models.Q(purchase_request__software_name__isnull=False) & ~models.Q(purchase_request__software_name=''))
+            ).distinct()
+            print(f"DEBUG PaymentViewSet TEAM_LEAD: user={user.username}, count={filtered_qs.count()}")
+            return filtered_qs
         return qs
 
     def perform_create(self, serializer):
@@ -54,12 +75,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return Response(PaymentSerializer(payment).data)
 
     def _complete_stage(self, payment):
-        # Update Invoice & PurchaseRequest to completed state
         inv = payment.invoice
-        inv.status = 'Paid'
-        inv.save()
+        if inv:
+            inv.status = 'Paid'
+            inv.save()
 
         pr = payment.purchase_request
-        pr.current_stage = 9 # Payment
-        pr.status = 'Completed'
-        pr.save()
+        if pr:
+            pr.current_stage = 9
+            pr.status = 'Completed'
+            pr.save()

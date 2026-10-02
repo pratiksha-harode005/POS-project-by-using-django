@@ -1,21 +1,26 @@
 import React, { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   FileCheck, Clock, CheckCircle, XCircle, Calendar, Search,
   Download, Eye, ArrowUpRight, User, Building, DollarSign,
   AlertTriangle, Check, FileText, Sparkles, Paperclip,
-  ShieldCheck, X, Users, UserCheck, ChevronDown
+  ShieldCheck, X, Users, UserCheck, ChevronDown, Receipt, ExternalLink,
+  Package, Laptop
 } from 'lucide-react'
 import { numberToIndianWords } from '../../utils/paymentLedgerPdfGenerator'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useFinanceData } from '../../context/ManagerDataContext'
 import { useAuth } from '../../context/AuthContext'
+import { UnifiedReceiptModal } from '../../components/portal/UnifiedReceiptModal'
+import { isSoftwareRequest } from '../../utils/workflowUtils'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
 export type TimePeriodFilter = 'ALL' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
 export type StatusFilter = 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
 export type SubmitterFilter = 'ALL' | 'MANAGER' | 'TEAM_LEAD'
+export type ProcurementTypeFilter = 'ALL' | 'SOFTWARE' | 'HARDWARE'
 
 export interface FinanceReportItem {
   id: string
@@ -41,13 +46,58 @@ export interface FinanceReportItem {
   rejectionReason?: string
   rejectedDate?: string
   financeNotes?: string
+  // Software Workflow Specific Dossier Fields
+  originalRequest?: any
+  isSoftware?: boolean
+  softwareName?: string
+  requestType?: string
+  currentPlan?: string
+  requiredPlan?: string
+  existingCost?: number
+  businessRequirement?: string
+  managerRecommendation?: string
+  managerRecommendedBy?: string
+  managerRecommendedDate?: string
+  financeResearch?: {
+    marketPricing?: string
+    availableAlternatives?: string
+    businessValue?: string
+    vendorQuoteRef?: string
+    researchNotes?: string
+    vendor?: string
+    hardwareSpecs?: string
+    softwareLicensing?: string
+    quantityLicenses?: number
+    estimatedUnitCost?: number
+    adminComments?: string
+  }
+  costEstimation?: {
+    unitCost?: number
+    quantity?: number
+    currentCost?: number
+    estimatedCost?: number
+    recommendedCost?: number
+    taxAmount?: number
+    discountAmount?: number
+    finalAmount?: number
+    costCenter?: string
+    budgetCode?: string
+    vendor?: string
+    notes?: string
+  }
+  timeline?: any[]
+  approvalHistory?: any[]
 }
 
 export const FinanceReceivedReportsPage: React.FC = () => {
+  const navigate = useNavigate()
   const { user } = useAuth()
-  const { allRequests, approveFinanceRequest, rejectFinanceRequest } = useFinanceData()
+  const { allRequests, approveFinanceRequest, rejectFinanceRequest, payments } = useFinanceData()
   const currentFinanceOfficer = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Controller'
   const [localOverrides, setLocalOverrides] = useState<Record<string, Partial<FinanceReportItem>>>({})
+  const [activeSection, setActiveSection] = useState<'REQUISITION_REPORTS' | 'RECEIPT_REPORTS'>('REQUISITION_REPORTS')
+  const [selectedReceiptPayment, setSelectedReceiptPayment] = useState<any | null>(null)
+  const [receiptSearch, setReceiptSearch] = useState('')
   const [timePeriod, setTimePeriod] = useState<TimePeriodFilter>('ALL')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [submitterFilter, setSubmitterFilter] = useState<SubmitterFilter>('ALL')
@@ -58,10 +108,224 @@ export const FinanceReceivedReportsPage: React.FC = () => {
   const [rejectModalReport, setRejectModalReport] = useState<FinanceReportItem | null>(null)
   const [rejectReason, setRejectReason] = useState('')
 
+  // Helper to open the exact same UnifiedReceiptModal for any request or report item
+  const handleOpenReceipt = (item: any) => {
+    const reqObj = item.originalRequest || item.rawRequest || item
+    const rAny = item as any
+    const cleanId = String(reqObj.request_id || reqObj.id || rAny.id || '').replace(/^REP-/, '')
+
+    // Check if this request already has a pre-mapped entry in receiptReports
+    const matchedReceiptReport = receiptReports.find(rr => 
+      rr.id === cleanId || 
+      rr.id === `REQ-${cleanId}` || 
+      rr.rawRequest?.request_id === cleanId || 
+      rr.rawRequest?.id === cleanId
+    )
+
+    if (matchedReceiptReport) {
+      const rrAny = matchedReceiptReport as any
+      const rrReq = rrAny.rawRequest || rrAny
+      const pj = rrAny.payment_justification_detail || rrReq.payment_justification_detail || rrReq.extra_fields?.payment_justification || {}
+      const extra = rrReq.extra_fields || rrReq.extraFields || rrAny.extra_fields || {}
+      const realReqAmount = rrReq.requested_amount ?? pj.requested_amount ?? extra.requested_amount ?? rrReq.total_estimated_cost ?? rrAny.amount
+      const realApprovedAmount = rrReq.approved_amount ?? pj.finance_approved_amount ?? pj.manager_approved_amount ?? extra.approved_amount ?? rrAny.approved_amount
+      const realActualAmount = rrReq.finance_approved_amount ?? pj.actual_purchase_amount ?? rrAny.finalPaidAmount ?? rrAny.amount
+
+      let pay = payments.find((p: any) => 
+        p.requestId === matchedReceiptReport.id || 
+        p.requestId === cleanId || 
+        p.purchaseRequestDetail?.id === matchedReceiptReport.id || 
+        p.purchaseRequestDetail?.request_id === cleanId
+      )
+
+      if (!pay) {
+        pay = {
+          id: rrAny.paymentReference || rrAny.payment_reference || extra.software_receipt_id || `PAY-${cleanId}`,
+          requestId: cleanId,
+          amount: Number(realActualAmount || 0),
+          status: rrAny.paymentStatus || rrAny.payment_status || 'Paid',
+          dueDate: rrAny.paymentDate || rrAny.payment_date || new Date().toISOString().split('T')[0],
+          payment_method: rrAny.payment_method || pj.payment_method || 'Corporate Card',
+          reference_number: rrAny.paymentReference || rrAny.payment_reference || extra.software_receipt_id || `TXN-${cleanId}`,
+          purchaseRequestDetail: {
+            ...rrReq,
+            id: cleanId,
+            request_id: cleanId,
+            requested_amount: realReqAmount,
+            approved_amount: realApprovedAmount,
+            finance_approved_amount: realActualAmount,
+            payment_justification_detail: pj,
+            extra_fields: extra,
+            request_operation: rrReq.request_operation || pj.purchase_type || 'NEW',
+            request_type: rrReq.request_type || pj.purchase_type || 'New Purchase'
+          },
+          receiptDetails: {
+            fileName: rrAny.receiptId || extra.software_receipt_id || `RCP-${cleanId}`,
+            itemName: rrAny.softwareName || rrReq.software_name || rrReq.title || 'Software License',
+          }
+        } as any
+      }
+      setSelectedReceiptPayment(pay)
+      return
+    }
+
+    // Otherwise construct the payment object directly from the request and PostgreSQL data
+    const pj = reqObj.payment_justification_detail || reqObj.payment_justification || rAny.payment_justification_detail || reqObj.extra_fields?.payment_justification || {}
+    const extra = reqObj.extra_fields || reqObj.extraFields || rAny.extra_fields || {}
+    const re = reqObj.research_estimation || {}
+    const realReqAmount = reqObj.requested_amount ?? pj.requested_amount ?? extra.requested_amount ?? reqObj.total_estimated_cost ?? rAny.totalAmount ?? rAny.amount
+    const realApprovedAmount = reqObj.finance_approved_amount ?? reqObj.approved_amount ?? pj.finance_approved_amount ?? pj.manager_approved_amount ?? extra.approved_amount ?? rAny.approved_amount
+    const realActualAmount = pj.final_payable_amount ?? pj.actual_purchase_amount ?? extra.final_payable_amount ?? extra.actual_purchase_amount ?? reqObj.finance_approved_amount ?? rAny.finalPaidAmount ?? realApprovedAmount ?? realReqAmount
+
+    let pay = payments.find((p: any) => 
+      p.requestId === cleanId || 
+      p.requestId === `REQ-${cleanId}` || 
+      p.requestId === rAny.id || 
+      p.purchaseRequestDetail?.id === cleanId || 
+      p.purchaseRequestDetail?.request_id === cleanId
+    )
+
+    if (!pay) {
+      const receiptNum = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${cleanId}`
+      const payRef = extra.payment_reference || reqObj.payment_reference || pj.payment_reference || `TXN-${cleanId}`
+      const payId = extra.payment_id || `PAY-${cleanId}`
+      const payDate = extra.receipt_generated_at?.split('T')[0] || extra.payment_date?.split('T')[0] || reqObj.payment_date || pj.payment_date || rAny.submittedDate || new Date().toISOString().split('T')[0]
+      const payMethod = extra.payment_method || reqObj.payment_method || pj.payment_method || 'Corporate Card'
+      const payStatus = extra.payment_status || reqObj.payment_status || pj.payment_status || (reqObj.status === 'completed' || reqObj.status === 'REQUEST_COMPLETED' ? 'Paid' : 'Paid')
+
+      pay = {
+        id: payId,
+        requestId: cleanId,
+        amount: Number(realActualAmount || 0),
+        status: payStatus,
+        dueDate: payDate,
+        payment_method: payMethod,
+        reference_number: payRef,
+        purchaseRequestDetail: {
+          ...reqObj,
+          id: cleanId,
+          request_id: cleanId,
+          requested_amount: realReqAmount,
+          approved_amount: realApprovedAmount,
+          finance_approved_amount: realActualAmount,
+          payment_justification_detail: pj,
+          extra_fields: extra,
+          research_estimation: re,
+          request_operation: reqObj.request_operation || pj.purchase_type || 'NEW',
+          request_type: reqObj.request_type || pj.purchase_type || 'New Purchase'
+        },
+        receiptDetails: {
+          fileName: receiptNum,
+          itemName: pj.software_name || reqObj.software_name || rAny.softwareName || rAny.title || 'Software / Procurement Item',
+        }
+      } as any
+    }
+    setSelectedReceiptPayment(pay)
+  }
+
+  const hasReceipt = (item: any): boolean => {
+    if (!item) return false
+    const reqObj = item.originalRequest || item.rawRequest || item
+    const cleanId = String(reqObj.request_id || reqObj.id || item.id || '').replace(/^REP-/, '')
+    
+    // 1. Direct match in receiptReports
+    if (receiptReports.some(rr => rr.id === cleanId || rr.id === `REQ-${cleanId}` || rr.rawRequest?.request_id === cleanId || rr.rawRequest?.id === cleanId)) {
+      return true
+    }
+
+    // 2. Extra fields markers from DB
+    const extra = reqObj.extra_fields || reqObj.extraFields || item.extra_fields || {}
+    if (extra.software_receipt_id || extra.receipt_no || extra.payment_id || extra.mock_payment_ref || extra.payment_reference) {
+      return true
+    }
+
+    // 3. Payment record exists
+    if (payments.some((p: any) => p.requestId === cleanId || p.purchaseRequestDetail?.id === cleanId || p.purchaseRequestDetail?.request_id === cleanId)) {
+      return true
+    }
+
+    // 4. Completed, acknowledged or approved status
+    const rawSt = String(reqObj.raw_status || reqObj.status || item.status || '').toUpperCase()
+    if (['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED', 'PAID', 'APPROVED', 'FINANCE_APPROVED'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean(reqObj.confirmed_by_team_lead)) {
+      return true
+    }
+
+    return false
+  }
+
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
   }
+
+  // Derive Receipt Reports dynamically from real requests with generated software receipt
+  const receiptReports = useMemo(() => {
+    return allRequests
+      .filter((req: any) => {
+        const extra = req.extra_fields || req.extraFields || (req.rawRequest && req.rawRequest.extra_fields) || {}
+        const rawSt = ((req.raw_status || req.status || '') as string).toUpperCase()
+        const cat = (req.category || '').toLowerCase()
+        const isSw = isSoftwareRequest(req) || cat.includes('software') || cat.includes('saas') || Boolean(req.software_name) || req.flowType === 'B' || req.flow_type === 'B'
+        const hasReceipt = Boolean(extra.software_receipt_id || extra.receipt_no)
+        const isCompleted = ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean(req.confirmed_by_team_lead)
+        return isSw && (hasReceipt || isCompleted)
+      })
+      .map((req: any) => {
+        const rawSt = ((req.raw_status || req.status || '') as string).toUpperCase()
+        const extra = req.extra_fields || req.extraFields || (req.rawRequest && req.rawRequest.extra_fields) || {}
+        const reqId = req.request_id || req.id
+        const receiptId = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${reqId}`
+        const pj = req.payment_justification_detail || extra.payment_justification || (req.rawRequest && req.rawRequest.payment_justification_detail) || {}
+        const realPaidAmount = Number(pj.actual_purchase_amount || extra.actual_purchase_amount || extra.final_payable_amount || req.finance_approved_amount || req.approved_amount || req.requested_amount || 0)
+        const payRef = extra.payment_reference || req.payment_reference || extra.mock_payment_ref || pj.payment_reference || receiptId
+        const payMethod = extra.payment_method || req.payment_method || extra.mock_payment_method || pj.payment_method || 'Corporate Digital Card'
+        const payDate = extra.receipt_generated_at?.split('T')[0] || extra.payment_date?.split('T')[0] || req.payment_date || pj.payment_date || req.date || (req.created_at ? req.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
+        const vendorName = pj.vendor_name || req.vendor || req.preferred_vendor || req.software_name || req.title || 'Enterprise SaaS Provider'
+
+        return {
+          id: reqId,
+          rawRequest: req,
+          payment_justification_detail: pj,
+          receiptId: receiptId,
+          softwareName: pj.software_name || (req as any).software_name || req.title || 'Software / SaaS',
+          teamLead: req.requester_name || req.createdBy || (req.created_by_detail ? `${req.created_by_detail.first_name} ${req.created_by_detail.last_name}`.trim() : 'Team Lead'),
+          manager: req.approvedBy || (req as any).manager_name || 'Sarah Manager',
+          financeApprovedAmount: Number(req.finance_approved_amount || req.approved_amount || req.requested_amount || 0),
+          finalPaidAmount: realPaidAmount,
+          paymentReference: payRef,
+          paymentMethod: payMethod,
+          paymentDate: payDate,
+          paymentStatus: 'Paid',
+          receiptProof: pj.proof_description || extra.payment_justification?.proof_description || `Receipt Proof - ${receiptId}.pdf`,
+          paymentJustification: pj.business_justification || extra.payment_justification?.business_justification || req.justification || 'Department operational requirement',
+          managerVerificationStatus: 'Verified & Approved',
+          history: req.history || req.timeline || [],
+          rawStatus: rawSt,
+          vendor: vendorName,
+          created_at: req.created_at || payDate
+        }
+      })
+      .filter((r) => {
+        if (!receiptSearch.trim()) return true
+        const q = receiptSearch.toLowerCase()
+        return (
+          r.id.toLowerCase().includes(q) ||
+          r.softwareName.toLowerCase().includes(q) ||
+          r.teamLead.toLowerCase().includes(q) ||
+          r.manager.toLowerCase().includes(q) ||
+          r.paymentReference.toLowerCase().includes(q) ||
+          r.receiptId.toLowerCase().includes(q)
+        )
+      })
+      .sort((a, b) => {
+        const extraA = a.rawRequest?.extra_fields || a.rawRequest?.extraFields || {}
+        const extraB = b.rawRequest?.extra_fields || b.rawRequest?.extraFields || {}
+        const dateA = new Date(extraA.receipt_generated_at || a.paymentDate || a.created_at || 0).getTime()
+        const dateB = new Date(extraB.receipt_generated_at || b.paymentDate || b.created_at || 0).getTime()
+        if (dateB !== dateA) return dateB - dateA
+        return b.id.localeCompare(a.id)
+      })
+  }, [allRequests, receiptSearch])
 
   // Derive reports dynamically from real procurement requests forwarded or managed
   const reports = useMemo<FinanceReportItem[]>(() => {
@@ -82,15 +346,15 @@ export const FinanceReceivedReportsPage: React.FC = () => {
       const submitterName = req.createdBy || req.requester_name || (isTL ? 'Team Lead' : 'Procurement Manager')
       const submitterRole = isTL ? `${req.department || 'Operations'} Lead` : `${req.department || 'Procurement'} Manager`
 
-      const rawStatus = (req.status || 'Pending').toLowerCase()
+      const rawStatus = (req.status || req.raw_status || 'Pending').toLowerCase()
       let status: 'Pending' | 'Approved' | 'Rejected' = 'Pending'
-      if (rawStatus.includes('approved') || rawStatus === 'completed' || rawStatus === 'manager_approved') {
+      if (rawStatus.includes('approved') || rawStatus === 'completed' || rawStatus === 'manager_approved' || rawStatus === 'finance_report') {
         status = 'Approved'
       } else if (rawStatus.includes('rejected') || rawStatus === 'cancelled') {
         status = 'Rejected'
       }
 
-      const totalAmount = Number(req.amount || req.totalAmount || req.total_estimated_cost || req.budget || req.estimated_amount || 0)
+      const totalAmount = Number(req.amount || req.totalAmount || req.total_estimated_cost || req.budget || req.estimated_amount || (req.research_estimation?.final_estimated_amount) || 0)
       const priority = (req.priority || 'Medium') as 'Critical' | 'High' | 'Medium' | 'Low'
       const dept = req.department || 'Procurement'
 
@@ -102,15 +366,18 @@ export const FinanceReceivedReportsPage: React.FC = () => {
             totalCost: Number(it.total_price || it.totalCost || (Number(it.quantity || 1) * Number(it.unit_price || 0)))
           }))
         : [{
-            item: req.title || req.item_name || 'Procurement Allocation',
+            item: req.title || req.software_name || req.item_name || 'Procurement Allocation',
             qty: 1,
             unitCost: totalAmount,
             totalCost: totalAmount
           }]
 
+      const re = req.research_estimation || {}
+      const isSoftware = isSoftwareRequest(req)
+
       const baseReport: FinanceReportItem = {
         id: reportId,
-        title: req.title || req.item_name || `Procurement Dossier for ${dept}`,
+        title: req.title || req.software_name || req.item_name || `Procurement Dossier for ${dept}`,
         submitterName,
         submitterRole,
         submitterType,
@@ -120,16 +387,16 @@ export const FinanceReceivedReportsPage: React.FC = () => {
         totalAmount,
         status,
         priority,
-        category: req.category || 'Capital Expenditure',
-        costCenter: req.costCenter || `CC-${dept.substring(0, 3).toUpperCase()}-2026`,
-        summary: req.justification || req.description || `Managerial submission and compliance dossier for ${req.title || 'procurement requirements'}.`,
+        category: req.category || (isSoftware ? 'Enterprise Software' : 'Capital Expenditure'),
+        costCenter: re.cost_center || req.costCenter || `CC-${dept.substring(0, 3).toUpperCase()}-2026`,
+        summary: req.justification || req.description || req.business_requirement || `Managerial submission and compliance dossier for ${req.title || 'procurement requirements'}.`,
         keyFindings: [
           `Allocated budget of ${fmt(totalAmount)} verified against fiscal thresholds.`,
           `Sourcing specifications aligned with ${dept} requirements.`,
           `Pre-screened against corporate procurement governance.`
         ],
         itemBreakdown: items,
-        recommendation: req.manager_comments || req.justification || 'Forwarded for Finance audit, fund allocation, and PO issuance.',
+        recommendation: req.manager_comments || re.manager_comments || req.recommendation_reason || req.justification || 'Forwarded for Finance audit, fund allocation, and PO issuance.',
         attachedDocs: [
           { name: `${reportId}_Approval_Dossier.pdf`, size: '2.1 MB' },
           { name: 'Vendor_Compliance_Quotation.pdf', size: '1.4 MB' }
@@ -142,7 +409,48 @@ export const FinanceReceivedReportsPage: React.FC = () => {
         ...(status === 'Rejected' ? {
           rejectionReason: req.rejection_reason || 'Requires revision of budgetary ceiling.',
           rejectedDate: new Date().toISOString().split('T')[0]
-        } : {})
+        } : {}),
+        // Software Workflow specifics
+        originalRequest: req,
+        isSoftware,
+        softwareName: req.software_name || req.title,
+        requestType: req.request_type || 'Software / SaaS',
+        currentPlan: req.current_plan,
+        requiredPlan: req.required_plan,
+        existingCost: req.existing_cost,
+        businessRequirement: req.business_requirement,
+        managerRecommendation: req.recommendation_reason || req.extra_fields?.recommendation_reason || req.justification,
+        managerRecommendedBy: req.recommended_by || req.approvedBy,
+        managerRecommendedDate: req.recommended_date || req.approvedDate,
+        financeResearch: {
+          vendor: re.vendor || req.vendor || (isSoftware ? 'Microsoft Corporation' : 'Dell Technologies'),
+          marketPricing: re.market_pricing,
+          availableAlternatives: re.available_alternatives,
+          businessValue: re.business_value,
+          vendorQuoteRef: re.vendor_quotation_ref,
+          researchNotes: re.research_notes || re.admin_comments,
+          hardwareSpecs: re.hardware_specs,
+          softwareLicensing: re.software_licensing,
+          quantityLicenses: re.quantity_licenses,
+          estimatedUnitCost: re.estimated_unit_cost,
+          adminComments: re.admin_comments,
+        },
+        costEstimation: {
+          unitCost: re.estimated_unit_cost || (re.quantity_licenses ? Math.round((re.estimated_total_cost || totalAmount) / re.quantity_licenses) : totalAmount),
+          quantity: re.quantity_licenses || 1,
+          currentCost: re.current_cost || req.existing_cost,
+          estimatedCost: re.estimated_total_cost || re.estimated_cost || totalAmount,
+          recommendedCost: re.recommended_cost || re.final_estimated_amount || totalAmount,
+          taxAmount: re.tax_amount,
+          discountAmount: re.discount_amount,
+          finalAmount: re.final_estimated_amount || totalAmount,
+          costCenter: re.cost_center || req.costCenter,
+          budgetCode: re.budget_code,
+          vendor: re.vendor || req.vendor,
+          notes: re.admin_comments || re.manager_comments || re.business_evaluation,
+        },
+        timeline: req.timeline || [],
+        approvalHistory: req.approval_history || req.approvalHistory || []
       }
 
       if (localOverrides[reportId]) {
@@ -517,17 +825,162 @@ export const FinanceReceivedReportsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI METRIC CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Total Reports</span>
-          <p className="text-2xl font-black text-slate-900 mt-1">{countsForCurrentPeriod.all}</p>
-          <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
-            <span>{countsForCurrentPeriod.managerReports} Managers</span>
-            <span>•</span>
-            <span>{countsForCurrentPeriod.teamLeadReports} Team Leads</span>
+      {/* ── HIGH-LEVEL NAVIGATION SECTION SWITCHER ── */}
+      <div className="flex items-center gap-3 border-b border-slate-200">
+        <button
+          onClick={() => setActiveSection('REQUISITION_REPORTS')}
+          className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            activeSection === 'REQUISITION_REPORTS'
+              ? 'border-purple-600 text-purple-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <FileCheck size={16} /> Finance Review (Requisitions & Estimations)
+        </button>
+        <button
+          onClick={() => setActiveSection('RECEIPT_REPORTS')}
+          className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            activeSection === 'RECEIPT_REPORTS'
+              ? 'border-purple-600 text-purple-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Receipt size={16} /> Payment Records / Receipt Reports ({receiptReports.length})
+        </button>
+      </div>
+
+      {activeSection === 'RECEIPT_REPORTS' ? (
+        /* ── PAYMENT RECORDS & RECEIPT REPORTS TABLE (Section 10 & 14B) ── */
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Software & Procurement Payment Receipt Reports</h2>
+              <p className="text-xs text-slate-500">Persistent ledger of payment references, receipts, justifications, and manager sign-offs.</p>
+            </div>
+            <div className="relative min-w-64">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={receiptSearch}
+                onChange={e => setReceiptSearch(e.target.value)}
+                placeholder="Search Request ID, Software, Team Lead, Reference..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-xs">
+            {receiptReports.length === 0 ? (
+              <div className="text-center py-16 text-slate-400">
+                <Receipt size={40} className="mx-auto mb-3 text-purple-200" />
+                <p className="font-semibold text-slate-600">No payment receipts or justification records found</p>
+                <p className="text-xs text-slate-400 mt-1">When Team Leads process mock payment and submit receipts, they will appear here permanently.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[1200px]">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th className="p-3.5">Request ID</th>
+                      <th className="p-3.5">Software / SaaS</th>
+                      <th className="p-3.5">Team Lead</th>
+                      <th className="p-3.5">Manager</th>
+                      <th className="p-3.5 text-right">Approved Amt</th>
+                      <th className="p-3.5 text-right">Paid Amt</th>
+                      <th className="p-3.5">Payment Ref</th>
+                      <th className="p-3.5">Payment Date</th>
+                      <th className="p-3.5">Payment Status</th>
+                      <th className="p-3.5">Receipt / Proof</th>
+                      <th className="p-3.5">Justification</th>
+                      <th className="p-3.5">Manager Verification</th>
+                      <th className="p-3.5 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                    {receiptReports.map(r => (
+                      <tr key={r.id} className="hover:bg-purple-50/30 transition-colors">
+                        <td className="p-3.5 font-bold font-mono text-purple-700">{r.id}</td>
+                        <td className="p-3.5 font-semibold text-slate-900 max-w-[180px]">
+                          <div className="truncate" title={r.softwareName}>{r.softwareName}</div>
+                        </td>
+                        <td className="p-3.5 text-slate-700 whitespace-nowrap">{r.teamLead}</td>
+                        <td className="p-3.5 text-slate-700 whitespace-nowrap">{r.manager}</td>
+                        <td className="p-3.5 text-right font-bold text-slate-900 whitespace-nowrap">{fmt(r.financeApprovedAmount)}</td>
+                        <td className="p-3.5 text-right font-bold text-emerald-700 whitespace-nowrap">{fmt(r.finalPaidAmount)}</td>
+                        <td className="p-3.5 font-mono text-[11px] text-purple-900 whitespace-nowrap">
+                          <span className="bg-purple-50 border border-purple-200 px-2 py-0.5 rounded font-bold">{r.paymentReference}</span>
+                        </td>
+                        <td className="p-3.5 text-slate-500 whitespace-nowrap">{r.paymentDate}</td>
+                        <td className="p-3.5 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            r.paymentStatus === 'Paid' || r.paymentStatus === 'PAID'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-indigo-100 text-indigo-800'
+                          }`}>
+                            {r.paymentStatus}
+                          </span>
+                        </td>
+                        <td className="p-3.5 max-w-[160px]">
+                          <div className="truncate text-slate-600 flex items-center gap-1" title={r.receiptProof}>
+                            <Paperclip size={12} className="text-purple-600 flex-shrink-0" />
+                            <span>{r.receiptProof}</span>
+                          </div>
+                        </td>
+                        <td className="p-3.5 max-w-[160px]">
+                          <div className="truncate text-slate-600" title={r.paymentJustification}>
+                            {r.paymentJustification}
+                          </div>
+                        </td>
+                        <td className="p-3.5 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            r.managerVerificationStatus.includes('Verified')
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : r.managerVerificationStatus.includes('Sent Back')
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-slate-50 text-slate-600 border-slate-200'
+                          }`}>
+                            {r.managerVerificationStatus}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => navigate(`/finance/request-details?id=${r.id}`)}
+                              className="p-1.5 hover:bg-purple-100 text-purple-600 rounded-lg transition-colors cursor-pointer"
+                              title="View Full Lifecycle Details"
+                            >
+                              <ExternalLink size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleOpenReceipt(r)}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors border border-blue-700 cursor-pointer"
+                              title="View Software Payment Receipt"
+                            >
+                              View Receipt
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
+      ) : (
+        <>
+          {/* KPI METRIC CARDS */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Total Reports</span>
+              <p className="text-2xl font-black text-slate-900 mt-1">{countsForCurrentPeriod.all}</p>
+              <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                <span>{countsForCurrentPeriod.managerReports} Managers</span>
+                <span>•</span>
+                <span>{countsForCurrentPeriod.teamLeadReports} Team Leads</span>
+              </div>
+            </div>
 
         <div className="bg-amber-50/50 rounded-2xl border border-amber-200 p-4 shadow-2xs">
           <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wide">Pending Review</span>
@@ -719,6 +1172,12 @@ export const FinanceReceivedReportsPage: React.FC = () => {
                         {rep.periodCategory}
                       </span>
 
+                      {hasReceipt(rep) && (
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 flex items-center gap-1">
+                          <Receipt size={11} /> Receipt Verified
+                        </span>
+                      )}
+
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                           rep.priority === 'Critical'
@@ -811,6 +1270,15 @@ export const FinanceReceivedReportsPage: React.FC = () => {
                   </button>
 
                   <div className="flex items-center gap-2 flex-wrap">
+                    {hasReceipt(rep) && (
+                      <button
+                        onClick={() => handleOpenReceipt(rep)}
+                        className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors border border-blue-700 cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                        title="View Software & Procurement Payment Receipt"
+                      >
+                        <Receipt size={13} /> View Receipt
+                      </button>
+                    )}
                     <button
                       onClick={() => handleExportReportPdf(rep)}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors"
@@ -841,6 +1309,8 @@ export const FinanceReceivedReportsPage: React.FC = () => {
           })}
         </div>
       )}
+      </>
+      )}
 
       {/* ── FULL REPORT DOSSIER MODAL ── */}
       {selectedReport && (
@@ -869,6 +1339,15 @@ export const FinanceReceivedReportsPage: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2">
+                {hasReceipt(selectedReport) && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenReceipt(selectedReport)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors border border-blue-500 shadow-xs cursor-pointer"
+                  >
+                    <Receipt size={13} /> View Receipt
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleExportReportPdf(selectedReport)}
@@ -970,6 +1449,394 @@ export const FinanceReceivedReportsPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* ── Software / SaaS Requirements, Manager Recommendation & Finance Dossier ── */}
+              {selectedReport.isSoftware && (
+                <div className="space-y-4">
+                  {/* TL Software Requirements */}
+                  <div className="bg-blue-50/70 rounded-2xl border border-blue-200 p-5 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText size={16} className="text-blue-700" />
+                        <h4 className="text-xs font-bold text-blue-950 uppercase tracking-wider">
+                          1. Team Lead Software Requisition Requirements (Stage 1)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-bold text-blue-800 bg-blue-100 border border-blue-300 px-2.5 py-0.5 rounded-full">
+                        Requester Specifications
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div className="bg-white p-3 rounded-lg border border-blue-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Software / SaaS Name</span>
+                        <p className="font-bold text-blue-900 mt-0.5">{selectedReport.softwareName || selectedReport.title}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-blue-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Request Type</span>
+                        <p className="font-bold text-slate-800 mt-0.5">{selectedReport.requestType || 'New Purchase'}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-blue-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Current Plan</span>
+                        <p className="font-medium text-slate-800 mt-0.5">{selectedReport.currentPlan || 'N/A'}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-blue-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Required Plan</span>
+                        <p className="font-bold text-indigo-700 mt-0.5">{selectedReport.requiredPlan || 'Enterprise'}</p>
+                      </div>
+                    </div>
+
+                    {selectedReport.businessRequirement && (
+                      <div className="bg-white p-3 rounded-lg border border-blue-100 text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Business Need & Problem Statement
+                        </span>
+                        <p className="text-slate-700 mt-1 font-medium leading-relaxed">
+                          {selectedReport.businessRequirement}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Manager Recommendation */}
+                  <div className="bg-purple-50/70 rounded-2xl border border-purple-200 p-5 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={16} className="text-purple-700" />
+                        <h4 className="text-xs font-bold text-purple-950 uppercase tracking-wider">
+                          2. Manager Review & Recommendation (Stage 3)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-bold text-purple-800 bg-purple-100 border border-purple-300 px-2.5 py-0.5 rounded-full">
+                        Manager Endorsed
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="bg-white p-3 rounded-lg border border-purple-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Recommended By</span>
+                        <p className="font-bold text-slate-800 mt-0.5">{selectedReport.managerRecommendedBy || 'Project Manager'}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-purple-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Recommendation Date</span>
+                        <p className="font-bold text-slate-800 mt-0.5">{(selectedReport.managerRecommendedDate || selectedReport.submittedDate || '').split('T')[0]}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-purple-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Routing Action</span>
+                        <p className="font-bold text-purple-900 mt-0.5">Recommended to Finance</p>
+                      </div>
+                    </div>
+
+                    {selectedReport.managerRecommendation && (
+                      <div className="bg-white p-3 rounded-lg border border-purple-100 text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Manager Justification & Recommendation Notes
+                        </span>
+                        <p className="text-purple-900 mt-1 font-medium leading-relaxed">
+                          {selectedReport.managerRecommendation}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Finance Research Findings */}
+                  <div className="bg-amber-50/70 rounded-2xl border border-amber-200 p-5 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileCheck size={16} className="text-amber-700" />
+                        <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                          3. Admin &amp; Finance Research Findings (Stage 5)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                        {selectedReport.isSoftware ? 'Software / SaaS Dossier' : 'Hardware Dossier'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="bg-white p-3 rounded-lg border border-amber-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Authorized Vendor / Sourcing Partner</span>
+                        <p className="font-bold text-slate-800 mt-0.5">
+                          {selectedReport.financeResearch?.vendor || selectedReport.costEstimation?.vendor || 'Authorized Partner'}
+                        </p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-amber-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Vendor Quotation / RFQ Reference</span>
+                        <p className="font-mono font-bold text-amber-900 mt-0.5">
+                          {selectedReport.financeResearch?.vendorQuoteRef || `RFQ-${selectedReport.id}-CONFIRMED`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Hardware Specs or Software Licensing */}
+                    {selectedReport.isSoftware ? (
+                      selectedReport.financeResearch?.softwareLicensing && (
+                        <div className="bg-white p-3 rounded-lg border border-purple-200 text-xs">
+                          <span className="text-[10px] font-bold text-purple-900 uppercase tracking-wider block">
+                            Software Licensing Model &amp; Terms
+                          </span>
+                          <p className="text-slate-800 mt-1 font-semibold">
+                            {selectedReport.financeResearch.softwareLicensing}
+                          </p>
+                        </div>
+                      )
+                    ) : (
+                      selectedReport.financeResearch?.hardwareSpecs && (
+                        <div className="bg-white p-3 rounded-lg border border-emerald-200 text-xs">
+                          <span className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider block">
+                            Hardware Technical Specifications &amp; Warranty
+                          </span>
+                          <p className="text-slate-800 mt-1 font-semibold">
+                            {selectedReport.financeResearch.hardwareSpecs}
+                          </p>
+                        </div>
+                      )
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="bg-white p-3 rounded-lg border border-amber-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Market Benchmark Pricing</span>
+                        <p className="font-medium text-slate-800 mt-0.5">
+                          {selectedReport.financeResearch?.marketPricing || 'Benchmarked against OEM commercial catalog.'}
+                        </p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-amber-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Estimated Unit Cost &amp; Volume</span>
+                        <p className="font-bold text-slate-800 mt-0.5">
+                          {selectedReport.costEstimation?.unitCost ? fmt(selectedReport.costEstimation.unitCost) : fmt(selectedReport.totalAmount)}
+                          {' × '}{selectedReport.costEstimation?.quantity || 1} {selectedReport.isSoftware ? 'Licenses/Seats' : 'Units'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedReport.financeResearch?.availableAlternatives && (
+                      <div className="bg-white p-3 rounded-lg border border-amber-100 text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Alternative Vendors / Solutions Evaluated
+                        </span>
+                        <p className="text-slate-700 mt-1 font-medium">
+                          {selectedReport.financeResearch.availableAlternatives}
+                        </p>
+                      </div>
+                    )}
+
+                    {selectedReport.financeResearch?.businessValue && (
+                      <div className="bg-white p-3 rounded-lg border border-amber-100 text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Business Value & ROI Assessment
+                        </span>
+                        <p className="text-slate-700 mt-1 font-medium">
+                          {selectedReport.financeResearch.businessValue}
+                        </p>
+                      </div>
+                    )}
+
+                    {selectedReport.financeResearch?.researchNotes && (
+                      <div className="bg-white p-3 rounded-lg border border-amber-100 text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Research &amp; Market Intelligence Notes
+                        </span>
+                        <p className="text-slate-700 mt-1 font-medium">
+                          {selectedReport.financeResearch.researchNotes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Financial Cost Estimation Breakdown */}
+                  <div className="bg-emerald-50/70 rounded-2xl border border-emerald-200 p-5 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <DollarSign size={16} className="text-emerald-700" />
+                        <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider">
+                          4. Financial Cost Estimation & Allocation Breakdown (Stages 6 & 7)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                        Budget Approved
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Current Plan Cost</span>
+                        <p className="font-bold text-slate-800 mt-0.5">
+                          {fmt(selectedReport.costEstimation?.currentCost || selectedReport.existingCost || 0)}
+                        </p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Base Estimated Cost</span>
+                        <p className="font-bold text-slate-800 mt-0.5">
+                          {fmt(selectedReport.costEstimation?.estimatedCost || selectedReport.totalAmount)}
+                        </p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Tax / GST (18%)</span>
+                        <p className="font-bold text-slate-800 mt-0.5">
+                          {fmt(selectedReport.costEstimation?.taxAmount || 0)}
+                        </p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Volume Discount (5%)</span>
+                        <p className="font-bold text-emerald-700 mt-0.5">
+                          -{fmt(selectedReport.costEstimation?.discountAmount || 0)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="bg-emerald-100/60 p-3.5 rounded-xl border border-emerald-300">
+                        <span className="text-[10px] font-bold text-emerald-900 block uppercase">Net Final Estimated Amount</span>
+                        <p className="font-black text-emerald-950 text-base mt-0.5">
+                          {fmt(selectedReport.costEstimation?.finalAmount || selectedReport.totalAmount)}
+                        </p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Cost Center</span>
+                        <p className="font-bold text-indigo-700 mt-0.5">
+                          {selectedReport.costEstimation?.costCenter || selectedReport.costCenter}
+                        </p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Budget Code</span>
+                        <p className="font-bold text-slate-800 mt-0.5">
+                          {selectedReport.costEstimation?.budgetCode || 'BG-FIN-SOFT-01'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Authorized Vendor</span>
+                        <p className="font-bold text-slate-800 mt-0.5">
+                          {selectedReport.costEstimation?.vendor || selectedReport.softwareName || 'Authorized Vendor'}
+                        </p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Recommended Allocation</span>
+                        <p className="font-bold text-emerald-800 mt-0.5">
+                          {fmt(selectedReport.costEstimation?.recommendedCost || selectedReport.costEstimation?.finalAmount || selectedReport.totalAmount)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedReport.costEstimation?.notes && (
+                      <div className="bg-white p-3 rounded-lg border border-emerald-100 text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Finance Controller Comments & Commercial Approval
+                        </span>
+                        <p className="text-emerald-950 mt-1 font-medium leading-relaxed">
+                          {selectedReport.costEstimation.notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Complete Workflow History */}
+                  {(selectedReport.timeline && selectedReport.timeline.length > 0) && (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 block text-xs">
+                          5. Complete Workflow Timeline & Audit Trail
+                        </span>
+                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
+                          7-Stage Lifecycle
+                        </span>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {selectedReport.timeline.map((step: any, sIdx: number) => (
+                          <div key={sIdx} className="py-2 flex items-start justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                step.status === 'completed'
+                                  ? 'bg-emerald-600 text-white'
+                                  : step.status === 'current'
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-200 text-slate-500'
+                              }`}>
+                                {step.status === 'completed' ? '✓' : step.stage}
+                              </span>
+                              <div>
+                                <p className="font-bold text-slate-900">{step.title}</p>
+                                <p className="text-[10px] text-slate-500">{step.role} {step.actor ? `• ${step.actor}` : ''}</p>
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                step.status === 'completed'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : step.status === 'current'
+                                  ? 'bg-indigo-100 text-indigo-800'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                {step.status.toUpperCase()}
+                              </span>
+                              {step.timestamp && (
+                                <p className="text-[10px] text-slate-400 mt-0.5">{step.timestamp.split('T')[0]}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Payment Records & Official Receipt Dossier */}
+              {hasReceipt(selectedReport) && (
+                <div className="bg-white rounded-2xl border border-blue-200 p-5 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Receipt size={16} className="text-blue-700" />
+                      <h4 className="text-xs font-bold text-blue-950 uppercase tracking-wider">
+                        6. Payment Records & Official Receipt Dossier
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle size={11} /> Settlement Verified
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Receipt Number</span>
+                      <p className="font-mono font-bold text-purple-900 mt-0.5">
+                        {selectedReport.originalRequest?.extra_fields?.software_receipt_id || selectedReport.originalRequest?.extra_fields?.receipt_no || `RCP-SW-${String(selectedReport.originalRequest?.request_id || selectedReport.originalRequest?.id || selectedReport.id).replace(/^REP-/, '')}`}
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Payment Status</span>
+                      <p className="font-bold text-emerald-700 mt-0.5">Paid / Verified</p>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Payment Method</span>
+                      <p className="font-bold text-slate-800 mt-0.5">
+                        {selectedReport.originalRequest?.payment_method || selectedReport.originalRequest?.extra_fields?.payment_method || 'Corporate Card'}
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Settlement Date</span>
+                      <p className="font-bold text-slate-800 mt-0.5">
+                        {selectedReport.originalRequest?.payment_date || selectedReport.originalRequest?.extra_fields?.payment_date || selectedReport.submittedDate}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <span className="text-[11px] text-slate-500">
+                      Audit trail synchronized with PostgreSQL payment ledger.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenReceipt(selectedReport)}
+                      className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors border border-blue-700 shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Receipt size={13} /> View Receipt
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Appended Docs */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
                 <span className="font-bold text-slate-900 block text-xs mb-2">
@@ -1023,6 +1890,15 @@ export const FinanceReceivedReportsPage: React.FC = () => {
                 Active Auditor: <b>{currentFinanceOfficer}</b>
               </div>
               <div className="flex items-center gap-2">
+                {hasReceipt(selectedReport) && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenReceipt(selectedReport)}
+                    className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Receipt size={14} /> View Receipt
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelectedReport(null)}
@@ -1102,6 +1978,13 @@ export const FinanceReceivedReportsPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {selectedReceiptPayment && (
+        <UnifiedReceiptModal
+          payment={selectedReceiptPayment}
+          onClose={() => setSelectedReceiptPayment(null)}
+        />
       )}
     </div>
   )

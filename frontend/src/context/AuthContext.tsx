@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { apiClient } from '../api/client'
+import { triggerGlobalDataSync } from '../utils/syncUtils'
 
 export type UserRole = 'TEAM_LEAD' | 'MANAGER' | 'FINANCE' | 'ADMIN' | 'VENDOR'
 
@@ -70,6 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(userObj)
       setRole(userObj.role)
       setLoading(false)
+      triggerGlobalDataSync('login')
       return { success: true }
     } catch (err: any) {
       console.error('Login failed', err)
@@ -96,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null)
     setUser(null)
     setRole(null)
+    triggerGlobalDataSync('logout')
   }
 
   const switchRolePortal = (newRole: UserRole) => {
@@ -106,6 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(updatedUser)
       localStorage.setItem('user_profile', JSON.stringify(updatedUser))
     }
+    triggerGlobalDataSync('role_switched')
   }
 
   return (

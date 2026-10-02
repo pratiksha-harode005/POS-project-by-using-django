@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CheckCircle, XCircle, Landmark, IndianRupee,
@@ -68,7 +68,12 @@ export const ManagerDashboard: React.FC = () => {
     rejectRequest,
     recommendToFinance,
     approveRequest,
+    refreshData,
   } = useManagerData()
+
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
 
   const [activeModal, setActiveModal] = useState<ActiveModalState | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'danger' | 'info' } | null>(null)

@@ -34,11 +34,12 @@ export const getManagerRequests = async (params?: ApiRequestParams) => {
   const role = (localStorage.getItem('user_role') || '').toUpperCase()
   const primaryEndpoint = (role === 'MANAGER' || role === 'ADMIN') ? '/manager/requests/' : '/requests/'
   try {
-    const res = await apiClient.get(primaryEndpoint, { params })
+    // Removed page_size=10000 — caused full-DB serialization on every portal load
+    const res = await apiClient.get(primaryEndpoint, { params: { ...params, page_size: 100 } })
     return res.data
   } catch (err) {
     try {
-      const fallback = await apiClient.get('/requests/', { params })
+      const fallback = await apiClient.get('/requests/', { params: { ...params, page_size: 100 } })
       return fallback.data
     } catch {
       return { results: [], count: 0 }
@@ -57,13 +58,21 @@ export const getManagerRequestById = async (id: string | number) => {
   }
 }
 
-/** GET /api/manager/dashboard/ */
+/** GET /api/manager/dashboard/ or /api/requests/ */
 export const getDashboardStats = async () => {
   try {
-    const res = await apiClient.get('/requests/')
+    const role = (localStorage.getItem('user_role') || '').toUpperCase()
+    const endpoint = (role === 'MANAGER' || role === 'ADMIN') ? '/manager/requests/' : '/requests/'
+    // page_size=100: dashboard stats are computed from this list; 100 is sufficient for KPI cards
+    const res = await apiClient.get(endpoint, { params: { page_size: 100 } })
     return res.data
   } catch {
-    return null
+    try {
+      const fallback = await apiClient.get('/requests/', { params: { page_size: 100 } })
+      return fallback.data
+    } catch {
+      return null
+    }
   }
 }
 
@@ -193,7 +202,8 @@ export const forwardToFinanceApi = async (id: string | number, comments: string)
 /** GET /api/finance/requests/ */
 export const getFinanceRequests = async (params?: ApiRequestParams) => {
   try {
-    const res = await apiClient.get('/finance/requests/', { params })
+    // page_size capped at 100: backend max_page_size=200 would silently truncate 10000 anyway
+    const res = await apiClient.get('/finance/requests/', { params: { ...params, page_size: 100 } })
     return res.data
   } catch {
     return { results: [], count: 0 }
@@ -223,7 +233,7 @@ export const getBudgets = async () => {
 /** GET /api/rfq/ */
 export const getRFQs = async (params?: ApiRequestParams) => {
   try {
-    const res = await apiClient.get('/rfq/', { params })
+    const res = await apiClient.get('/rfq/', { params: { ...params, page_size: 100 } })
     return res.data
   } catch {
     return { results: [], count: 0 }
@@ -302,4 +312,34 @@ export const selectVendorQuotationApi = async (quoteId: string, rfqId: string, p
   }
 }
 
+export const saveResearchApi = async (id: string | number, data: any) => {
+  try {
+    const res = await apiClient.post(`/manager/requests/${id}/save-research/`, data)
+    return res.data
+  } catch {
+    const fallback = await apiClient.post(`/requests/${id}/save-research/`, data)
+    return fallback.data
+  }
+}
+
+export const savePreEstimationApi = async (id: string | number, data: any) => {
+  try {
+    const res = await apiClient.post(`/manager/requests/${id}/save-pre-estimation/`, data)
+    return res.data
+  } catch {
+    const fallback = await apiClient.post(`/requests/${id}/save-pre-estimation/`, data)
+    return fallback.data
+  }
+}
+
+/** POST /api/manager/requests/{id}/verify-justification/ (Software & SaaS) */
+export const verifyPaymentJustificationApi = async (id: string | number, notes?: string) => {
+  const res = await apiClient.post(`/manager/requests/${id}/verify-justification/`, {
+    notes: notes || 'Payment justification verified by Manager.',
+    comments: notes || 'Payment justification verified by Manager.',
+  })
+  return res.data
+}
+
 export { apiClient }
+

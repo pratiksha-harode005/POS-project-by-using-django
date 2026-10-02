@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   ShieldCheck, CheckCircle, CheckCircle2, XCircle, RotateCcw, Clock,
@@ -13,7 +13,9 @@ import { TrackingStepper } from '../../components/portal/TrackingStepper'
 import { RequestDetailsModal } from '../../components/portal/RequestDetailsModal'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
 import { DocumentPdfViewerModal } from '../../components/portal/DocumentPdfViewerModal'
-import { getWorkflowProgression } from '../../utils/workflowUtils'
+import { AdminResearchModal } from '../../components/portal/AdminResearchModal'
+import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
+import { isSoftwareRequest, isHardwareRequest, getWorkflowProgression, sortRequestsNewestFirst, getRecommendationStatus } from '../../utils/workflowUtils'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -48,6 +50,7 @@ export const AdminRequestsPage: React.FC = () => {
   const { isUnread, markAsRead } = useActivity()
   const {
     allRequests,
+    refreshData,
     adminApproveRequest,
     adminRejectRequest,
     adminReturnRequest,
@@ -57,6 +60,10 @@ export const AdminRequestsPage: React.FC = () => {
     tickets
   } = useManagerData()
 
+  useEffect(() => {
+    refreshData?.()
+  }, [refreshData])
+
   // Tab Filter State: Pending | Approved | Rejected | Returned | All
   const initialTab = (searchParams.get('status') || searchParams.get('tab') || 'PENDING').toUpperCase() as FilterStatus
   const validInitialTab: FilterStatus = ['PENDING', 'APPROVED', 'REJECTED', 'RETURNED', 'ALL'].includes(initialTab)
@@ -64,6 +71,7 @@ export const AdminRequestsPage: React.FC = () => {
     : 'PENDING'
 
   const [statusFilter, setStatusFilter] = useState<FilterStatus>(validInitialTab)
+  const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
 
   // Secondary Filters
   const [search, setSearch] = useState('')
@@ -93,11 +101,21 @@ export const AdminRequestsPage: React.FC = () => {
   const [approveModalReq, setApproveModalReq] = useState<ProcurementRequest | null>(null)
   const [approvalNote, setApprovalNote] = useState('')
 
+  // Admin Research & Cost Estimation Modal State
+  const [researchModalReq, setResearchModalReq] = useState<ProcurementRequest | null>(null)
+  const [justApprovedIds, setJustApprovedIds] = useState<string[]>([])
+
   // Toast
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null)
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
+  }
+
+  const handleResearchSuccess = () => {
+    showToast(`✓ Research & Cost Estimation submitted! Requisition forwarded to Finance Report.`, 'success')
+    setResearchModalReq(null)
+    window.dispatchEvent(new Event('kss_backend_updated'))
   }
 
   const handleFilterChange = (filter: FilterStatus) => {
@@ -108,22 +126,69 @@ export const AdminRequestsPage: React.FC = () => {
   // Segmented request lists - strictly single active stage for Admin
   const pendingRequests = useMemo(() => {
     return allRequests.filter(r => {
-      return r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin'
+      const raw = ((r as any).raw_status || r.status || '').toLowerCase()
+      const isReqApproved =
+        raw === 'approved' ||
+        raw === 'admin_approved' ||
+        raw === 'finance_approved' ||
+        r.status === 'approved' ||
+        (r.status as string) === 'admin_approved' ||
+        r.status === 'finance_approved' ||
+        r.status === 'payment_pending' ||
+        r.financeStatus === 'Approved' ||
+        r.financeStatus === 'Admin Approved' ||
+        r.financeStatus === 'Admin Approved - Queued for Payment' ||
+        (r as any).status_display === 'Admin Approved' ||
+        (r as any).status_display === 'Approved' ||
+        Boolean((r as any).extra_fields?.admin_approved) ||
+        Boolean((r as any).extra_fields?.finance_status === 'Approved') ||
+        Boolean((r as any).extra_fields?.final_approval_by === 'ADMIN') ||
+        Boolean(r.approvalLevel === 'Admin Approved')
+
+      if (isReqApproved && !justApprovedIds.includes(r.id)) return false
+
+      return (
+        r.status === 'recommended_to_admin' ||
+        r.financeStatus === 'Recommended to Admin' ||
+        raw === 'recommended_to_admin' ||
+        raw === 'finance_recommended_to_admin' ||
+        raw === 'admin_review' ||
+        raw === 'admin_research' ||
+        r.status === 'admin_research' ||
+        r.status === 'cost_estimation' ||
+        r.status === 'finance_report' ||
+        raw === 'finance_report' ||
+        justApprovedIds.includes(r.id)
+      )
     })
-  }, [allRequests])
+  }, [allRequests, justApprovedIds])
 
   const approvedRequests = useMemo(() => {
     return allRequests.filter(r => {
+      const raw = ((r as any).raw_status || r.status || '').toLowerCase()
       return (
+        raw === 'approved' ||
+        raw === 'admin_approved' ||
+        raw === 'finance_approved' ||
+        r.status === 'approved' ||
+        (r.status as string) === 'admin_approved' ||
+        r.status === 'finance_approved' ||
         r.status === 'payment_pending' ||
         r.status === 'completed' ||
+        r.financeStatus === 'Approved' ||
         r.financeStatus === 'Admin Approved' ||
         r.financeStatus === 'Admin Approved - Queued for Payment' ||
         r.financeStatus === 'Completed' ||
-        (r.status === 'approved' && Boolean(r.approvedBy?.includes('Admin')))
+        (r as any).status_display === 'Admin Approved' ||
+        (r as any).status_display === 'Approved' ||
+        Boolean((r as any).extra_fields?.admin_approved) ||
+        Boolean((r as any).extra_fields?.finance_status === 'Approved') ||
+        Boolean((r as any).extra_fields?.final_approval_by === 'ADMIN') ||
+        Boolean(r.approvalLevel === 'Admin Approved') ||
+        justApprovedIds.includes(r.id)
       )
     })
-  }, [allRequests])
+  }, [allRequests, justApprovedIds])
 
   const rejectedRequests = useMemo(() => {
     return allRequests.filter(r => {
@@ -146,6 +211,10 @@ export const AdminRequestsPage: React.FC = () => {
     return allRequests
   }, [statusFilter, pendingRequests, approvedRequests, rejectedRequests, returnedRequests, allRequests])
 
+  // Segmented filter counts
+  const softwareCount = useMemo(() => baseList.filter(r => isSoftwareRequest(r)).length, [baseList])
+  const hardwareCount = useMemo(() => baseList.filter(r => isHardwareRequest(r)).length, [baseList])
+
   // Department options
   const departments = useMemo(() => {
     const s = new Set<string>()
@@ -153,23 +222,31 @@ export const AdminRequestsPage: React.FC = () => {
     return ['ALL', ...Array.from(s)]
   }, [allRequests])
 
-  // Filtered list with search, department, and priority filters
+  // Filtered list with search, department, priority, and requestType filters — sorted strictly newest first
   const filteredRequests = useMemo(() => {
-    return baseList.filter(r => {
-      const q = search.toLowerCase()
-      const matchesSearch =
-        r.id.toLowerCase().includes(q) ||
-        r.title.toLowerCase().includes(q) ||
-        (r.requester || '').toLowerCase().includes(q) ||
-        (r.department || '').toLowerCase().includes(q) ||
-        (r.category || '').toLowerCase().includes(q)
+    const matching = baseList
+      .filter(r => {
+        const q = search.toLowerCase()
+        const matchesSearch =
+          r.id.toLowerCase().includes(q) ||
+          r.title.toLowerCase().includes(q) ||
+          (r.requester || '').toLowerCase().includes(q) ||
+          (r.department || '').toLowerCase().includes(q) ||
+          (r.category || '').toLowerCase().includes(q)
 
-      const matchesDept = deptFilter === 'ALL' || r.department === deptFilter
-      const matchesPriority = priorityFilter === 'ALL' || r.priority === priorityFilter
+        const matchesDept = deptFilter === 'ALL' || r.department === deptFilter
+        const matchesPriority = priorityFilter === 'ALL' || r.priority === priorityFilter
 
-      return matchesSearch && matchesDept && matchesPriority
-    })
-  }, [baseList, search, deptFilter, priorityFilter])
+        const matchesType = requestType === 'all'
+          ? true
+          : requestType === 'software'
+          ? isSoftwareRequest(r)
+          : isHardwareRequest(r)
+
+        return matchesSearch && matchesDept && matchesPriority && matchesType
+      })
+    return sortRequestsNewestFirst(matching)
+  }, [baseList, search, deptFilter, priorityFilter, requestType])
 
   // Helper to determine stage number (1 to 13)
   const getStageNumber = (r: ProcurementRequest): number => {
@@ -198,17 +275,20 @@ export const AdminRequestsPage: React.FC = () => {
 
   const handleConfirmApprovalDossier = (params: ApprovalParameters) => {
     if (!approveModalReq) return
+    const approvedId = approveModalReq.id
+    setJustApprovedIds(prev => [...prev, approvedId])
     adminApproveRequest(
-      approveModalReq.id,
+      approvedId,
       params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
       'Executive Administrator'
     )
-    showToast(`✓ Request ${approveModalReq.id} approved with executive authority!`, 'success')
+    showToast(`✓ Request ${approvedId} approved with executive authority!`, 'success')
     setApproveModalReq(null)
     setApprovalNote('')
   }
 
   const handleApprove = (r: ProcurementRequest) => {
+    setJustApprovedIds(prev => [...prev, r.id])
     adminApproveRequest(r.id, approvalNote.trim() || 'Verified within Q3 budget cap. Authorized for PO release.', 'Executive Administrator')
     showToast(`✓ Request ${r.id} approved with executive authority!`, 'success')
     setApproveModalReq(null)
@@ -421,6 +501,17 @@ export const AdminRequestsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Request Type Segmented Filter */}
+      <div className="flex items-center justify-between">
+        <RequestTypeFilter
+          value={requestType}
+          onChange={setRequestType}
+          totalCount={baseList.length}
+          softwareCount={softwareCount}
+          hardwareCount={hardwareCount}
+        />
+      </div>
+
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-3">
         {/* Search */}
@@ -541,6 +632,7 @@ export const AdminRequestsPage: React.FC = () => {
           </div>
         ) : (
           filteredRequests.map((req: ProcurementRequest) => {
+            const recInfo = getRecommendationStatus(req)
             const prog = getWorkflowProgression({
               status: req.status,
               financeStatus: req.financeStatus,
@@ -550,10 +642,30 @@ export const AdminRequestsPage: React.FC = () => {
             })
             const currentStage = prog.currentStageIndex + 1
             const totalStages = prog.totalStages
-            const isApproved = statusFilter === 'APPROVED' || req.status === 'approved' || req.status === 'finance_approved' || req.financeStatus === 'Admin Approved'
+            const rawStatus = ((req as any).raw_status || req.status || '').toLowerCase()
+            const isApproved =
+              statusFilter === 'APPROVED' ||
+              rawStatus === 'approved' ||
+              rawStatus === 'admin_approved' ||
+              rawStatus === 'finance_approved' ||
+              req.status === 'approved' ||
+              (req.status as string) === 'admin_approved' ||
+              req.status === 'finance_approved' ||
+              req.status === 'payment_pending' ||
+              req.financeStatus === 'Approved' ||
+              req.financeStatus === 'Admin Approved' ||
+              req.financeStatus === 'Admin Approved - Queued for Payment' ||
+              (req as any).status_display === 'Admin Approved' ||
+              (req as any).status_display === 'Approved' ||
+              Boolean((req as any).extra_fields?.admin_approved) ||
+              Boolean((req as any).extra_fields?.finance_status === 'Approved') ||
+              Boolean((req as any).extra_fields?.final_approval_by === 'ADMIN') ||
+              Boolean(req.approvalLevel === 'Admin Approved') ||
+              Boolean(req.approvedDate && req.approvedBy) ||
+              justApprovedIds.includes(req.id)
             const isRejected = statusFilter === 'REJECTED' || req.status === 'rejected' || req.status === 'finance_rejected' || Boolean(req.financeStatus?.includes('Rejected'))
             const isReturned = statusFilter === 'RETURNED' || req.status === 'clarification_requested' || Boolean(req.financeStatus?.includes('Returned'))
-            const isPendingFinal = req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin'
+            const isPendingFinal = !isApproved && (req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin' || recInfo.isRecommendedToAdmin)
 
             // Matched budget for live budget availability check
             const matchedBudget = budgets?.find(
@@ -593,15 +705,23 @@ export const AdminRequestsPage: React.FC = () => {
                       {/* Status Tag */}
                       {isApproved ? (
                         <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
-                          <CheckCircle size={11} /> {req.financeStatus || 'Admin Approved'}
+                          <CheckCircle size={11} /> Approved
                         </span>
                       ) : isRejected ? (
                         <span className="text-[10px] font-black text-rose-900 bg-rose-100 px-3 py-0.5 rounded-full border border-rose-300 shadow-2xs flex items-center gap-1">
-                          <XCircle size={11} /> {req.financeStatus || 'Rejected'}
+                          <XCircle size={11} /> Rejected
                         </span>
                       ) : isReturned ? (
                         <span className="text-[10px] font-black text-orange-950 bg-orange-100 px-3 py-0.5 rounded-full border border-orange-300 shadow-2xs flex items-center gap-1">
                           <RotateCcw size={11} /> Returned for Clarification
+                        </span>
+                      ) : recInfo.isRecommendedToAdmin ? (
+                        <span className="text-[10px] font-black text-purple-950 bg-purple-100 px-3 py-0.5 rounded-full border border-purple-300 shadow-2xs flex items-center gap-1 animate-pulse">
+                          <ArrowUpRight size={11} /> {recInfo.statusLabel}
+                        </span>
+                      ) : recInfo.isRecommendedToFinance ? (
+                        <span className="text-[10px] font-black text-emerald-950 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
+                          <ArrowUpRight size={11} /> {recInfo.statusLabel}
                         </span>
                       ) : isPendingFinal ? (
                         <span className="text-[10px] font-black text-purple-950 bg-purple-100 px-3 py-0.5 rounded-full border border-purple-300 shadow-2xs flex items-center gap-1 animate-pulse">
@@ -724,6 +844,66 @@ export const AdminRequestsPage: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Approved Banner */}
+                {isApproved && (
+                  <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-950 shadow-2xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <CheckCircle size={18} />
+                      </div>
+                      <div>
+                        <span className="font-black text-emerald-950">Requisition Approved by Admin</span>
+                        <p className="text-[11px] text-emerald-800 font-medium">
+                          {req.financeComment || 'Executive spend authorized. Requisition approved for procurement execution.'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-md bg-emerald-200 text-emerald-950 text-[10px] font-black uppercase tracking-wide border border-emerald-300">
+                      APPROVED
+                    </span>
+                  </div>
+                )}
+
+                {/* Recommended to Admin Banner */}
+                {!isApproved && !isRejected && recInfo.isRecommendedToAdmin && (
+                  <div className="bg-purple-50 border border-purple-300 rounded-xl p-3 flex items-center justify-between text-xs text-purple-950 shadow-2xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <ArrowUpRight size={18} />
+                      </div>
+                      <div>
+                        <span className="font-black text-purple-950">Recommended to Admin — {recInfo.portalName}</span>
+                        <p className="text-[11px] text-purple-800 font-medium">
+                          {recInfo.reason || 'Requisition forwarded to Administrator for higher authority review and executive approval.'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-md bg-purple-200 text-purple-950 text-[10px] font-black uppercase tracking-wide border border-purple-300">
+                      Recommended to Admin
+                    </span>
+                  </div>
+                )}
+
+                {/* Recommended to Finance Banner */}
+                {recInfo.isRecommendedToFinance && !isApproved && !isRejected && (
+                  <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-950 shadow-2xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <ArrowUpRight size={18} />
+                      </div>
+                      <div>
+                        <span className="font-black text-emerald-950">Recommended to Finance — {recInfo.portalName}</span>
+                        <p className="text-[11px] text-emerald-800 font-medium">
+                          {recInfo.reason || 'Requisition forwarded by Manager for commercial review & financial approval.'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-md bg-emerald-200 text-emerald-950 text-[10px] font-black uppercase tracking-wide border border-emerald-300">
+                      Recommended to Finance
+                    </span>
+                  </div>
+                )}
+
                 {/* Bottom Row: Actions Bar */}
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
                   <div className="text-xs text-slate-400">
@@ -734,6 +914,14 @@ export const AdminRequestsPage: React.FC = () => {
                     {/* Actions for Pending Requests */}
                     {(!isApproved && !isRejected && !isReturned) && (
                       <>
+                        <button
+                          onClick={() => setResearchModalReq(req)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                          title="Conduct vendor research, market pricing, specs/licensing, and prepare cost estimation"
+                        >
+                          <Search size={14} /> Research &amp; Cost Estimation
+                        </button>
+
                         <button
                           onClick={() => openApproveModal(req)}
                           className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
@@ -750,9 +938,13 @@ export const AdminRequestsPage: React.FC = () => {
                         >
                           <XCircle size={14} /> Reject
                         </button>
-
-
                       </>
+                    )}
+
+                    {isApproved && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-300 shadow-2xs">
+                        <CheckCircle size={14} className="text-emerald-600" /> Approved
+                      </span>
                     )}
 
                     {/* Dynamic Stage Lifecycle Tracker Modal Trigger */}
@@ -819,6 +1011,7 @@ export const AdminRequestsPage: React.FC = () => {
                 paymentStatus={trackingReq.paymentStatus}
                 lastUpdated={trackingReq.date}
                 history={trackingReq.history}
+                timeline={(trackingReq as any).timeline}
               />
 
               {/* Product-Level Tracking & Multi-Receipt Lifecycle */}
@@ -1150,6 +1343,13 @@ export const AdminRequestsPage: React.FC = () => {
         approverName="Executive Administrator"
         onClose={() => setApproveModalReq(null)}
         onConfirm={handleConfirmApprovalDossier}
+      />
+      {/* Admin Research & Cost Estimation Modal */}
+      <AdminResearchModal
+        isOpen={!!researchModalReq}
+        request={researchModalReq}
+        onClose={() => setResearchModalReq(null)}
+        onSuccess={handleResearchSuccess}
       />
     </div>
   )

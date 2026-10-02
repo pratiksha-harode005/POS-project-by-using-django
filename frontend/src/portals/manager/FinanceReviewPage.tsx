@@ -11,6 +11,7 @@ import {
   getFinanceHandoverPdfBlobUrl
 } from '../../utils/financeHandoverPdfGenerator'
 import { numberToIndianWords } from '../../utils/paymentLedgerPdfGenerator'
+import { UnifiedReceiptModal } from '../../components/portal/UnifiedReceiptModal'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -32,9 +33,10 @@ const PRESET_DIRECTIVES = [
 ]
 
 export const FinanceReviewPage: React.FC = () => {
-  const { financeReview, sendToFinance } = useManagerData()
+  const { financeReview, sendToFinance, payments } = useManagerData()
   const { isUnread, markAsRead } = useActivity()
   const [sendModal, setSendModal] = useState<string | null>(null)
+  const [selectedReceiptPayment, setSelectedReceiptPayment] = useState<any | null>(null)
   const [message, setMessage] = useState('')
   const [selectedDirectives, setSelectedDirectives] = useState<string[]>([
     'Tax Invoice & Quote Attached',
@@ -43,6 +45,7 @@ export const FinanceReviewPage: React.FC = () => {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null)
   const [isExportingPdf, setIsExportingPdf] = useState(false)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  const [activeFilter, setActiveFilter] = useState<'All' | 'Software' | 'Hardware'>('All')
 
   const showToast = (msg: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -155,8 +158,25 @@ export const FinanceReviewPage: React.FC = () => {
             <Landmark className="text-purple-600" size={26} /> Finance Review
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Audit and forward manager-endorsed requisitions to Finance Directorate via official Handover Reports.
+            Audit and forward manager-endorsed requisitions and payment receipts to Finance Directorate via official Handover Reports.
           </p>
+        </div>
+        
+        {/* FILTERS */}
+        <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200 self-start sm:self-auto">
+          {['All', 'Software', 'Hardware'].map(f => (
+            <button
+              key={f}
+              onClick={() => setActiveFilter(f as any)}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeFilter === f 
+                  ? 'bg-white text-purple-700 shadow-sm border border-slate-200' 
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -169,8 +189,15 @@ export const FinanceReviewPage: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-4">
-          {financeReview.map(r => {
+          {financeReview.filter(r => {
+            const isSoftware = (r.category || '').toLowerCase().includes('software') || (r.category || '').toLowerCase().includes('saas') || (r.category || '').toLowerCase().includes('cloud') || (r as any).software_name || (r as any).extraFields?.payment_justification
+            if (activeFilter === 'Software') return isSoftware
+            if (activeFilter === 'Hardware') return !isSoftware
+            return true
+          }).map(r => {
             const isNew = isUnread(r.id)
+            const isReceipt = Boolean((r as any).extraFields?.payment_justification || (r as any).extraFields?.payment_justification_detail || (r as any).raw_status === 'PAYMENT_JUSTIFICATION_SUBMITTED')
+            
             return (
               <div
                 key={r.id}
@@ -206,11 +233,35 @@ export const FinanceReviewPage: React.FC = () => {
                     <span>🏢 Department: <b className="text-slate-800">{r.department}</b></span>
                     <span>📁 Category: <b className="text-slate-800">{r.category || 'General'}</b></span>
                     <span>📅 Submitted: {r.date}</span>
+                    {isReceipt && (
+                      <span className="text-purple-600 font-bold flex items-center gap-1">
+                        <FileText size={13} /> Payment Receipt Submitted
+                      </span>
+                    )}
                   </div>
-                  {r.justification && (
+                  {r.justification && !isReceipt && (
                     <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mt-3">
                       <b className="text-slate-900">Justification:</b> {r.justification}
                     </p>
+                  )}
+                  {isReceipt && (
+                    <div className="mt-3 bg-purple-50 border border-purple-100 p-3 rounded-lg text-xs space-y-1.5">
+                      <p><b className="text-purple-900">Payment Method:</b> <span className="text-purple-700">{(r as any).paymentMethod || (r as any).extraFields?.payment_method || (r as any).payment_method || 'N/A'}</span></p>
+                      <p><b className="text-purple-900">Transaction Ref:</b> <span className="text-purple-700">{(r as any).paymentReference || (r as any).extraFields?.payment_reference || (r as any).payment_reference || 'N/A'}</span></p>
+                      <p>
+                        <b className="text-purple-900">Payment Details:</b>{' '}
+                        <span className="text-purple-700">
+                          {typeof (r as any).extraFields?.payment_justification === 'string'
+                            ? (r as any).extraFields.payment_justification
+                            : ((r as any).extraFields?.payment_justification?.business_justification ||
+                               (r as any).extraFields?.payment_justification?.proof_description ||
+                               (r as any).payment_justification_detail?.business_purpose ||
+                               (r as any).payment_justification_detail?.why_required ||
+                               (r as any).payment_notes ||
+                               'Receipt details provided.')}
+                        </span>
+                      </p>
+                    </div>
                   )}
                 </div>
                 <div className="text-right flex-shrink-0 bg-slate-50 sm:bg-transparent p-3 sm:p-0 rounded-xl">
@@ -224,14 +275,28 @@ export const FinanceReviewPage: React.FC = () => {
                   <ShieldCheck size={14} className="text-emerald-600" />
                   Manager technical scrutiny completed • Ready for formal finance dossier
                 </span>
-                <button
-                  onClick={() => handleOpenSendModal(r)}
+                <div className="flex items-center gap-2">
+                  {isReceipt && (
+                    <button
+                      onClick={() => {
+                        const pay = payments.find((p: any) => p.requestId === r.id)
+                        if (pay) setSelectedReceiptPayment(pay)
+                        else showToast('Payment record not found for this receipt.', 'error')
+                      }}
+                      className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-2xs transition-all"
+                    >
+                      View Receipt
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleOpenSendModal(r)}
                   disabled={r.financeStatus === 'Sent to Finance'}
                   className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-2xs transition-all"
                 >
                   <Send size={14} />
                   {r.financeStatus === 'Sent to Finance' ? 'Already Sent to Finance' : 'Send to Finance (Handover Report)'}
                 </button>
+                </div>
               </div>
             </div>
           )
@@ -612,6 +677,12 @@ export const FinanceReviewPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {selectedReceiptPayment && (
+        <UnifiedReceiptModal
+          payment={selectedReceiptPayment}
+          onClose={() => setSelectedReceiptPayment(null)}
+        />
       )}
     </div>
   )
