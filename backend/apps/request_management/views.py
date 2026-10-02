@@ -60,6 +60,8 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         user = self.request.user
         from django.db.models import Prefetch
         from apps.procurement.models import PurchaseOrder
+        from apps.rfq_management.models import RFQ
+        from apps.invoice_management.models import Invoice
         queryset = PurchaseRequest.objects.select_related(
             'created_by',
             'created_by__department',
@@ -71,9 +73,15 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             ),
             Prefetch(
                 'purchase_orders',
-                queryset=PurchaseOrder.objects.select_related('vendor').prefetch_related('goods_receipts', 'invoices')
+                queryset=PurchaseOrder.objects.select_related('vendor').prefetch_related(
+                    'goods_receipts',
+                    Prefetch('invoices', queryset=Invoice.objects.prefetch_related('payments'))
+                )
             ),
-            'rfqs'
+            Prefetch(
+                'rfqs',
+                queryset=RFQ.objects.prefetch_related('quotations')
+            )
         ).all().order_by('-created_at')
 
         if not user or user.is_anonymous:

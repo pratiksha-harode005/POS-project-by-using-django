@@ -331,11 +331,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 grs = list(po_obj.goods_receipts.all())
                 has_verified_gr = any(g.status in ['Verified', 'Confirmed', 'Approved'] or getattr(g, 'verified_by_name', None) for g in grs)
                 if has_verified_gr:
+                    if pr.current_stage < 9:
+                        pr.current_stage = 9
+                else:
                     if pr.current_stage < 8:
                         pr.current_stage = 8
-                else:
-                    if pr.current_stage < 7:
-                        pr.current_stage = 7
                 pr.save(update_fields=['current_stage', 'updated_at'])
 
             try:

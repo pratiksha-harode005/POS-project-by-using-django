@@ -1558,7 +1558,17 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (isFetchingRef.current) return
     isFetchingRef.current = true
     try {
-      const res = await getDashboardStats()
+      const [res, budgetsRes, rfqsRes, vendorsRes, posRes, invRes, payRes, quotesRes, grsRes] = await Promise.all([
+        getDashboardStats(),
+        apiClient.get('/budgets/allocations/').catch(() => apiClient.get('/budgets/')),
+        apiClient.get('/rfq/?page_size=1000').catch(() => ({ data: [] })),
+        apiClient.get('/vendors/?page_size=1000').catch(() => ({ data: [] })),
+        apiClient.get('/procurement/purchase-orders/').catch(() => ({ data: [] })),
+        apiClient.get('/invoices/').catch(() => ({ data: [] })),
+        apiClient.get('/payments/').catch(() => ({ data: [] })),
+        apiClient.get('/rfq/quotations/?page_size=1000').catch(() => ({ data: [] })),
+        apiClient.get('/procurement/goods-receipts/?page_size=1000').catch(() => ({ data: [] }))
+      ])
       const list = Array.isArray(res) ? res : res?.results || []
 
       const mapped: ProcurementRequest[] = list.map((item: any) => {
@@ -1709,19 +1719,6 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setFinanceReview(uniqueMapped.filter(r => ((r.currentStage ?? 1) === 2 || r.status === 'finance_review' || r.status === 'recommended_to_finance') && r.isForwardedToFinance && r.status !== 'rejected'))
       setRecommendedToFinance(uniqueMapped.filter(r => ((r.currentStage ?? 1) === 2 || r.status === 'finance_review' || r.status === 'recommended_to_finance') && r.isForwardedToFinance && r.status !== 'rejected'))
       setRecommendedToAdmin(uniqueMapped.filter(r => ((r.currentStage ?? 1) === 3 || r.status === 'recommended_to_admin') && r.status !== 'rejected'))
-
-      // Fetch other core data
-      try {
-        const [budgetsRes, rfqsRes, vendorsRes, posRes, invRes, payRes, quotesRes, grsRes] = await Promise.all([
-          apiClient.get('/budgets/allocations/').catch(() => apiClient.get('/budgets/')),
-          apiClient.get('/rfq/?page_size=1000'),
-          apiClient.get('/vendors/?page_size=1000'),
-          apiClient.get('/procurement/purchase-orders/'),
-          apiClient.get('/invoices/'),
-          apiClient.get('/payments/'),
-          apiClient.get('/rfq/quotations/?page_size=1000').catch(() => ({ data: [] })),
-          apiClient.get('/procurement/goods-receipts/?page_size=1000').catch(() => ({ data: [] }))
-        ])
         const rawBudgets = Array.isArray(budgetsRes.data) ? budgetsRes.data : budgetsRes.data?.results || []
         const mappedBudgets: BudgetDepartment[] = rawBudgets.map((b: any) => {
           const tot = Number(b.total_allocated) || Number(b.totalBudget) || 0
@@ -2353,10 +2350,6 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         ) && r.status !== 'rejected'))
         setRecommendedToFinance(enrichedRequests.filter(r => ((r.currentStage ?? 1) === 2 || r.status === 'finance_review' || r.status === 'recommended_to_finance') && r.isForwardedToFinance && r.status !== 'rejected'))
         setRecommendedToAdmin(enrichedRequests.filter(r => ((r.currentStage ?? 1) === 3 || r.status === 'recommended_to_admin') && r.status !== 'rejected'))
-      } catch (err) {
-        console.warn('Failed fetching secondary data in manager context:', err)
-      }
-
     } catch (e) {
       console.warn('Backend manager fetch fallback:', e)
     } finally {
@@ -2376,13 +2369,13 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     window.addEventListener('focus', handleUpdate)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
-    // 3s active background heartbeat for real-time live synchronization across all portals
+    // 6s active background heartbeat for real-time live synchronization across all portals
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         return
       }
       refreshManagerBackendData()
-    }, 3000)
+    }, 6000)
     return () => {
       window.removeEventListener('kss_backend_updated', handleUpdate)
       window.removeEventListener('focus', handleUpdate)

@@ -155,37 +155,6 @@ def seed():
         }
     )
     
-    pr2, _ = PurchaseRequest.objects.get_or_create(
-        request_id='PR-2026-002',
-        defaults={
-            'created_by': users['teamlead'],
-            'department': dept_objs['IT Infrastructure'],
-            'title': 'Annual Cloud Infrastructure Hosting (AWS EC2 & S3)',
-            'description': 'Reserved instance capacity and S3 storage for main production web servers.',
-            'category': 'Cloud Services',
-            'total_estimated_cost': Decimal('45000.00'),
-            'priority': 'CRITICAL',
-            'status': 'APPROVED',
-            'quantity': 1,
-            'required_by': timezone.now().date() + timedelta(days=30)
-        }
-    )
-
-    pr3, _ = PurchaseRequest.objects.get_or_create(
-        request_id='PR-2026-003',
-        defaults={
-            'created_by': users['teamlead'],
-            'department': dept_objs['Engineering'],
-            'title': 'Ergonomic Office Chairs (20x)',
-            'description': 'Replacement of worn out chairs in engineering wing.',
-            'category': 'Furniture',
-            'total_estimated_cost': Decimal('6000.00'),
-            'priority': 'MEDIUM',
-            'status': 'SUBMITTED',
-            'quantity': 20,
-            'required_by': timezone.now().date() + timedelta(days=20)
-        }
-    )
     print("Purchase Requests ready.")
 
     # 6. RFQs
@@ -200,18 +169,6 @@ def seed():
         }
     )
     rfq1.invited_vendors.add(vendor_dell)
-
-    rfq2, _ = RFQ.objects.get_or_create(
-        rfq_id='RFQ-2026-002',
-        defaults={
-            'purchase_request': pr2,
-            'title': 'Cloud Hosting Enterprise Plan 2026',
-            'deadline': timezone.now().date() + timedelta(days=7),
-            'terms': 'Quarterly billing, 99.99% uptime SLA.',
-            'status': 'OPEN'
-        }
-    )
-    rfq2.invited_vendors.add(vendor_aws)
     print("RFQs ready.")
 
     # 7. Quotations
@@ -225,19 +182,6 @@ def seed():
             'warranty_months': 36,
             'terms_conditions': '3 years Dell ProSupport included with express next-day delivery.',
             'status': 'ACCEPTED'
-        }
-    )
-
-    q2, _ = Quotation.objects.get_or_create(
-        quotation_id='QT-2026-002',
-        defaults={
-            'rfq': rfq2,
-            'vendor': vendor_aws,
-            'price': Decimal('42000.00'),
-            'delivery_days': 1,
-            'warranty_months': 12,
-            'terms_conditions': 'AWS Enterprise Support Plan & Reserved Instance Credits.',
-            'status': 'SUBMITTED'
         }
     )
     print("Quotations ready.")

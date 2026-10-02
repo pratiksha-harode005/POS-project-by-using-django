@@ -69,7 +69,6 @@ class RFQViewSet(viewsets.ModelViewSet):
                 if v_profile.category:
                     v_cat_q |= Q(purchase_request__category__iexact=v_profile.category.name)
                 return qs.filter(v_cat_q).distinct().order_by('-created_at')
-            return qs.distinct().order_by('-created_at')
         return qs.distinct().order_by('-created_at')
 
     def get_object(self):
@@ -166,6 +165,34 @@ class RFQViewSet(viewsets.ModelViewSet):
                 vendor_ids.append(v.id)
 
         data['invited_vendors'] = list(set(vendor_ids))
+
+        # If an RFQ already exists for this purchase_request, update and reuse it instead of creating a duplicate
+        if pr_obj:
+            existing_rfq = RFQ.objects.filter(purchase_request=pr_obj).order_by('-created_at').first()
+            if existing_rfq:
+                if 'title' in data and data['title']:
+                    existing_rfq.title = data['title']
+                if 'deadline' in data and data['deadline']:
+                    existing_rfq.deadline = data['deadline']
+                if 'terms' in data and data['terms']:
+                    existing_rfq.terms = data['terms']
+                if 'status' in data and data['status']:
+                    existing_rfq.status = data['status']
+                existing_rfq.save()
+                if vendor_ids:
+                    existing_rfq.invited_vendors.add(*vendor_ids)
+
+                try:
+                    if pr_obj.current_stage < 4:
+                        pr_obj.current_stage = 4
+                    if pr_obj.status in ['Pending', 'Recommended', 'Draft', 'Approved']:
+                        pr_obj.status = 'In Procurement'
+                    pr_obj.save(update_fields=['current_stage', 'status', 'updated_at'])
+                except Exception as e:
+                    print("Could not update PR stage on RFQ update:", e)
+
+                serializer = self.get_serializer(existing_rfq)
+                return Response(serializer.data, status=status.HTTP_200_OK)
 
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)

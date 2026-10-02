@@ -386,8 +386,8 @@ export const MyOrdersPage: React.FC = () => {
   const liveOrders = useMemo<ManagerOrder[]>(() => {
     if (!approvedRequests || approvedRequests.length === 0) return []
     const mappedOrders: ManagerOrder[] = approvedRequests.map((req) => {
-      const isCompleted = (req.status as string) === 'completed' || req.status === 'delivered'
-      const isInProcurement = req.status === 'assigned_to_vendor' || req.status === 'vendor_accepted'
+      const isCompleted = (req.status as string) === 'completed' || (req as any).paymentStatus === 'paid' || (req as any).financeStatus === 'completed'
+      const isInProcurement = req.status === 'assigned_to_vendor' || req.status === 'vendor_accepted' || req.status === 'delivered'
       const isRejected = req.status === 'rejected' || req.status === 'finance_rejected' || req.status === 'vendor_rejected'
       
       const isForwarded =

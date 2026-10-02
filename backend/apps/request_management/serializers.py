@@ -212,7 +212,8 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
                     for p_order in pos:
                         invs_list = list(p_order.invoices.all()) if hasattr(p_order, 'invoices') else []
                         for inv in invs_list:
-                            if hasattr(inv, 'payments') and inv.payments.filter(status='Paid').exists():
+                            payments_list = list(inv.payments.all()) if hasattr(inv, 'payments') else []
+                            if any(p.status == 'Paid' for p in payments_list):
                                 has_paid = True
                                 break
                 if has_paid or str(instance.status).lower() in ['completed', 'paid']:
@@ -221,7 +222,8 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
                 # Hardware stages: 0=Create, 1=Manager, 2=Finance, 3=Admin, 4=RFQ Sent, 5=Vendor Quotes Received, 6=Product Order, 7=Delivery, 8=Verification and Order Complete, 9=Payment
                 has_quotes = False
                 for rfq_item in rfqs:
-                    if hasattr(rfq_item, 'quotations') and rfq_item.quotations.exists():
+                    quotes_list = list(rfq_item.quotations.all()) if hasattr(rfq_item, 'quotations') else []
+                    if len(quotes_list) > 0:
                         has_quotes = True
                         break
 
@@ -242,16 +244,16 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
                         inv_verified = any(i.is_manager_verified or i.status in ['Matched', 'Paid', 'Verified'] for i in invs_list)
 
                         for inv in invs_list:
-                            if hasattr(inv, 'payments') and inv.payments.filter(status='Paid').exists():
+                            payments_list = list(inv.payments.all()) if hasattr(inv, 'payments') else []
+                            if any(p.status == 'Paid' for p in payments_list):
                                 has_paid = True
 
-                        if (gr_verified or grs_list or p_order.status in ['Delivered', 'Fulfilled']) and computed_stage < 7:
-                            computed_stage = 7
-                        if gr_verified and inv_verified:
-                            if computed_stage < 8:
-                                computed_stage = 8
-                        elif invs_list and computed_stage < 7:
-                            computed_stage = 7
+                        if (gr_verified or grs_list or p_order.status in ['Delivered', 'Fulfilled']) and computed_stage < 8:
+                            computed_stage = 8
+                        if gr_verified and inv_verified and computed_stage < 9:
+                            computed_stage = 9
+                        elif invs_list and computed_stage < 8:
+                            computed_stage = 8
 
                     if has_paid or str(instance.status).lower() in ['completed', 'paid']:
                         computed_stage = 9

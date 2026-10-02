@@ -229,11 +229,11 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       if (hasRfq && effectiveBackendStage < 4) effectiveBackendStage = 4
       if (hasQuotes && effectiveBackendStage < 5) effectiveBackendStage = 5
       if (hasPo && effectiveBackendStage < 6) effectiveBackendStage = 6
-      if (hasGrn && effectiveBackendStage < 7) effectiveBackendStage = 7
-      if (areDocsVerified && effectiveBackendStage < 8) effectiveBackendStage = 8
+      if (hasGrn && effectiveBackendStage < 8) effectiveBackendStage = 8
+      if (areDocsVerified && effectiveBackendStage < 9) effectiveBackendStage = 9
     } else {
-      if (areDocsVerified) effectiveBackendStage = 8
-      else if (hasGrn) effectiveBackendStage = 7
+      if (areDocsVerified) effectiveBackendStage = 9
+      else if (hasGrn) effectiveBackendStage = 8
       else if (hasPo) effectiveBackendStage = 6
       else if (hasQuotes) effectiveBackendStage = 5
       else if (hasRfq) effectiveBackendStage = 4
@@ -261,8 +261,8 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       else if (['approved','rfq_pending','rfq_sent'].includes(st)) mappedName = 'RFQ Sent'
       else if (st === 'quotes_received' || st === 'under_evaluation') mappedName = 'Vendor Quotes Received'
       else if (['in_procurement','product_order','assigned_to_vendor'].includes(st)) mappedName = 'Product Order'
-      else if (['delivered','delivery','goods_received'].includes(st)) mappedName = 'Delivery'
-      else if (['verified','order_complete','matched'].includes(st)) mappedName = 'Verification and Order Complete'
+      else if (['delivered','delivery','goods_received'].includes(st)) mappedName = hasGrn ? 'Verification and Order Complete' : 'Delivery'
+      else if (['verified','order_complete','matched'].includes(st)) mappedName = areDocsVerified ? 'Payment' : 'Verification and Order Complete'
       else mappedName = 'Payment'
     }
     const idx = stages.indexOf(mappedName)

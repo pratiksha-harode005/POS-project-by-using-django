@@ -113,6 +113,7 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
 
   const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Active vendors pool
   const allActiveVendors = useMemo(() => {
@@ -276,8 +277,9 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
     }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmitting) return
     setErrorMsg('')
 
     if (!title.trim()) {
@@ -311,41 +313,48 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
       return
     }
 
-    const rfqVendors: RFQVendor[] = effectiveVendors.map(v => ({
-      name: v.name,
-      id: (v as any).unique_vendor_id || String(v.id),
-      unique_vendor_id: (v as any).unique_vendor_id || String(v.id),
-      invitedOn: issueDate,
-      response: 'Pending'
-    }))
+    setIsSubmitting(true)
+    try {
+      const rfqVendors: RFQVendor[] = effectiveVendors.map(v => ({
+        name: v.name,
+        id: (v as any).unique_vendor_id || String(v.id),
+        unique_vendor_id: (v as any).unique_vendor_id || String(v.id),
+        invitedOn: issueDate,
+        response: 'Pending'
+      }))
 
-    const rfqItems: RFQItem[] = items.map(i => ({
-      product: i.product,
-      specification: i.specification || 'Standard enterprise technical specifications',
-      quantity: i.quantity,
-      expectedPrice: i.expectedPrice,
-      requiredBy: i.requiredBy || quotationDueDate
-    }))
+      const rfqItems: RFQItem[] = items.map(i => ({
+        product: i.product,
+        specification: i.specification || 'Standard enterprise technical specifications',
+        quantity: i.quantity,
+        expectedPrice: i.expectedPrice,
+        requiredBy: i.requiredBy || quotationDueDate
+      }))
 
-    const newRfq: RFQ = {
-      id: rfqNumber,
-      title: title.trim(),
-      department,
-      category: targetCategory,
-      subcategory: subCategory || 'Laptops & Compute',
-      status: 'sent',
-      estimatedAmount: totalEstimatedAmount,
-      deadline: quotationDueDate,
-      createdBy: requester,
-      createdDate: issueDate,
-      vendors: rfqVendors,
-      items: rfqItems,
-      remarks: selectedPrId ? `Mapped from Approved PR: ${selectedPrId}` : 'Standalone Manager Created RFQ'
+      const newRfq: RFQ = {
+        id: rfqNumber,
+        title: title.trim(),
+        department,
+        category: targetCategory,
+        subcategory: subCategory || 'Laptops & Compute',
+        status: 'sent',
+        estimatedAmount: totalEstimatedAmount,
+        deadline: quotationDueDate,
+        createdBy: requester,
+        createdDate: issueDate,
+        vendors: rfqVendors,
+        items: rfqItems,
+        remarks: selectedPrId ? `Mapped from Approved PR: ${selectedPrId}` : 'Standalone Manager Created RFQ'
+      }
+
+      await addRFQ(newRfq)
+      if (onSuccess) onSuccess(newRfq)
+      onClose()
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to create RFQ. Please try again.')
+    } finally {
+      setIsSubmitting(false)
     }
-
-    addRFQ(newRfq)
-    if (onSuccess) onSuccess(newRfq)
-    onClose()
   }
 
   return (
@@ -828,9 +837,21 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
               </button>
               <button
                 type="submit"
-                className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all cursor-pointer"
+                disabled={isSubmitting}
+                className={`flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all ${
+                  isSubmitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
+                }`}
               >
-                <CheckCircle size={15} /> Create & Send to Vendor
+                {isSubmitting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={15} /> Create & Send to Vendor
+                  </>
+                )}
               </button>
             </div>
           </div>

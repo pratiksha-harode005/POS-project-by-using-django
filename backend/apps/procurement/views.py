@@ -32,11 +32,21 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         ).prefetch_related(
             Prefetch(
                 'goods_receipts',
-                queryset=GoodsReceipt.objects.select_related('received_by')
+                queryset=GoodsReceipt.objects.select_related(
+                    'received_by',
+                    'purchase_order',
+                    'purchase_order__vendor',
+                    'purchase_order__purchase_request',
+                    'purchase_order__quotation'
+                )
             ),
             Prefetch(
                 'invoices',
                 queryset=Invoice.objects.prefetch_related('payments')
+            ),
+            Prefetch(
+                'purchase_request__rfqs',
+                queryset=RFQ.objects.prefetch_related('quotations')
             )
         )
 
@@ -243,8 +253,8 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         po = serializer.save()
         if po.status in ['Delivered', 'Fulfilled', 'Completed']:
             pr = po.purchase_request
-            if pr and pr.current_stage < 7:
-                pr.current_stage = 7
+            if pr and pr.current_stage < 8:
+                pr.current_stage = 8
                 pr.status = 'In Procurement'
                 pr.save(update_fields=['current_stage', 'status', 'updated_at'])
             # Also keep sibling POs in sync if delivered
@@ -282,6 +292,15 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
             'purchase_order__quotation',
             'received_by',
             'received_by__department'
+        ).prefetch_related(
+            Prefetch(
+                'purchase_order__invoices',
+                queryset=Invoice.objects.prefetch_related('payments')
+            ),
+            Prefetch(
+                'purchase_order__purchase_request__rfqs',
+                queryset=RFQ.objects.prefetch_related('quotations')
+            )
         )
 
         status_param = self.request.query_params.get('status')
@@ -485,16 +504,16 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
 
             pr = po_obj.purchase_request
             if pr:
-                if existing_gr.status in ['Verified', 'Confirmed', 'Approved']:
-                    invs = list(po_obj.invoices.all())
-                    has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
-                    if has_verified_inv:
-                        if pr.current_stage < 8:
-                            pr.current_stage = 8
-                    elif pr.current_stage < 7:
-                        pr.current_stage = 7
-                    PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
-                    pr.save(update_fields=['current_stage', 'updated_at'])
+                invs = list(po_obj.invoices.all())
+                has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
+                is_gr_verified = existing_gr.status in ['Verified', 'Confirmed', 'Approved']
+                if has_verified_inv and is_gr_verified:
+                    if pr.current_stage < 9:
+                        pr.current_stage = 9
+                elif pr.current_stage < 8:
+                    pr.current_stage = 8
+                PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
+                pr.save(update_fields=['current_stage', 'updated_at'])
 
             # Sync ThreeWayMatch
             try:
@@ -514,16 +533,16 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
 
         pr = po_obj.purchase_request
         if pr:
-            if receipt.status in ['Verified', 'Confirmed', 'Approved']:
-                invs = list(po_obj.invoices.all())
-                has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
-                if has_verified_inv:
-                    if pr.current_stage < 8:
-                        pr.current_stage = 8
-                elif pr.current_stage < 7:
-                    pr.current_stage = 7
-                PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
-                pr.save(update_fields=['current_stage', 'updated_at'])
+            invs = list(po_obj.invoices.all())
+            has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
+            is_gr_verified = receipt.status in ['Verified', 'Confirmed', 'Approved']
+            if has_verified_inv and is_gr_verified:
+                if pr.current_stage < 9:
+                    pr.current_stage = 9
+            elif pr.current_stage < 8:
+                pr.current_stage = 8
+            PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
+            pr.save(update_fields=['current_stage', 'updated_at'])
 
         # Sync ThreeWayMatch
         try:
@@ -603,16 +622,16 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
             po_obj.save(update_fields=['status', 'updated_at'])
             pr = po_obj.purchase_request
             if pr:
-                if instance.status in ['Verified', 'Confirmed', 'Approved']:
-                    invs = list(po_obj.invoices.all())
-                    has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
-                    if has_verified_inv:
-                        if pr.current_stage < 8:
-                            pr.current_stage = 8
-                    elif pr.current_stage < 7:
-                        pr.current_stage = 7
-                    PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
-                    pr.save(update_fields=['current_stage', 'updated_at'])
+                invs = list(po_obj.invoices.all())
+                has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
+                is_gr_verified = instance.status in ['Verified', 'Confirmed', 'Approved']
+                if has_verified_inv and is_gr_verified:
+                    if pr.current_stage < 9:
+                        pr.current_stage = 9
+                elif pr.current_stage < 8:
+                    pr.current_stage = 8
+                PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
+                pr.save(update_fields=['current_stage', 'updated_at'])
 
             try:
                 from apps.invoice_management.views import sync_three_way_match
@@ -662,10 +681,10 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
                 invs = list(po_obj.invoices.all())
                 has_verified_inv = any(i.is_manager_verified or i.status in ['Matched', 'Paid', 'Verified'] for i in invs)
                 if has_verified_inv:
-                    if pr.current_stage < 8:
-                        pr.current_stage = 8
-                elif pr.current_stage < 7:
-                    pr.current_stage = 7
+                    if pr.current_stage < 9:
+                        pr.current_stage = 9
+                elif pr.current_stage < 8:
+                    pr.current_stage = 8
                 pr.save(update_fields=['current_stage', 'updated_at'])
 
             # Sync ThreeWayMatch

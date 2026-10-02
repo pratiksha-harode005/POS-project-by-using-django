@@ -2971,11 +2971,13 @@ export const VendorRfqsPage: React.FC = () => {
 
   const [loading, setLoading] = useState(true)
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isInitial = false) => {
     const localQ = getStoredVendorQuotes(vendorId)
     const allLocalQ = getAllStoredVendorQuotes()
     try {
-      setLoading(true)
+      if (isInitial) {
+        setLoading(true)
+      }
       const [quoRes, rfqRes] = await Promise.all([
         apiClient.get('/rfq/quotations/', { params: { vendor: vendorId } }).catch(() => ({ data: [] })),
         apiClient.get('/rfq/', { params: { page_size: 50, vendor: vendor.id || vendorId } }).catch(() => ({ data: [] }))
@@ -3047,13 +3049,16 @@ export const VendorRfqsPage: React.FC = () => {
       const backendRfqs = Array.isArray(rfqRes.data) ? rfqRes.data : rfqRes.data?.results || []
       if (Array.isArray(backendRfqs)) {
         const rMap = new Map<string, any>()
+        const prKeyMap = new Map<string, string>()
         backendRfqs.forEach((r: any) => {
+          const prKey = r.purchase_request_detail?.request_id || r.purchase_request
           const cleanId = (r.rfq_id || r.id || '').toString().replace(/^RFQ-/i, '')
           const formattedId = `RFQ-${cleanId}`
           const budget = parseFloat(r.purchase_request_detail?.total_estimated_cost || r.estimated_amount || r.budgetEst || '0')
           const mapped = {
             id: formattedId,
             rfq_id: formattedId,
+            prKey: prKey,
             title: r.title,
             category: r.purchase_request_detail?.category || r.category || vendor.category,
             subcategory: r.purchase_request_detail?.subcategory || 'General',
@@ -3069,6 +3074,23 @@ export const VendorRfqsPage: React.FC = () => {
             document_verification: r.document_verification,
             document_verification_status: r.document_verification_status || (r.document_verification?.is_both_verified ? 'Documents Verified' : 'Verification Pending')
           }
+
+          if (prKey && prKeyMap.has(String(prKey))) {
+            const existingId = prKeyMap.get(String(prKey))!
+            const existing = rMap.get(existingId)
+            const existingQuotes = existing?.quotations?.length || 0
+            const currentQuotes = mapped.quotations?.length || 0
+            if (currentQuotes > existingQuotes) {
+              rMap.delete(existingId)
+              rMap.set(mapped.id, mapped)
+              prKeyMap.set(String(prKey), mapped.id)
+            }
+            return
+          }
+
+          if (prKey) {
+            prKeyMap.set(String(prKey), mapped.id)
+          }
           rMap.set(mapped.id, mapped)
         })
         setLocalRfqsList(Array.from(rMap.values()))
@@ -3083,19 +3105,24 @@ export const VendorRfqsPage: React.FC = () => {
   }, [vendorId, vendor.id, vendor.name, vendor.category])
 
   useEffect(() => {
-    loadData()
+    loadData(true)
     setRfqActions(getStoredVendorRfqActions(vendorId))
   }, [loadData, vendorId])
 
   useEffect(() => {
+    let debounceTimer: any = null
     const handleUpdate = () => {
-      loadData()
-      setRfqActions(getStoredVendorRfqActions(vendorId))
-      setTick((t) => t + 1)
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        loadData(false)
+        setRfqActions(getStoredVendorRfqActions(vendorId))
+        setTick((t) => t + 1)
+      }, 200)
     }
     window.addEventListener('kss_backend_updated', handleUpdate)
     window.addEventListener('storage', handleUpdate)
     return () => {
+      clearTimeout(debounceTimer)
       window.removeEventListener('kss_backend_updated', handleUpdate)
       window.removeEventListener('storage', handleUpdate)
     }

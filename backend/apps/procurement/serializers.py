@@ -52,14 +52,19 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
         return getattr(obj, 'purchase_order', None)
 
     def _get_quotation(self, obj):
+        if hasattr(obj, '_cached_quotation'):
+            return obj._cached_quotation
         po = self._get_po(obj)
         if not po:
+            obj._cached_quotation = None
             return None
         if hasattr(po, '_state') and 'quotation' in getattr(po._state, 'fields_cache', {}):
             q = po._state.fields_cache['quotation']
             if q:
+                obj._cached_quotation = q
                 return q
         if getattr(po, 'quotation', None):
+            obj._cached_quotation = po.quotation
             return po.quotation
         pr = getattr(po, 'purchase_request', None)
         if pr:
@@ -68,9 +73,13 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
                     if hasattr(rfq, '_prefetched_objects_cache') and 'quotations' in rfq._prefetched_objects_cache:
                         for q in rfq._prefetched_objects_cache['quotations']:
                             if q.status == 'Selected' or q.vendor_id == po.vendor_id:
+                                obj._cached_quotation = q
                                 return q
             from apps.rfq_management.models import Quotation
-            return Quotation.objects.filter(rfq__purchase_request=pr, vendor=po.vendor).order_by('-created_at').first()
+            q = Quotation.objects.filter(rfq__purchase_request=pr, vendor=po.vendor).order_by('-created_at').first()
+            obj._cached_quotation = q
+            return q
+        obj._cached_quotation = None
         return None
 
     def get_po_id(self, obj):
@@ -382,11 +391,15 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
         read_only_fields = ['po_id', 'order_date', 'created_at', 'updated_at']
 
     def _get_quotation(self, obj):
+        if hasattr(obj, '_cached_quotation'):
+            return obj._cached_quotation
         if hasattr(obj, '_state') and 'quotation' in getattr(obj._state, 'fields_cache', {}):
             q = obj._state.fields_cache['quotation']
             if q:
+                obj._cached_quotation = q
                 return q
         if getattr(obj, 'quotation', None):
+            obj._cached_quotation = obj.quotation
             return obj.quotation
         pr = getattr(obj, 'purchase_request', None)
         if pr:
@@ -395,9 +408,13 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
                     if hasattr(rfq, '_prefetched_objects_cache') and 'quotations' in rfq._prefetched_objects_cache:
                         for q in rfq._prefetched_objects_cache['quotations']:
                             if q.status == 'Selected' or q.vendor_id == obj.vendor_id:
+                                obj._cached_quotation = q
                                 return q
             from apps.rfq_management.models import Quotation
-            return Quotation.objects.filter(rfq__purchase_request=pr, vendor=obj.vendor).order_by('-created_at').first()
+            q = Quotation.objects.filter(rfq__purchase_request=pr, vendor=obj.vendor).order_by('-created_at').first()
+            obj._cached_quotation = q
+            return q
+        obj._cached_quotation = None
         return None
 
     def get_base_amount(self, obj):
