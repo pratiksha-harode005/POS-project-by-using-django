@@ -580,7 +580,7 @@ export const generatePaymentBillPdf = async (options: PaymentBillOptions): Promi
     year: 'numeric',
   })
   const voucherNo = `VCHR-${payment.id}`
-  const utrRef = `UTR-${new Date().getFullYear()}${(payment.id || '').replace('PAY-', '')}-88294`
+  const utrRef = String(payment.transactionRef || (payment as any).utrRef || '').trim() || `UTR-${new Date().getFullYear()}${String(payment.id || '').replace('PAY-', '')}-88294`
 
   // Generate Digital QR Code
   let qrDataUrl = ''

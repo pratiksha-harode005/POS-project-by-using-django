@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import {
-  Package, Search, Filter, Calendar, Building, DollarSign,
+  Package, Search, Filter, Calendar, Building, IndianRupee,
   CheckCircle, Clock, Truck, Eye, X, Printer, ArrowUpRight,
   Send, AlertCircle, FileText, CheckCircle2, ShieldCheck,
   Building2, MapPin, Sparkles, Tag, Check, Award
@@ -329,7 +329,7 @@ export const AdminPurchaseOrdersPage: React.FC = () => {
                 {/* 2. Key Commercial Financial Valuation */}
                 <div>
                   <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
-                    <DollarSign size={13} className="text-indigo-600" /> Commercial Financial Structure
+                    <IndianRupee size={13} className="text-indigo-600" /> Commercial Financial Structure
                   </h4>
                   
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

@@ -19,7 +19,7 @@ import {
   Zap,
   Building2,
   Tag,
-  DollarSign,
+  IndianRupee,
   FileSpreadsheet,
 } from 'lucide-react'
 import Navbar from '../components/layout/Navbar'
@@ -56,25 +56,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Laptops & Workstations',
         specs: 'Intel i7/i9, Apple M3/M4, 16-64GB RAM, NVMe SSDs',
-        avgCost: '$1,200 - $3,500 / unit',
+        avgCost: '₹1,200 - ₹3,500 / unit',
         popularVendors: 'Dell Technologies, Lenovo, Apple, HP Inc.',
       },
       {
         name: 'Servers & Storage (SAN/NAS)',
         specs: '1U/2U Rack Servers, RAID Arrays, Fibre Channel Switches',
-        avgCost: '$5,000 - $45,000 / node',
+        avgCost: '₹5,000 - ₹45,000 / node',
         popularVendors: 'Dell PowerEdge, HPE ProLiant, NetApp, Synology',
       },
       {
         name: 'Monitors & Peripherals',
         specs: '4K USB-C Displays, Ergonomic Arms, Thunderbolt Docks',
-        avgCost: '$250 - $950 / unit',
+        avgCost: '₹250 - ₹950 / unit',
         popularVendors: 'Dell UltraSharp, LG Business, Logitech, Anker',
       },
       {
         name: 'Rack Components & UPS',
         specs: 'Online Double-Conversion UPS, Smart PDUs, Server Racks',
-        avgCost: '$800 - $6,000 / unit',
+        avgCost: '₹800 - ₹6,000 / unit',
         popularVendors: 'APC Schneider, Tripp Lite, CyberPower',
       },
     ],
@@ -125,10 +125,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Eliminates unauthorized or non-standard hardware purchases across remote teams',
     ],
     sampleItems: [
-      { code: 'HW-LAP-001', name: 'Dell XPS 15 (i9 / 32GB / 1TB SSD)', category: 'Laptops', estPrice: '$2,450', status: 'Approved Specs', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'HW-SRV-004', name: 'Dell PowerEdge R760 2U Rack Server', category: 'Servers', estPrice: '$14,200', status: 'RFQ Open', statusBg: 'bg-amber-500/20 text-amber-300' },
-      { code: 'HW-MON-012', name: 'Dell UltraSharp 27" 4K USB-C Monitor', category: 'Monitors', estPrice: '$480', status: 'In Stock', statusBg: 'bg-blue-500/20 text-blue-300' },
-      { code: 'HW-DCK-009', name: 'Thunderbolt 4 Quad-Display Docking Station', category: 'Peripherals', estPrice: '$290', status: 'In Stock', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'HW-LAP-001', name: 'Dell XPS 15 (i9 / 32GB / 1TB SSD)', category: 'Laptops', estPrice: '₹2,450', status: 'Approved Specs', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'HW-SRV-004', name: 'Dell PowerEdge R760 2U Rack Server', category: 'Servers', estPrice: '₹14,200', status: 'RFQ Open', statusBg: 'bg-amber-500/20 text-amber-300' },
+      { code: 'HW-MON-012', name: 'Dell UltraSharp 27" 4K USB-C Monitor', category: 'Monitors', estPrice: '₹480', status: 'In Stock', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'HW-DCK-009', name: 'Thunderbolt 4 Quad-Display Docking Station', category: 'Peripherals', estPrice: '₹290', status: 'In Stock', statusBg: 'bg-blue-500/20 text-blue-300' },
     ],
   },
 
@@ -146,25 +146,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Developer & Engineering Tools',
         specs: 'GitHub Enterprise, JetBrains All Products, Jira Cloud, Postman',
-        avgCost: '$19 - $60 / seat / mo',
+        avgCost: '₹19 - ₹60 / seat / mo',
         popularVendors: 'Atlassian, JetBrains, GitHub, Figma',
       },
       {
         name: 'Enterprise SaaS Suites',
         specs: 'Google Workspace Enterprise, Microsoft 365 E5, Slack Enterprise',
-        avgCost: '$20 - $57 / user / mo',
+        avgCost: '₹20 - ₹57 / user / mo',
         popularVendors: 'Google Cloud, Microsoft, Salesforce, Slack',
       },
       {
         name: 'Creative & Design Software',
         specs: 'Adobe Creative Cloud All Apps, Figma Organization, Canva Pro',
-        avgCost: '$45 - $85 / seat / mo',
+        avgCost: '₹45 - ₹85 / seat / mo',
         popularVendors: 'Adobe Systems, Figma Inc., Canva',
       },
       {
         name: 'Analytics & BI Platforms',
         specs: 'Tableau Server, PowerBI Pro, Datadog Enterprise, Amplitude',
-        avgCost: '$1,200 - $15,000 / yr',
+        avgCost: '₹1,200 - ₹15,000 / yr',
         popularVendors: 'Salesforce Tableau, Microsoft, Datadog',
       },
     ],
@@ -215,10 +215,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Enforces corporate data security standards across all approved cloud software applications',
     ],
     sampleItems: [
-      { code: 'SW-IDE-002', name: 'JetBrains All Products Pack (50 Seats)', category: 'Dev Tools', estPrice: '$14,500 / yr', status: 'Active Licence', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'SW-CRM-005', name: 'Salesforce Enterprise CRM (25 Seats)', category: 'SaaS Suite', estPrice: '$45,000 / yr', status: 'Renewal Pending', statusBg: 'bg-amber-500/20 text-amber-300' },
-      { code: 'SW-FIG-008', name: 'Figma Organization Plan (15 Seats)', category: 'Design', estPrice: '$8,100 / yr', status: 'Active Licence', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'SW-SLK-011', name: 'Slack Enterprise Grid (150 Seats)', category: 'SaaS Suite', estPrice: '$21,600 / yr', status: 'Active Licence', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'SW-IDE-002', name: 'JetBrains All Products Pack (50 Seats)', category: 'Dev Tools', estPrice: '₹14,500 / yr', status: 'Active Licence', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'SW-CRM-005', name: 'Salesforce Enterprise CRM (25 Seats)', category: 'SaaS Suite', estPrice: '₹45,000 / yr', status: 'Renewal Pending', statusBg: 'bg-amber-500/20 text-amber-300' },
+      { code: 'SW-FIG-008', name: 'Figma Organization Plan (15 Seats)', category: 'Design', estPrice: '₹8,100 / yr', status: 'Active Licence', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'SW-SLK-011', name: 'Slack Enterprise Grid (150 Seats)', category: 'SaaS Suite', estPrice: '₹21,600 / yr', status: 'Active Licence', statusBg: 'bg-emerald-500/20 text-emerald-300' },
     ],
   },
 
@@ -236,25 +236,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Public Cloud Compute & DB',
         specs: 'AWS EC2 / RDS, Azure VMs, GCP Compute Engine / Cloud SQL',
-        avgCost: 'Usage Based ($2,000 - $50,000 / mo)',
+        avgCost: 'Usage Based (₹2,000 - ₹50,000 / mo)',
         popularVendors: 'Amazon Web Services, Microsoft Azure, Google Cloud',
       },
       {
         name: 'Cloud Storage & Backups',
         specs: 'AWS S3 Glacier, Azure Blob, Wasabi Hot Cloud Storage',
-        avgCost: '$0.004 - $0.023 / GB / mo',
+        avgCost: '₹0.004 - ₹0.023 / GB / mo',
         popularVendors: 'AWS S3, Wasabi, Backblaze B2, NetApp',
       },
       {
         name: 'Content Delivery (CDN) & Security',
         specs: 'Cloudflare Enterprise, Fastly, AWS CloudFront',
-        avgCost: '$500 - $4,500 / mo',
+        avgCost: '₹500 - ₹4,500 / mo',
         popularVendors: 'Cloudflare, Fastly, Akamai, AWS',
       },
       {
         name: 'Bare-Metal Hosting & Colocation',
         specs: 'Dedicated Servers, Colocation Cabinets, 10Gbps Links',
-        avgCost: '$300 - $3,500 / server / mo',
+        avgCost: '₹300 - ₹3,500 / server / mo',
         popularVendors: 'Equinix, DigitalOcean, Hetzner, OVHcloud',
       },
     ],
@@ -305,10 +305,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Centralizes DNS, SSL, and domain renewals under corporate finance governance',
     ],
     sampleItems: [
-      { code: 'CLD-AWS-001', name: 'AWS Savings Plan Commitment (3-Year)', category: 'Public Cloud', estPrice: '$12,000 / mo', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'CLD-AZR-003', name: 'Microsoft Azure Enterprise Agreement', category: 'Public Cloud', estPrice: '$18,500 / mo', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'CLD-CFL-006', name: 'Cloudflare Enterprise WAF & CDN Plan', category: 'CDN & WAF', estPrice: '$2,400 / mo', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'CLD-EQX-010', name: 'Equinix Data Center Colocation Rack', category: 'Colocation', estPrice: '$3,800 / mo', status: 'In Review', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'CLD-AWS-001', name: 'AWS Savings Plan Commitment (3-Year)', category: 'Public Cloud', estPrice: '₹12,000 / mo', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'CLD-AZR-003', name: 'Microsoft Azure Enterprise Agreement', category: 'Public Cloud', estPrice: '₹18,500 / mo', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'CLD-CFL-006', name: 'Cloudflare Enterprise WAF & CDN Plan', category: 'CDN & WAF', estPrice: '₹2,400 / mo', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'CLD-EQX-010', name: 'Equinix Data Center Colocation Rack', category: 'Colocation', estPrice: '₹3,800 / mo', status: 'In Review', statusBg: 'bg-blue-500/20 text-blue-300' },
     ],
   },
 
@@ -326,25 +326,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Endpoint Protection (EDR/XDR)',
         specs: 'CrowdStrike Falcon, SentinelOne Singularity, Microsoft Defender',
-        avgCost: '$35 - $95 / endpoint / yr',
+        avgCost: '₹35 - ₹95 / endpoint / yr',
         popularVendors: 'CrowdStrike, SentinelOne, Palo Alto Networks',
       },
       {
         name: 'Next-Gen Firewalls & Network Security',
         specs: 'Palo Alto PA-Series, Fortinet FortiGate, Cisco Secure Firewall',
-        avgCost: '$2,500 - $35,000 / appliance',
+        avgCost: '₹2,500 - ₹35,000 / appliance',
         popularVendors: 'Palo Alto, Fortinet, Cisco Systems, Check Point',
       },
       {
         name: 'Identity & Access Management (IAM)',
         specs: 'Okta Workforce Identity, Ping Identity, CyberArk PAM',
-        avgCost: '$3 - $12 / user / mo',
+        avgCost: '₹3 - ₹12 / user / mo',
         popularVendors: 'Okta Inc., Ping Identity, CyberArk, Duo Security',
       },
       {
         name: 'Compliance Audit & Pen Testing',
         specs: 'SOC2 Type II Audit, ISO 27001 Certification, External Pen Tests',
-        avgCost: '$12,000 - $45,000 / audit',
+        avgCost: '₹12,000 - ₹45,000 / audit',
         popularVendors: 'Vanta, Drata, Bishop Fox, HackerOne',
       },
     ],
@@ -395,10 +395,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Mitigates security threat risks across remote workstations and cloud networks',
     ],
     sampleItems: [
-      { code: 'SEC-CRD-001', name: 'CrowdStrike Falcon Complete (200 Endpoints)', category: 'EDR / XDR', estPrice: '$18,000 / yr', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'SEC-OKT-004', name: 'Okta Enterprise Identity (150 Users)', category: 'IAM', estPrice: '$10,800 / yr', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'SEC-PAL-007', name: 'Palo Alto PA-1410 Next-Gen Firewall', category: 'Hardware FW', estPrice: '$12,500', status: 'Approved', statusBg: 'bg-blue-500/20 text-blue-300' },
-      { code: 'SEC-VNT-009', name: 'Vanta Automated SOC2 & ISO Compliance', category: 'Compliance', estPrice: '$15,000 / yr', status: 'Renewal Pending', statusBg: 'bg-amber-500/20 text-amber-300' },
+      { code: 'SEC-CRD-001', name: 'CrowdStrike Falcon Complete (200 Endpoints)', category: 'EDR / XDR', estPrice: '₹18,000 / yr', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'SEC-OKT-004', name: 'Okta Enterprise Identity (150 Users)', category: 'IAM', estPrice: '₹10,800 / yr', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'SEC-PAL-007', name: 'Palo Alto PA-1410 Next-Gen Firewall', category: 'Hardware FW', estPrice: '₹12,500', status: 'Approved', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'SEC-VNT-009', name: 'Vanta Automated SOC2 & ISO Compliance', category: 'Compliance', estPrice: '₹15,000 / yr', status: 'Renewal Pending', statusBg: 'bg-amber-500/20 text-amber-300' },
     ],
   },
 
@@ -416,25 +416,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Managed IT Support (MSP)',
         specs: '24/7 Service Desk, Helpdesk Tier 1-3, Onsite Tech Support',
-        avgCost: '$80 - $160 / user / mo',
+        avgCost: '₹80 - ₹160 / user / mo',
         popularVendors: 'Accenture, Wipro, Regional Managed IT Providers',
       },
       {
         name: 'Software Development & Consulting',
         specs: 'Senior Full-Stack, Cloud Architect, DevOps Contracting',
-        avgCost: '$65 - $180 / hour',
+        avgCost: '₹65 - ₹180 / hour',
         popularVendors: 'Thoughtworks, EPAM, Toptal, Custom Agencies',
       },
       {
         name: 'Annual Maintenance Contracts (AMC)',
         specs: 'Data Center Maintenance, UPS AMC, Fiber Link Maintenance',
-        avgCost: '$3,500 - $25,000 / yr',
+        avgCost: '₹3,500 - ₹25,000 / yr',
         popularVendors: 'IBM Global Services, Cisco Smart Net, OEM Partners',
       },
       {
         name: 'System Integration & Migration',
         specs: 'Cloud Migration Projects, ERP Implementation, Active Directory Sync',
-        avgCost: '$15,000 - $120,000 / project',
+        avgCost: '₹15,000 - ₹120,000 / project',
         popularVendors: 'Deloitte Tech, Slalom Consulting, Infosys',
       },
     ],
@@ -485,10 +485,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Accelerates vendor onboarding for urgent technical migration projects',
     ],
     sampleItems: [
-      { code: 'SRV-MSP-001', name: '24/7 Managed IT Helpdesk Support (150 Users)', category: 'Managed Services', estPrice: '$14,000 / mo', status: 'Active SOW', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'SRV-DEV-005', name: 'Cloud Migration & Kubernetes SOW Project', category: 'Consulting', estPrice: '$48,000 Total', status: 'Milestone 2', statusBg: 'bg-blue-500/20 text-blue-300' },
-      { code: 'SRV-AMC-008', name: 'Cisco Smart Net Total Care AMC (Data Center)', category: 'AMC Support', estPrice: '$9,500 / yr', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'SRV-ERP-012', name: 'ERP Procurement Integration Consulting', category: 'Integration', estPrice: '$28,000 Total', status: 'In Bidding', statusBg: 'bg-amber-500/20 text-amber-300' },
+      { code: 'SRV-MSP-001', name: '24/7 Managed IT Helpdesk Support (150 Users)', category: 'Managed Services', estPrice: '₹14,000 / mo', status: 'Active SOW', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'SRV-DEV-005', name: 'Cloud Migration & Kubernetes SOW Project', category: 'Consulting', estPrice: '₹48,000 Total', status: 'Milestone 2', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'SRV-AMC-008', name: 'Cisco Smart Net Total Care AMC (Data Center)', category: 'AMC Support', estPrice: '₹9,500 / yr', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'SRV-ERP-012', name: 'ERP Procurement Integration Consulting', category: 'Integration', estPrice: '₹28,000 Total', status: 'In Bidding', statusBg: 'bg-amber-500/20 text-amber-300' },
     ],
   },
 
@@ -506,25 +506,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Ergonomic Furniture & Desks',
         specs: 'Electric Height-Adjustable Standing Desks, Mesh Ergonomic Chairs',
-        avgCost: '$280 - $950 / workstation',
+        avgCost: '₹280 - ₹950 / workstation',
         popularVendors: 'Herman Miller, Steelcase, Autonomous, Fully',
       },
       {
         name: 'Stationery & Printing Consumables',
         specs: 'Recycled Copy Paper A4/A3, OEM Toner Cartridges, Notebooks',
-        avgCost: 'Bulk Monthly Orders ($500 - $3,000)',
+        avgCost: 'Bulk Monthly Orders (₹500 - ₹3,000)',
         popularVendors: 'Staples Advantage, Office Depot, HP Supplies',
       },
       {
         name: 'Work-from-Home (WFH) Bundles',
         specs: 'Ergonomic Chair, Monitor Arm, Laptop Stand, Cable Management',
-        avgCost: '$450 - $750 / employee',
+        avgCost: '₹450 - ₹750 / employee',
         popularVendors: 'Logitech, Ergotron, Branch Furniture',
       },
       {
         name: 'Facility & Workplace Sanitation',
         specs: 'Touchless Sanitizer Dispensers, Air Purifiers, Breakroom Supplies',
-        avgCost: '$300 - $1,500 / mo',
+        avgCost: '₹300 - ₹1,500 / mo',
         popularVendors: 'Cintas, Rubbermaid Commercial, Fellowes',
       },
     ],
@@ -575,10 +575,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Streamlines multi-location facility purchasing into a single management portal',
     ],
     sampleItems: [
-      { code: 'ACC-CHR-001', name: 'Herman Miller Sayl Ergonomic Mesh Chair', category: 'Furniture', estPrice: '$795', status: 'Approved Specs', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'ACC-DSK-003', name: 'Dual-Motor Electric Standing Desk 60x30"', category: 'Furniture', estPrice: '$550', status: 'In Stock', statusBg: 'bg-blue-500/20 text-blue-300' },
-      { code: 'ACC-PPR-010', name: 'A4 Premium Multipurpose Copy Paper (50 Reams)', category: 'Stationery', estPrice: '$260', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'ACC-TNR-015', name: 'HP LaserJet Enterprise Black Toner Pack', category: 'Supplies', estPrice: '$420', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'ACC-CHR-001', name: 'Herman Miller Sayl Ergonomic Mesh Chair', category: 'Furniture', estPrice: '₹795', status: 'Approved Specs', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'ACC-DSK-003', name: 'Dual-Motor Electric Standing Desk 60x30"', category: 'Furniture', estPrice: '₹550', status: 'In Stock', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'ACC-PPR-010', name: 'A4 Premium Multipurpose Copy Paper (50 Reams)', category: 'Stationery', estPrice: '₹260', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'ACC-TNR-015', name: 'HP LaserJet Enterprise Black Toner Pack', category: 'Supplies', estPrice: '₹420', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
     ],
   },
 
@@ -596,25 +596,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Conference Room AV & Video Bars',
         specs: 'Logitech Rally Bar, Neat Bar, Poly Studio, 4K AI Cameras',
-        avgCost: '$1,800 - $6,500 / room',
+        avgCost: '₹1,800 - ₹6,500 / room',
         popularVendors: 'Logitech, Neat, Poly (HP), Cisco Webex Room',
       },
       {
         name: 'Smart Displays & Interactive Boards',
         specs: 'Samsung Flip, LG Commercial Displays, ViewSonic ViewBoard 75"',
-        avgCost: '$1,200 - $4,800 / display',
+        avgCost: '₹1,200 - ₹4,800 / display',
         popularVendors: 'Samsung Commercial, LG, Sony, ViewSonic',
       },
       {
         name: 'Biometric Access Control & Attendance',
         specs: 'Face Recognition Terminals, RFID Door Controllers, Smart Locks',
-        avgCost: '$450 - $2,200 / door',
+        avgCost: '₹450 - ₹2,200 / door',
         popularVendors: 'Hikvision, ZKTeco, Suprema, Kisi Access',
       },
       {
         name: 'Digital Signage & Room Schedulers',
         specs: '10" Touch Meeting Room Schedulers, Central Signage Players',
-        avgCost: '$350 - $950 / panel',
+        avgCost: '₹350 - ₹950 / panel',
         popularVendors: 'Crestron, Neat Pad, BrightSign, Appspace',
       },
     ],
@@ -665,10 +665,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Centralizes office technology assets under one unified maintenance schedule',
     ],
     sampleItems: [
-      { code: 'AV-RAL-001', name: 'Logitech Rally Bar Appliance + Tap Touch Controller', category: 'AV Video Bar', estPrice: '$3,990', status: 'Approved', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'AV-DSP-004', name: 'LG 75" Commercial 4K UHD Meeting Room Display', category: 'Displays', estPrice: '$1,650', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'AV-BIO-007', name: 'ZKTeco Facial Recognition & Access Controller', category: 'Access Control', estPrice: '$850', status: 'In Transit', statusBg: 'bg-blue-500/20 text-blue-300' },
-      { code: 'AV-PAD-010', name: 'Logitech Tap Scheduler 10" Touch Panel', category: 'Room Scheduler', estPrice: '$680', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'AV-RAL-001', name: 'Logitech Rally Bar Appliance + Tap Touch Controller', category: 'AV Video Bar', estPrice: '₹3,990', status: 'Approved', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'AV-DSP-004', name: 'LG 75" Commercial 4K UHD Meeting Room Display', category: 'Displays', estPrice: '₹1,650', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'AV-BIO-007', name: 'ZKTeco Facial Recognition & Access Controller', category: 'Access Control', estPrice: '₹850', status: 'In Transit', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'AV-PAD-010', name: 'Logitech Tap Scheduler 10" Touch Panel', category: 'Room Scheduler', estPrice: '₹680', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
     ],
   },
 
@@ -686,25 +686,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Enterprise Switches & Routers',
         specs: 'Cisco Catalyst 9300, Aruba CX 6300, Ubiquiti UniFi Enterprise',
-        avgCost: '$1,200 - $14,000 / switch',
+        avgCost: '₹1,200 - ₹14,000 / switch',
         popularVendors: 'Cisco Systems, HPE Aruba, Ubiquiti, Juniper',
       },
       {
         name: 'Wi-Fi 6E / Wi-Fi 7 Access Points',
         specs: 'Tri-Band Wi-Fi 6E, 4x4 MU-MIMO, PoE+ Powered APs',
-        avgCost: '$350 - $1,100 / AP',
+        avgCost: '₹350 - ₹1,100 / AP',
         popularVendors: 'Cisco Meraki, Aruba, Ubiquiti UniFi, Ruckus',
       },
       {
         name: 'Enterprise Leased Lines & Fiber',
         specs: '1Gbps / 10Gbps Dedicated Fiber, 99.99% SLA Uptime',
-        avgCost: '$650 - $4,500 / mo',
+        avgCost: '₹650 - ₹4,500 / mo',
         popularVendors: 'AT&T Business, Verizon, Comcast Business, Airtel',
       },
       {
         name: 'VoIP Telephony & SIP Trunks',
         specs: 'Cloud PBX, SIP Trunks, Yealink IP Phones, RingCentral',
-        avgCost: '$15 - $35 / user / mo',
+        avgCost: '₹15 - ₹35 / user / mo',
         popularVendors: 'RingCentral, 8x8, Cisco Webex Calling, Yealink',
       },
     ],
@@ -755,10 +755,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Provides seamless Wi-Fi coverage for high-density employee and guest devices',
     ],
     sampleItems: [
-      { code: 'NET-SWT-001', name: 'Cisco Catalyst 9300 48-Port PoE+ Switch', category: 'Switches', estPrice: '$5,800', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'NET-WAP-004', name: 'Cisco Meraki MR57 Wi-Fi 6E Indoor AP (5 Pack)', category: 'Wi-Fi APs', estPrice: '$4,250', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'NET-FBR-008', name: '1Gbps Dedicated Fiber Internet Leased Line', category: 'Carrier WAN', estPrice: '$1,200 / mo', status: 'Active SLA', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'NET-PHN-012', name: 'Yealink T54W Touchscreen IP Phone (25 Units)', category: 'VoIP Hardware', estPrice: '$3,750', status: 'Approved', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'NET-SWT-001', name: 'Cisco Catalyst 9300 48-Port PoE+ Switch', category: 'Switches', estPrice: '₹5,800', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'NET-WAP-004', name: 'Cisco Meraki MR57 Wi-Fi 6E Indoor AP (5 Pack)', category: 'Wi-Fi APs', estPrice: '₹4,250', status: 'Delivered', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'NET-FBR-008', name: '1Gbps Dedicated Fiber Internet Leased Line', category: 'Carrier WAN', estPrice: '₹1,200 / mo', status: 'Active SLA', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'NET-PHN-012', name: 'Yealink T54W Touchscreen IP Phone (25 Units)', category: 'VoIP Hardware', estPrice: '₹3,750', status: 'Approved', statusBg: 'bg-blue-500/20 text-blue-300' },
     ],
   },
 
@@ -776,25 +776,25 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       {
         name: 'Cloud & Tech Certification Vouchers',
         specs: 'AWS Certified Solutions Architect, Azure Administrator, CKA Kubernetes',
-        avgCost: '$150 - $500 / exam voucher',
+        avgCost: '₹150 - ₹500 / exam voucher',
         popularVendors: 'Amazon Web Services, Microsoft, Pearson VUE, Linux Foundation',
       },
       {
         name: 'Enterprise E-Learning Platforms',
         specs: 'Pluralsight Enterprise, Udemy Business, Coursera for Business',
-        avgCost: '$240 - $400 / user / yr',
+        avgCost: '₹240 - ₹400 / user / yr',
         popularVendors: 'Pluralsight, Udemy, Coursera, O\'Reilly Learning',
       },
       {
         name: 'Specialized Engineering Bootcamps',
         specs: 'Custom 3-Day Microservices Architecture, AI Prompt Engineering, Cyber Defense',
-        avgCost: '$2,500 - $12,000 / workshop',
+        avgCost: '₹2,500 - ₹12,000 / workshop',
         popularVendors: 'Global Knowledge, QA Training, Specialized Trainers',
       },
       {
         name: 'Project Management & Governance',
         specs: 'PMP Certification, ITIL 4 Foundation, Scrum Master (CSM)',
-        avgCost: '$400 - $1,500 / candidate',
+        avgCost: '₹400 - ₹1,500 / candidate',
         popularVendors: 'PMI, AXELOS, Scrum Alliance',
       },
     ],
@@ -823,7 +823,7 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
     capabilities: [
       {
         title: 'Employee Upskilling Allowance',
-        desc: 'Set annual per-employee learning budgets ($1,000 - $3,000/yr) with automated approval routing.',
+        desc: 'Set annual per-employee learning budgets (₹1,000 - ₹3,000/yr) with automated approval routing.',
       },
       {
         title: 'Certification Pass Rate Tracker',
@@ -845,10 +845,10 @@ const categoriesDatabase: Record<string, CategoryDetailData> = {
       'Provides HR and IT leadership with clear ROI reports on corporate training investments',
     ],
     sampleItems: [
-      { code: 'TRN-AWS-001', name: 'AWS Solutions Architect Associate Voucher Pack (10)', category: 'Cert Vouchers', estPrice: '$1,500', status: 'Active Pack', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'TRN-PLR-004', name: 'Pluralsight Enterprise Plan (30 User Seats)', category: 'E-Learning', estPrice: '$11,970 / yr', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
-      { code: 'TRN-K8S-007', name: 'CKA (Certified Kubernetes Admin) Voucher Pack (5)', category: 'Cert Vouchers', estPrice: '$1,900', status: 'Vouchers Issued', statusBg: 'bg-blue-500/20 text-blue-300' },
-      { code: 'TRN-PMP-010', name: 'PMP Exam Prep & Certification Bootcamp (5 Candidates)', category: 'Bootcamp', estPrice: '$6,500', status: 'Approved', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'TRN-AWS-001', name: 'AWS Solutions Architect Associate Voucher Pack (10)', category: 'Cert Vouchers', estPrice: '₹1,500', status: 'Active Pack', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'TRN-PLR-004', name: 'Pluralsight Enterprise Plan (30 User Seats)', category: 'E-Learning', estPrice: '₹11,970 / yr', status: 'Active PO', statusBg: 'bg-emerald-500/20 text-emerald-300' },
+      { code: 'TRN-K8S-007', name: 'CKA (Certified Kubernetes Admin) Voucher Pack (5)', category: 'Cert Vouchers', estPrice: '₹1,900', status: 'Vouchers Issued', statusBg: 'bg-blue-500/20 text-blue-300' },
+      { code: 'TRN-PMP-010', name: 'PMP Exam Prep & Certification Bootcamp (5 Candidates)', category: 'Bootcamp', estPrice: '₹6,500', status: 'Approved', statusBg: 'bg-emerald-500/20 text-emerald-300' },
     ],
   },
 }
@@ -1207,7 +1207,7 @@ export default function CategoryDetailPage() {
                   <Tag size={14} className="text-blue-400" /> Procurement Governance
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <DollarSign size={14} className="text-emerald-400" /> ROI Guaranteed
+                  <IndianRupee size={14} className="text-emerald-400" /> ROI Guaranteed
                 </span>
               </div>
             </div>

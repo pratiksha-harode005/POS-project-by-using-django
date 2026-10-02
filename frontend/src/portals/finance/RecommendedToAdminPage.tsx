@@ -7,7 +7,7 @@ import {
   Filter,
   Calendar,
   Building2,
-  DollarSign,
+  IndianRupee,
   AlertCircle,
   Clock,
   ShieldAlert,
@@ -79,20 +79,28 @@ export const RecommendedToAdminPage: React.FC = () => {
 
   // Filtered List
   const filteredList = useMemo(() => {
+    const q = (search || '').toLowerCase().trim()
     return recommendedToAdmin.filter(r => {
-      const q = search.toLowerCase()
       const matchesSearch =
-        r.id.toLowerCase().includes(q) ||
-        r.title.toLowerCase().includes(q) ||
-        (r.requester || '').toLowerCase().includes(q) ||
-        (r.recommendationReason || '').toLowerCase().includes(q) ||
-        (r.department || '').toLowerCase().includes(q)
+        !q ||
+        String(r.id || '').toLowerCase().includes(q) ||
+        String(r.title || '').toLowerCase().includes(q) ||
+        String(r.requester || '').toLowerCase().includes(q) ||
+        String(r.recommendationReason || '').toLowerCase().includes(q) ||
+        String(r.department || '').toLowerCase().includes(q)
 
       const matchesDept = selectedDept === 'ALL' || r.department === selectedDept
       const matchesPriority = selectedPriority === 'ALL' || r.priority === selectedPriority
 
-      const isApproved = r.status === 'finance_approved' || r.financeStatus === 'Admin Approved'
-      const isPending = r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin'
+      const isApproved = Boolean(
+        r.status === 'finance_approved' ||
+        r.status === 'approved' ||
+        r.financeStatus === 'Admin Approved' ||
+        r.financeStatus === 'Approved' ||
+        (r.currentStage !== undefined && r.currentStage >= 4) ||
+        r.approvedBy
+      )
+      const isPending = (r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin') && !isApproved
 
       let matchesTab = true
       if (statusTab === 'PENDING') matchesTab = isPending
@@ -237,7 +245,7 @@ export const RecommendedToAdminPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500">Total Escalated Value</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <DollarSign size={18} />
+              <IndianRupee size={18} />
             </div>
           </div>
           <p className="text-2xl font-bold text-slate-900 mt-2">{fmt(kpis.totalAmount)}</p>
@@ -406,8 +414,15 @@ export const RecommendedToAdminPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
                 {filteredList.map(req => {
-                  const isApproved = req.status === 'finance_approved' || req.financeStatus === 'Admin Approved'
-                  const isPending = req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin'
+                  const isApproved = Boolean(
+                    req.status === 'finance_approved' ||
+                    req.status === 'approved' ||
+                    req.financeStatus === 'Admin Approved' ||
+                    req.financeStatus === 'Approved' ||
+                    (req.currentStage !== undefined && req.currentStage >= 4) ||
+                    req.approvedBy
+                  )
+                  const isPending = (req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin') && !isApproved
 
                   return (
                     <tr key={req.id} className="hover:bg-slate-50/70 transition-colors">
@@ -685,7 +700,15 @@ export const RecommendedToAdminPage: React.FC = () => {
                   <Printer size={13} /> Print Brief
                 </button>
 
-                {(selectedReq.status === 'recommended_to_admin' || selectedReq.financeStatus === 'Recommended to Admin') && (
+                {Boolean(
+                  (selectedReq.status === 'recommended_to_admin' || selectedReq.financeStatus === 'Recommended to Admin') &&
+                  selectedReq.status !== 'finance_approved' &&
+                  selectedReq.status !== 'approved' &&
+                  selectedReq.financeStatus !== 'Admin Approved' &&
+                  selectedReq.financeStatus !== 'Approved' &&
+                  (selectedReq.currentStage === undefined || selectedReq.currentStage < 4) &&
+                  !selectedReq.approvedBy
+                ) && (
                   <button
                     onClick={() => {
                       setApproveModalReq(selectedReq)

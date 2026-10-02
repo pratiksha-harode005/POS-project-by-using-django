@@ -2,11 +2,13 @@ import React, { useState, useMemo } from 'react'
 import {
   Scale, Search, Filter, CheckCircle, Clock, ChevronRight,
   ArrowLeft, Building2, Package, ShieldCheck, Truck,
-  DollarSign, FileText, AlertCircle, Award, Check, Eye,
-  BarChart3, Layers, UserCheck, ThumbsUp
+  IndianRupee, FileText, AlertCircle, Award, Check, Eye,
+  BarChart3, Layers, UserCheck, ThumbsUp, Wrench, Calendar, Gift
 } from 'lucide-react'
-import { useManagerData } from '../../context/ManagerDataContext'
+import { useManagerData, resolveVendorId, isMockRfq } from '../../context/ManagerDataContext'
 import type { QuotationItem } from '../../context/ManagerDataContext'
+import { QuotationCommercialModal } from '../../components/portal/QuotationCommercialModal'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -28,7 +30,7 @@ interface ProductGroup {
 }
 
 export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role = 'MANAGER' }) => {
-  const { quotations, selectVendorQuotation, assignVendorToRequest } = useManagerData()
+  const { quotations, rfqs, selectVendorQuotation, assignVendorToRequest } = useManagerData()
 
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('All')
@@ -36,7 +38,8 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
   const [selectedProductKey, setSelectedProductKey] = useState<string | null>(null)
   const [comparisonLayout, setComparisonLayout] = useState<'cards' | 'table'>('cards')
 
-  // Selection Modal state
+  // Inspection & Selection Modal state
+  const [inspectQuote, setInspectQuote] = useState<QuotationItem | null>(null)
   const [confirmingQuote, setConfirmingQuote] = useState<QuotationItem | null>(null)
   const [selectionRationale, setSelectionRationale] = useState('')
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' } | null>(null)
@@ -46,46 +49,168 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
     setTimeout(() => setToast(null), 4000)
   }
 
-  // Group quotations by Product + RFQ
+  // Group quotations by RFQ ID
   const productGroups = useMemo<ProductGroup[]>(() => {
-    const map = new Map<string, ProductGroup>()
+    const map = new Map<string, ProductGroup>();
 
-    quotations.forEach(q => {
-      const prodName = q.product || q.rfqTitle || 'Procured Item'
-      const key = `${q.rfqId}___${prodName}`
+    // Helper to extract clean alphanumeric identifiers
+    const cleanStr = (s?: any): string => {
+      if (s === null || s === undefined) return ''
+      if (typeof s === 'object') {
+        const inner = s.rfq_id || s.request_id || s.id || ''
+        return String(inner).replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+      }
+      return String(s).replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+    }
 
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          product: prodName,
-          rfqId: q.rfqId,
-          rfqTitle: q.rfqTitle,
-          category: prodName.toLowerCase().includes('laptop') || prodName.toLowerCase().includes('monitor')
-            ? 'Hardware'
-            : prodName.toLowerCase().includes('cloud') || prodName.toLowerCase().includes('saas')
-            ? 'Software'
-            : prodName.toLowerCase().includes('steel')
-            ? 'Raw Materials'
-            : 'General Procurement',
-          quantity: q.quantity,
+    // 1. Initialize cards for active RFQs in rfqs context
+    (rfqs || []).forEach((r: any) => {
+      const rId = (r.rfq_id || r.id || '').toString()
+      if (!rId || isMockRfq(rId)) return
+      const normRfqId = rId.startsWith('RFQ-') ? rId.toUpperCase() : `RFQ-${rId.toUpperCase()}`
+      const title = r.title || r.purchase_request_detail?.title || r.purchase_request_detail?.subcategory || 'Procurement Request'
+
+      if (!map.has(normRfqId)) {
+        map.set(normRfqId, {
+          key: normRfqId,
+          product: title,
+          rfqId: normRfqId,
+          rfqTitle: title,
+          category: r.purchase_request_detail?.category || r.category || 'General',
+          quantity: r.purchase_request_detail?.quantity || r.qty || 1,
           quotes: [],
           selectedQuote: undefined,
-          lowestPrice: q.totalAmount,
-          highestPrice: q.totalAmount
+          lowestPrice: 0,
+          highestPrice: 0
+        })
+      }
+    })
+
+    // 2. Map and group all submitted quotations into matching RFQ cards
+    quotations.forEach(qItem => {
+      const q = qItem as any
+      const rawRfq = (q.rfqId || q.rfqRef || q.rfq_id || q.rfq || '').toString().trim()
+      if (!rawRfq || isMockRfq(rawRfq)) return
+
+      const normRfqId = rawRfq.startsWith('RFQ-') ? rawRfq.toUpperCase() : `RFQ-${rawRfq.toUpperCase()}`
+      const cleanQRfq = cleanStr(rawRfq)
+      const cleanQReq = cleanStr(q.request_id || q.requestId)
+
+      // Find matching RFQ object in rfqs list
+      const matchingRfq = (rfqs || []).find((r: any) => {
+        const rId = (r.rfq_id || r.id || '').toString().toUpperCase()
+        const rPk = (r.pk || r.id || '').toString().toUpperCase()
+        const prId = (r.purchase_request_detail?.request_id || '').toString().toUpperCase()
+        const cleanRId = cleanStr(r.rfq_id || r.id)
+        const cleanPrId = cleanStr(r.purchase_request_detail?.request_id)
+        const cleanRPk = cleanStr(r.pk)
+
+        return (
+          rId === normRfqId ||
+          `RFQ-${rId}` === normRfqId ||
+          rId === normRfqId.replace('RFQ-', '') ||
+          rPk === rawRfq ||
+          prId === rawRfq ||
+          `RFQ-${prId}` === normRfqId ||
+          (cleanQRfq && (cleanQRfq === cleanRId || cleanQRfq === cleanRPk || cleanQRfq.includes(cleanRId) || cleanRId.includes(cleanQRfq))) ||
+          (cleanQReq && cleanPrId && (cleanQReq === cleanPrId || cleanQReq.includes(cleanPrId) || cleanPrId.includes(cleanQReq)))
+        )
+      })
+
+      const mRfq = matchingRfq as any
+      const targetRfqId = mRfq ? (mRfq.rfq_id || (mRfq.id ? (String(mRfq.id).startsWith('RFQ-') ? String(mRfq.id) : `RFQ-${mRfq.id}`) : normRfqId)) : normRfqId
+
+      // Find target key in map
+      let targetKey = targetRfqId
+      for (const k of map.keys()) {
+        const cleanK = cleanStr(k)
+        if (
+          k.toUpperCase() === targetRfqId.toUpperCase() ||
+          (cleanK && cleanQRfq && (cleanK === cleanQRfq || cleanK.includes(cleanQRfq) || cleanQRfq.includes(cleanK)))
+        ) {
+          targetKey = k
+          break
+        }
+      }
+
+      const realRfqTitle =
+        mRfq?.title ||
+        mRfq?.purchase_request_detail?.title ||
+        q.rfqTitle ||
+        q.product ||
+        'Procurement Request'
+
+      const quotePrice = Number(q.totalAmount) || Number(q.unitPrice) || Number(q.price) || 0
+
+      if (!map.has(targetKey)) {
+        map.set(targetKey, {
+          key: targetKey,
+          product: realRfqTitle,
+          rfqId: targetKey,
+          rfqTitle: realRfqTitle,
+          category: mRfq?.purchase_request_detail?.category || mRfq?.category || q.category || 'General',
+          quantity: q.quantity || mRfq?.purchase_request_detail?.quantity || mRfq?.qty || 1,
+          quotes: [],
+          selectedQuote: undefined,
+          lowestPrice: quotePrice,
+          highestPrice: quotePrice
         })
       }
 
-      const group = map.get(key)!
-      group.quotes.push(q)
+      const group = map.get(targetKey)!
+
+      const existingIdx = group.quotes.findIndex((existing: any) => {
+        return existing.id && q.id && existing.id === q.id
+      })
+
+      if (existingIdx >= 0) {
+        group.quotes[existingIdx] = { ...group.quotes[existingIdx], ...q }
+      } else {
+        group.quotes.push(q)
+      }
+
       if (q.status === 'Selected') {
         group.selectedQuote = q
       }
-      if (q.totalAmount < group.lowestPrice) group.lowestPrice = q.totalAmount
-      if (q.totalAmount > group.highestPrice) group.highestPrice = q.totalAmount
+
+      const validAmounts = group.quotes
+        .map((item: any) => Number(item.totalAmount) || Number(item.unitPrice) || Number(item.price) || 0)
+        .filter((amt: number) => amt > 0)
+
+      if (validAmounts.length > 0) {
+        group.lowestPrice = Math.min(...validAmounts)
+        group.highestPrice = Math.max(...validAmounts)
+      }
     })
 
-    return Array.from(map.values())
-  }, [quotations])
+    const result = Array.from(map.values())
+    result.forEach((g: ProductGroup) => {
+      g.quotes.sort((a, b) => {
+        const timeA = new Date(a.submittedAt || a.quoteDate || 0).getTime()
+        const timeB = new Date(b.submittedAt || b.quoteDate || 0).getTime()
+        if (timeA !== timeB) return timeB - timeA
+        return Number(a.totalAmount || (a as any).price || 0) - Number(b.totalAmount || (b as any).price || 0)
+      })
+    })
+    result.sort((a: ProductGroup, b: ProductGroup) => {
+      const rfqA = (rfqs || []).find((r: any) => 
+        (r.rfq_id && r.rfq_id.toUpperCase() === a.rfqId.toUpperCase()) || 
+        (r.id && `RFQ-${r.id}`.toUpperCase() === a.rfqId.toUpperCase()) || 
+        (r.id && r.id.toString().toUpperCase() === a.rfqId.toUpperCase())
+      )
+      const rfqB = (rfqs || []).find((r: any) => 
+        (r.rfq_id && r.rfq_id.toUpperCase() === b.rfqId.toUpperCase()) || 
+        (r.id && `RFQ-${r.id}`.toUpperCase() === b.rfqId.toUpperCase()) || 
+        (r.id && r.id.toString().toUpperCase() === b.rfqId.toUpperCase())
+      )
+
+      const timeA = new Date(rfqA?.createdDate || (rfqA as any)?.created_at || a.quotes[0]?.submittedAt || a.quotes[0]?.quoteDate || 0).getTime()
+      const timeB = new Date(rfqB?.createdDate || (rfqB as any)?.created_at || b.quotes[0]?.submittedAt || b.quotes[0]?.quoteDate || 0).getTime()
+      if (timeA !== timeB) return timeB - timeA
+      return b.rfqId.localeCompare(a.rfqId)
+    })
+    return result
+  }, [quotations, rfqs])
 
   // Filtered product groups
   const filteredGroups = useMemo(() => {
@@ -131,7 +256,13 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
       confirmingQuote.product || activeGroup?.product || '',
       selectionRationale
     )
-    assignVendorToRequest(confirmingQuote.rfqId, confirmingQuote.vendor, 'VND-HW-001')
+    assignVendorToRequest(
+      confirmingQuote.rfqId,
+      confirmingQuote.vendor,
+      resolveVendorId(confirmingQuote.vendor, confirmingQuote.vendorId),
+      confirmingQuote.totalAmount || confirmingQuote.unitPrice,
+      confirmingQuote.id
+    )
     showToast(`✓ Vendor ${confirmingQuote.vendor} awarded! Request forwarded to Vendor Portal for acceptance.`, 'success')
     setConfirmingQuote(null)
   }
@@ -183,8 +314,10 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
             <Scale className={role === 'ADMIN' ? 'text-purple-600' : 'text-blue-600'} size={26} /> Vendor Quotations &amp; Selection
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            {role === 'FINANCE' || role === 'ADMIN'
-              ? 'Review competitive vendor quotations, commercial terms, GST breakdown, and Manager selection rationale.'
+            {role === 'FINANCE'
+              ? 'Review competitive vendor quotations, commercial terms, GST breakdown, and accept/award the optimal supplier.'
+              : role === 'ADMIN'
+              ? 'Review competitive vendor quotations, commercial terms, GST breakdown, and Admin governance.'
               : 'Evaluate multi-vendor quotations per product, analyze commercial terms, and award the optimal supplier.'}
           </p>
         </div>
@@ -414,7 +547,7 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
                   </span>
                 )}
               </div>
-              <h2 className="text-xl font-bold tracking-tight">{activeGroup.product}</h2>
+              <h2 className="text-xl font-bold tracking-tight text-white">{activeGroup.product}</h2>
               <p className="text-xs text-slate-300 mt-1">
                 Quantity: <b className="text-white">{activeGroup.quantity} units</b> • Quotes Received: <b className="text-white">{activeGroup.quotes.length} Vendors</b> • Lowest Quote: <b className="text-emerald-300">{fmt(activeGroup.lowestPrice)}</b>
               </p>
@@ -447,7 +580,7 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
           {comparisonLayout === 'cards' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {activeGroup.quotes.map(quote => {
-                const isSelected = quote.status === 'Selected'
+                const isSelected = quote.status === 'Selected' || (activeGroup.selectedQuote && activeGroup.selectedQuote.id === quote.id)
                 const isLowest = quote.totalAmount === activeGroup.lowestPrice
 
                 return (
@@ -492,11 +625,19 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
                       <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 mb-4">
                         <div className="flex items-baseline justify-between">
                           <span className="text-xs text-slate-500 font-medium">Unit Price:</span>
-                          <span className="text-sm font-bold text-slate-800">{fmt(quote.unitPrice)}</span>
+                          <span className="text-sm font-bold text-slate-800">{fmt(quote.unitPrice)} / unit</span>
                         </div>
                         <div className="flex items-baseline justify-between mt-1 text-[11px] text-slate-500">
-                          <span>Tax / GST:</span>
-                          <span>+{fmt(quote.taxAmount)}</span>
+                          <span>Quoted Quantity / Units:</span>
+                          <span className="font-bold text-slate-800">{activeGroup.quantity ? `${activeGroup.quantity} Units` : (quote.productQty || `${quote.quantity || 1} Units`)}</span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1 text-[11px] text-slate-500">
+                          <span>Base Subtotal:</span>
+                          <span className="font-semibold text-slate-700">{fmt(quote.baseAmount || (quote.totalAmount - quote.taxAmount))}</span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1 text-[11px] text-slate-500">
+                          <span>Tax / GST ({quote.gstPercent || quote.gstRate || 18}%):</span>
+                          <span className="font-semibold text-slate-700">+{fmt(quote.taxAmount)}</span>
                         </div>
                         {quote.discountAmount > 0 && (
                           <div className="flex items-baseline justify-between text-[11px] text-emerald-600">
@@ -505,41 +646,124 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
                           </div>
                         )}
                         <div className="pt-2 mt-2 border-t border-slate-200 flex items-baseline justify-between">
-                          <span className="text-xs font-bold text-slate-700">Total Quoted:</span>
+                          <span className="text-xs font-bold text-slate-700">Total Quoted (incl. GST):</span>
                           <span className="text-lg font-black text-slate-900">{fmt(quote.totalAmount)}</span>
                         </div>
                       </div>
 
-                      {/* Commercial & Technical Specs */}
+                      {/* Commercial, Services & Technical Specs */}
                       <div className="space-y-2 text-xs">
                         <div className="flex items-center justify-between py-1 border-b border-slate-100">
                           <span className="text-slate-500 flex items-center gap-1.5">
-                            <Truck size={13} className="text-slate-400" /> Delivery:
+                            <Clock size={13} className="text-slate-400" /> Submitted &amp; Validity:
                           </span>
-                          <span className="font-bold text-slate-800">{quote.deliveryDays} Calendar Days</span>
+                          <span className="font-semibold text-slate-700 text-right">
+                            {formatDate(quote.submittedAt || quote.quoteDate)} • Valid till {quote.validUntil ? formatDate(quote.validUntil) : 'Not provided'}
+                          </span>
                         </div>
+
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500 flex items-center gap-1.5">
+                            <Truck size={13} className="text-slate-400" /> Delivery Schedule:
+                          </span>
+                          {quote.deliveryDays ? (
+                            <span className="font-bold text-slate-800">
+                              {quote.deliveryDays} Days {quote.expectedDeliveryDate ? `(Est: ${formatDate(quote.expectedDeliveryDate)})` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not provided</span>
+                          )}
+                        </div>
+
                         <div className="flex items-center justify-between py-1 border-b border-slate-100">
                           <span className="text-slate-500 flex items-center gap-1.5">
                             <ShieldCheck size={13} className="text-slate-400" /> Warranty:
                           </span>
-                          <span className="font-bold text-slate-800 text-right">{quote.warranty || '1 Year Standard'}</span>
+                          {quote.warranty ? (
+                            <span className="font-bold text-slate-800 text-right">
+                              {quote.warranty} {quote.warrantyType ? `(${quote.warrantyType})` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not provided</span>
+                          )}
                         </div>
+
                         <div className="flex items-center justify-between py-1 border-b border-slate-100">
                           <span className="text-slate-500 flex items-center gap-1.5">
-                            <DollarSign size={13} className="text-slate-400" /> Payment Terms:
+                            <IndianRupee size={13} className="text-slate-400" /> Terms &amp; Conditions:
                           </span>
-                          <span className="font-bold text-slate-800">{quote.paymentTerms || 'Net 30'}</span>
+                          {quote.paymentTerms ? (
+                            <span className="font-semibold text-slate-800 text-right max-w-[210px] truncate" title={quote.paymentTerms}>
+                              {quote.paymentTerms}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not provided</span>
+                          )}
                         </div>
+
                         <div className="flex items-center justify-between py-1 border-b border-slate-100">
-                          <span className="text-slate-500">Technical Compliance:</span>
-                          <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px]">
-                            {quote.technicalCompliance || 'Compliant'}
-                          </span>
+                          <span className="text-slate-500">Tech Support:</span>
+                          {quote.techSupportDuration ? (
+                            <span className="font-semibold text-slate-800 text-right max-w-[210px] truncate" title={quote.techSupportDuration}>
+                              {quote.techSupportDuration}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not provided</span>
+                          )}
                         </div>
+
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500 flex items-center gap-1.5">
+                            <Gift size={13} className="text-slate-400" /> Maintenance:
+                          </span>
+                          {quote.freeServiceCount ? (
+                            <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[11px]">
+                              {quote.freeServiceCount}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not provided</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500 flex items-center gap-1.5">
+                            <Wrench size={13} className="text-slate-400" /> Installation:
+                          </span>
+                          {quote.installationType ? (
+                            <span className="font-semibold text-slate-800">
+                              {quote.installationType}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not provided</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500">Replacement:</span>
+                          {quote.replacementPolicy ? (
+                            <span className="font-semibold text-slate-800 text-right max-w-[210px] truncate" title={quote.replacementPolicy}>
+                              {quote.replacementPolicy}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not provided</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500">Accessories:</span>
+                          {quote.accessoriesIncluded ? (
+                            <span className="font-medium text-slate-700 text-right max-w-[210px] truncate" title={quote.accessoriesIncluded}>
+                              {quote.accessoriesIncluded}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not provided</span>
+                          )}
+                        </div>
+
                         <div className="flex items-center justify-between py-1">
-                          <span className="text-slate-500">Commercial Audit:</span>
-                          <span className="font-bold text-slate-800">
-                            {quote.commercialCompliance || 'Completed'}
+                          <span className="text-slate-500">Supplier Status:</span>
+                          <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px]">
+                            {quote.complianceRating || 'Verified'}
                           </span>
                         </div>
                       </div>
@@ -551,32 +775,40 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
                           <p className="mt-0.5">{quote.selectionNotes}</p>
                           {quote.selectedAt && (
                             <span className="block text-[10px] text-emerald-700/80 mt-1">
-                              Recorded on: {new Date(quote.selectedAt).toLocaleDateString()}
+                              Recorded on: {formatDate(quote.selectedAt)}
                             </span>
                           )}
                         </div>
                       )}
                     </div>
 
-                    {/* Action Button */}
-                    <div className="mt-5 pt-3 border-t border-slate-100">
-                      {role === 'MANAGER' ? (
+                    {/* Action Buttons */}
+                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-center gap-2">
+                      <button
+                        onClick={() => setInspectQuote(quote)}
+                        className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        title="View Full Commercial Dossier"
+                      >
+                        <Eye size={14} /> Dossier
+                      </button>
+
+                      {role === 'MANAGER' || role === 'FINANCE' || role === 'ADMIN' ? (
                         isSelected ? (
-                          <div className="w-full py-2 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl text-center flex items-center justify-center gap-1.5">
+                          <div className="flex-1 py-2 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl text-center flex items-center justify-center gap-1.5">
                             <CheckCircle size={14} /> Selected Supplier (Awarded)
                           </div>
                         ) : (
                           <button
                             onClick={() => handleOpenSelection(quote)}
-                            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                           >
                             <Award size={14} />
-                            {activeGroup.selectedQuote ? 'Switch Selection to this Vendor' : 'Select This Vendor'}
+                            {activeGroup.selectedQuote ? 'Switch Selection' : (role === 'FINANCE' ? 'Accept & Select Vendor' : 'Select This Vendor')}
                           </button>
                         )
                       ) : (
-                        <div className="text-center py-1.5 text-xs text-slate-500 font-medium">
-                          {isSelected ? '✓ Approved by Department Manager' : 'Unselected Bid'}
+                        <div className="flex-1 text-center py-1.5 text-xs text-slate-500 font-medium">
+                          {isSelected ? '✓ Approved' : 'Unselected Bid'}
                         </div>
                       )}
                     </div>
@@ -607,7 +839,7 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {activeGroup.quotes.map(quote => {
-                    const isSelected = quote.status === 'Selected'
+                    const isSelected = quote.status === 'Selected' || (activeGroup.selectedQuote && activeGroup.selectedQuote.id === quote.id)
                     const isLowest = quote.totalAmount === activeGroup.lowestPrice
 
                     return (
@@ -648,7 +880,7 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
                           )}
                         </td>
                         <td className="px-4 py-3.5 text-center">
-                          {role === 'MANAGER' ? (
+                          {role === 'MANAGER' || role === 'FINANCE' || role === 'ADMIN' ? (
                             isSelected ? (
                               <span className="text-[11px] font-bold text-emerald-700 flex items-center justify-center gap-1">
                                 <Check size={12} /> Awarded
@@ -656,9 +888,9 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
                             ) : (
                               <button
                                 onClick={() => handleOpenSelection(quote)}
-                                className="px-3 py-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors"
+                                className="px-3 py-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors cursor-pointer"
                               >
-                                Select Vendor
+                                {role === 'FINANCE' ? 'Accept & Select' : 'Select Vendor'}
                               </button>
                             )
                           ) : (
@@ -706,11 +938,19 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500 font-medium">Quantity & Unit Price:</span>
                   <span className="font-bold text-slate-800">
-                    {confirmingQuote.quantity} units @ {fmt(confirmingQuote.unitPrice)}
+                    {confirmingQuote.quantity} units @ {fmt(confirmingQuote.unitPrice)} / unit
                   </span>
                 </div>
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span>Base Subtotal:</span>
+                  <span className="font-semibold text-slate-700">{fmt(confirmingQuote.baseAmount || (confirmingQuote.unitPrice * confirmingQuote.quantity))}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span>Tax / GST ({confirmingQuote.gstPercent || confirmingQuote.gstRate || 18}%):</span>
+                  <span className="font-semibold text-slate-700">+{fmt(confirmingQuote.taxAmount)}</span>
+                </div>
                 <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-sm">
-                  <span className="font-bold text-slate-700">Total Purchase Value:</span>
+                  <span className="font-bold text-slate-700">Total Purchase Value (incl. GST):</span>
                   <span className="font-black text-emerald-600 text-base">{fmt(confirmingQuote.totalAmount)}</span>
                 </div>
               </div>
@@ -757,6 +997,9 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
           </div>
         </div>
       )}
+
+      {/* Commercial Breakdown Dossier Modal */}
+      <QuotationCommercialModal quote={inspectQuote} onClose={() => setInspectQuote(null)} />
     </div>
   )
 }

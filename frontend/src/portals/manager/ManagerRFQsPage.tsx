@@ -4,9 +4,10 @@ import {
   Calendar, Truck, Check, Clock, X, Users, Package, FileText,
   BarChart2, History, AlertCircle, Eye
 } from 'lucide-react'
-import { useManagerData } from '../../context/ManagerDataContext'
+import { useManagerData, isMockRfq } from '../../context/ManagerDataContext'
 import type { RFQ, RFQStatus } from '../../context/ManagerDataContext'
 import { CreateRFQModal } from '../../components/portal/CreateRFQModal'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v?: number | string | null) => {
   if (v === undefined || v === null) return '₹0'
@@ -130,7 +131,7 @@ function RFQDetail({ rfq, onBack }: { rfq: RFQ; onBack: () => void }) {
                   <div className="grid grid-cols-3 gap-6 text-right">
                     <div><p className="text-gray-400">Quantity</p><p className="font-bold text-gray-900">{item.quantity}</p></div>
                     <div><p className="text-gray-400">Expected Price</p><p className="font-bold text-gray-900">{fmt(item.expectedPrice)}</p></div>
-                    <div><p className="text-gray-400">Required By</p><p className="font-bold text-gray-900">{item.requiredBy}</p></div>
+                    <div><p className="text-gray-400">Required By</p><p className="font-bold text-gray-900">{formatDate(item.requiredBy)}</p></div>
                   </div>
                 </div>
               </div>

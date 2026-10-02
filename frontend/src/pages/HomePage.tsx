@@ -5,12 +5,20 @@ import {
   CheckCircle2,
   Tag,
   Package,
-  Laptop,
+  CreditCard,
   BarChart3,
   ArrowRight,
+  Sparkles,
+  Zap,
   ShieldCheck,
-  Wallet,
-  RefreshCw,
+  Coins,
+  Cloud,
+  Users,
+  Lock,
+  LayoutGrid,
+  ChevronDown,
+  ShoppingCart,
+  User,
 } from 'lucide-react'
 import Navbar from '../components/layout/Navbar'
 import Footer from '../components/layout/Footer'
@@ -18,222 +26,318 @@ import DashboardIllustration from '../components/common/DashboardIllustration'
 import ProcurementCategoriesSection from '../components/common/ProcurementCategoriesSection'
 import CardDetailModal, { CardDetailItem } from '../components/common/CardDetailModal'
 
-/* ─── Feature icon row ─── */
-const featureIcons = [
-  { icon: FileText,    label: 'Purchase\nRequests',               color: '#2563EB', bg: '#DBEAFE' },
-  { icon: CheckCircle2,label: 'Approvals\nWorkflow',              color: '#16A34A', bg: '#DCFCE7' },
-  { icon: Tag,         label: 'Vendors &\nQuotations',            color: '#7C3AED', bg: '#EDE9FE' },
-  { icon: Package,     label: 'PO & Invoices\nManagement',        color: '#D97706', bg: '#FFEDD5' },
-  { icon: Laptop,      label: 'Assets & Subscriptions\nTracking', color: '#DB2777', bg: '#FCE7F3' },
-  { icon: BarChart3,   label: 'Analytics\n& Reports',             color: '#0D9488', bg: '#CCFBF1' },
-]
-
-/* ─── Stats Cards ─── */
-const statsCards = [
+/* ─── 6 "Why Choose Procurement OS" Premium Cards ─── */
+const whyChooseCards = [
   {
-    value: '5',
-    title: 'Portals',
-    desc: 'Access dedicated portals for different roles and functions.',
-    icon: ShieldCheck,
-    bg: 'bg-blue-50/70',
-    border: 'border-blue-200/80',
-    iconBg: 'bg-blue-100',
+    id: 'faster-procurement',
+    title: 'Faster Procurement',
+    tagline: 'End-to-End Automation',
+    desc: 'Streamline requests, approvals, and PO generation in a lightning-fast single workflow.',
+    icon: Zap,
+    iconBg: 'bg-blue-50/90',
     iconColor: 'text-blue-600',
-    arrowBg: 'bg-blue-100/80 group-hover:bg-blue-200',
-    arrowColor: 'text-blue-600',
-    cornerAccent: 'bg-blue-100/60',
+    badgeBg: 'bg-blue-50 text-blue-700 border-blue-200/80',
+    color: '#2563EB',
+    bg: '#DBEAFE',
+    metric: '⚡ Cuts cycle time by 75%',
+    miniVisual: 'pipeline',
   },
   {
-    value: '9',
-    title: 'Procurement Categories',
-    desc: 'Covering all your business needs and requirements.',
-    icon: Tag,
-    bg: 'bg-purple-50/70',
-    border: 'border-purple-200/80',
-    iconBg: 'bg-purple-100',
-    iconColor: 'text-purple-600',
-    arrowBg: 'bg-purple-100/80 group-hover:bg-purple-200',
-    arrowColor: 'text-purple-600',
-    cornerAccent: 'bg-purple-100/60',
-  },
-  {
-    value: '100%',
-    title: 'Secure & Role-based Access',
-    desc: 'Your data, our priority.',
+    id: 'better-compliance',
+    title: 'Better Compliance',
+    tagline: 'Governance & Auditing',
+    desc: 'Stay 100% audit-ready with automated 3-way matching and immutable activity logs.',
     icon: ShieldCheck,
-    bg: 'bg-emerald-50/70',
-    border: 'border-emerald-200/80',
-    iconBg: 'bg-emerald-100',
+    iconBg: 'bg-emerald-50/90',
     iconColor: 'text-emerald-600',
-    arrowBg: 'bg-emerald-100/80 group-hover:bg-emerald-200',
-    arrowColor: 'text-emerald-600',
-    cornerAccent: 'bg-emerald-100/60',
+    badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+    color: '#16A34A',
+    bg: '#DCFCE7',
+    metric: '✓ Automated 3-Way Match',
+    miniVisual: 'compliance',
   },
   {
-    value: 'Real-time',
-    title: 'Tracking & Analytics',
-    desc: 'Stay informed, make smarter decisions.',
-    icon: BarChart3,
-    bg: 'bg-amber-50/70',
-    border: 'border-amber-200/80',
-    iconBg: 'bg-amber-100',
+    id: 'cost-optimization',
+    title: 'Cost Optimization',
+    tagline: 'Spend Intelligence',
+    desc: 'Compare competing vendor quotations side-by-side to capture the highest margins.',
+    icon: Coins,
+    iconBg: 'bg-purple-50/90',
+    iconColor: 'text-purple-600',
+    badgeBg: 'bg-purple-50 text-purple-700 border-purple-200/80',
+    color: '#7C3AED',
+    bg: '#EDE9FE',
+    metric: '📈 Up to 18.4% cost savings',
+    miniVisual: 'savings',
+  },
+  {
+    id: 'scalable-flexible',
+    title: 'Scalable & Flexible',
+    tagline: 'Enterprise Architecture',
+    desc: 'Engineered for high growth with customizable approval hierarchies and multi-branch support.',
+    icon: Cloud,
+    iconBg: 'bg-amber-50/90',
     iconColor: 'text-amber-600',
-    arrowBg: 'bg-amber-100/80 group-hover:bg-amber-200',
-    arrowColor: 'text-amber-600',
-    cornerAccent: 'bg-amber-100/60',
+    badgeBg: 'bg-amber-50 text-amber-700 border-amber-200/80',
+    color: '#D97706',
+    bg: '#FEF3C7',
+    metric: '🏢 Multi-entity ready',
+    miniVisual: 'scale',
+  },
+  {
+    id: 'collaboration',
+    title: 'Collaboration',
+    tagline: 'Connected Stakeholders',
+    desc: 'Unite requesters, managers, finance, and external vendors in real time on one platform.',
+    icon: Users,
+    iconBg: 'bg-teal-50/90',
+    iconColor: 'text-teal-600',
+    badgeBg: 'bg-teal-50 text-teal-700 border-teal-200/80',
+    color: '#0D9488',
+    bg: '#CCFBF1',
+    metric: '👥 Real-time multi-role sync',
+    miniVisual: 'collaboration',
+  },
+  {
+    id: 'secure-reliable',
+    title: 'Secure & Reliable',
+    tagline: 'Zero Trust Security',
+    desc: 'Protect corporate spend data with encrypted storage, granular RBAC, and high availability.',
+    icon: Lock,
+    iconBg: 'bg-rose-50/90',
+    iconColor: 'text-rose-600',
+    badgeBg: 'bg-rose-50 text-rose-700 border-rose-200/80',
+    color: '#DB2777',
+    bg: '#FCE7F3',
+    metric: '🔒 SOC 2 & AES-256 Bit',
+    miniVisual: 'security',
   },
 ]
 
 const featureDetailsMap: Record<string, { subtitle: string; description: string; capabilities: string[]; benefits: string[] }> = {
-  'Purchase Requests': {
-    subtitle: 'Core Feature Workflow',
-    description: 'Empower employees and team leads to submit structured purchase requisitions with customizable fields, automated budget checks, and department routing.',
+  'Faster Procurement': {
+    subtitle: 'Workflow Automation',
+    description: 'Streamline purchase requisitions, approval matrices, and vendor fulfillment into one fast, seamless end-to-end workflow.',
     capabilities: [
-      'Custom request forms with mandatory attachments & line items',
-      'Automated budget pre-validation before submission',
-      'Real-time status tracking from Draft → Submitted → Approved',
-      'Immutable audit trail of all changes and comments',
+      'Single-click purchase requests with auto-budget checks',
+      'Automated routing to designated department approvers',
+      'Real-time status notifications and SLA alerts',
+      'Instant PO generation and dispatch upon approval',
     ],
     benefits: [
-      'Reduces requisition processing lead time by up to 70%',
-      'Eliminates unauthorized paper/email requests',
-      'Enforces corporate spending policies upfront',
+      'Cuts procurement cycle time by up to 75%',
+      'Eliminates approval delays and email follow-ups',
+      'Accelerates product and asset delivery',
     ],
   },
-  'Approvals Workflow': {
-    subtitle: 'Governance & Compliance',
-    description: 'Dynamic multi-level approval routing based on spend thresholds, department hierarchy, and custom company business rules.',
+  'Better Compliance': {
+    subtitle: 'Governance & Auditing',
+    description: 'Enforce organization-wide fiscal policies, multi-tier approvals, and immutable audit trails for complete compliance readiness.',
     capabilities: [
-      'Multi-tier approval paths (Team Lead → Finance → Admin)',
-      'One-click approve/reject actions with mandatory audit comments',
-      'Real-time email and in-app notification alerts',
-      'Complete historical approval logs for compliance audits',
+      'Multi-level threshold approvals (Team Lead → Finance → Admin)',
+      'Immutable audit logging of every edit, approval, and comment',
+      'Automated 3-way matching between PO, delivery note, and invoice',
+      'Statutory tax validation and GST compliance checks',
     ],
     benefits: [
-      'Eliminates approval bottlenecks across remote teams',
-      '100% policy enforcement on high-value purchases',
-      'Full transparency for finance and auditing teams',
+      '100% audit readiness with zero missing paperwork',
+      'Eliminates unauthorized or rogue spending',
+      'Ensures strict adherence to corporate fiscal delegations',
     ],
   },
-  'Budget & Spend Control': {
-    subtitle: 'Financial Governance',
-    description: 'Proactive budget management that tracks committed and available spend in real time to prevent budget overruns before orders are placed.',
+  'Cost Optimization': {
+    subtitle: 'Spend Intelligence',
+    description: 'Compare competing vendor quotations side-by-side, analyze spend patterns, and negotiate the best commercial terms.',
     capabilities: [
-      'Departmental and category budget allocation tracking',
-      'Real-time remaining budget calculations',
-      'Automated warning alerts when approaching threshold limits',
-      'Spend forecasting and historical trend reports',
+      'Side-by-side vendor quotation comparison matrix',
+      'Historical unit pricing and vendor discount tracking',
+      'Automated budget threshold warnings before commitment',
+      'Spend forecasting and category cost breakdown analytics',
     ],
     benefits: [
-      'Prevents unexpected budget overruns',
-      'Improves cash flow predictability for finance',
-      'Identifies cost optimization and savings opportunities',
+      'Saves up to 18% on recurring IT hardware and software spend',
+      'Identifies duplicate subscriptions and unallocated assets',
+      'Drives competitive bidding among certified vendors',
     ],
   },
-  'Vendor Management': {
-    subtitle: 'Supplier Relations',
-    description: 'Centralized vendor portal for catalog management, digital RFQ dispatch, quotation comparison, and vendor compliance record tracking.',
+  'Scalable & Flexible': {
+    subtitle: 'Enterprise Architecture',
+    description: 'Engineered to support fast-growing startups, mid-market organizations, and multi-entity global enterprises seamlessly.',
     capabilities: [
-      'Central vendor directory with compliance ratings',
-      'Digital RFQ creation and structured quote submissions',
-      'Side-by-side quotation comparison & evaluation matrix',
-      'Document vault for tax certificates, NDAs, and SLAs',
+      'Customizable procurement approval workflows & spend limits',
+      'Multi-department and multi-branch support',
+      'Custom procurement categories and asset classification',
+      'Flexible role-based access for hundreds of users',
     ],
     benefits: [
-      'Drives competitive bidding and price reduction',
-      'Simplifies vendor compliance and SLA monitoring',
-      'Accelerates vendor onboarding and PO issuance',
+      'Easily adapts as your organization expands',
+      'Configurable rules without custom engineering code',
+      'Zero performance degradation under heavy transaction volume',
     ],
   },
-  'Purchase Orders': {
-    subtitle: 'Order Fulfillment',
-    description: 'Automate PO generation from approved requisitions and monitor vendor order fulfillment stage-by-stage through delivery and invoice matching.',
+  'Collaboration': {
+    subtitle: 'Unified Communication',
+    description: 'Unite internal requisitioners, finance teams, managers, and external vendors in real time on a single shared platform.',
     capabilities: [
-      'Instant PO generation upon requisition approval',
-      'Real-time stage tracking (Processing → Transit → Delivered)',
-      'Digital Goods Receipt Notes (GRN) & delivery confirmation',
-      'Automated 3-way matching between PO, receipt, and tax invoice',
+      'Dedicated role-tailored portals for every stakeholder',
+      'Real-time stage tracking and delivery milestone updates',
+      'Direct in-context messaging and ticket resolution',
+      'Automated email and in-app status synchronizations',
     ],
     benefits: [
-      'Eliminates rogue and unauthorized purchasing',
-      'Enforces post-delivery payment confirmation',
-      'Complete order-to-delivery audit trail',
+      'Replaces messy email chains and chat groups',
+      'Clear visibility for team members on request statuses',
+      'Fosters trusted, transparent vendor partnerships',
     ],
   },
-  'Complete Lifecycle': {
-    subtitle: 'End-to-End Platform',
-    description: 'Connect every stage of procurement — from employee requisition to final post-delivery payment clearance — in one integrated OS.',
+  'Secure & Reliable': {
+    subtitle: 'Enterprise Security',
+    description: 'Protect sensitive corporate spend data, financial records, and commercial vendor agreements with enterprise-grade security.',
     capabilities: [
-      '5 specialized, role-tailored portals (Employee, Lead, Vendor, Finance, Admin)',
-      'Automated real-time status synchronization across all portals',
-      'Post-delivery payment sequence enforcement',
-      'Asset and subscription lifecycle tracking',
+      'Role-Based Access Control (RBAC) with granular permissions',
+      'End-to-end encryption in transit (TLS 1.3) and at rest (AES-256)',
+      'Protected digital document vault for invoices, NDAs & contracts',
+      'Secure tokenized sessions and audit log immutability',
     ],
     benefits: [
-      'Single source of truth for all corporate procurement',
-      'Zero manual data re-entry or email chasing',
-      'End-to-end operational efficiency',
+      'Zero unauthorized data exposure between vendors and departments',
+      'SOC 2 and ISO 27001 compliance standards',
+      'High-availability cloud infrastructure with 99.99% uptime',
     ],
   },
-  'Portals': {
-    subtitle: 'System Architecture',
-    description: 'Procurement OS provides 5 role-tailored portals designed for complete end-to-end alignment across your organisation.',
+  'IT Hardware': {
+    subtitle: 'Hardware Assets & Devices',
+    description: 'Procure, manage, and track physical IT hardware assets from employee workstations to enterprise server racks.',
     capabilities: [
-      'Employee Portal: Submit & track purchase requisitions',
-      'Team Lead Portal: Departmental approvals & budget checks',
-      'Vendor Portal: Stage updates, delivery receipts & invoice submission',
-      'Finance Portal: 3-way matching & post-delivery payment processing',
-      'Admin Portal: System configuration, governance & analytics',
+      'Standardized OEM hardware catalog profiles (Laptops, Servers, Monitors)',
+      'Volume discount negotiation with certified vendors (Dell, HP, Apple, Lenovo)',
+      'Automated asset registration & serial number barcode logging upon delivery',
+      '3-year warranty, AMC support and hardware lifecycle refresh tracking',
     ],
     benefits: [
-      'Role-tailored interfaces for maximum usability',
-      'Strict security and permission boundaries',
-      'Seamless inter-portal workflow automation',
+      'Cuts hardware procurement lead time from 2 weeks to 48 hours',
+      'Secures 12-25% volume price discounts via master purchasing agreements',
+      '100% hardware asset traceability from PO issuance to employee offboarding',
     ],
   },
-  'Procurement Categories': {
-    subtitle: 'Category Management',
-    description: 'Comprehensive coverage of all IT, technology, and corporate procurement categories under unified management.',
+  'Software & SaaS': {
+    subtitle: 'Software Licences & Cloud Apps',
+    description: 'Centralize SaaS tools, software licences, developer subscriptions, and corporate app renewals across all teams.',
     capabilities: [
-      'IT Hardware (Laptops, Desktops, Servers, Displays)',
-      'Software & SaaS (Licences, Subscriptions, Dev Tools)',
-      'Cloud & Infrastructure (AWS, Azure, GCP, Hosting)',
-      'Cybersecurity, IT Services, AV Gear, Telecom & Learning',
+      'SaaS seat allocation & employee assignment engine',
+      '90-day automated contract renewal countdowns & alerts',
+      'Shadow IT discovery & credit card expense consolidation',
+      'Tiered annual vs monthly billing optimization & discount negotiation',
     ],
     benefits: [
-      'Unified spend tracking across all tech assets',
-      'Category-specific approval routing rules',
-      'Standardized procurement taxonomy',
+      'Eliminates duplicate software licences across departments',
+      'Prevents expensive unwanted auto-renewals with advance notice alerts',
+      'Maximizes software seat utilization to 95%+ before purchasing new seats',
     ],
   },
-  'Secure & Role-based Access': {
+  'Cloud & Infrastructure': {
+    subtitle: 'Cloud Spend & Hosting',
+    description: 'Manage multi-cloud infrastructure budgets, server instances, storage arrays, CDN, and domain hosting.',
+    capabilities: [
+      'Multi-cloud budget caps (AWS, Azure, Google Cloud Platform)',
+      'Reserved Instance & Savings Plan commitment tracking (up to 60% savings)',
+      'Tag-based squad and project cost allocation',
+      'Automated 3-way invoice matching against monthly cloud spending caps',
+    ],
+    benefits: [
+      'Stops unexpected cloud cost spikes with real-time budget threshold limits',
+      'Maximizes commitment discounts on compute and database infrastructure',
+      'Provides transparent departmental cost attribution',
+    ],
+  },
+  'Cybersecurity': {
     subtitle: 'Security & Compliance',
-    description: 'Enterprise-grade security controls, role-based authorization, and strict compliance enforcement.',
+    description: 'Procure enterprise endpoint security, firewalls, threat intelligence, and compliance audit tools.',
     capabilities: [
-      'Granular RBAC permissions for every user and portal',
-      'Immutable audit trails for all request modifications',
-      'Encrypted document vault for NDAs, contracts & tax invoices',
-      'Post-delivery payment clearance verification',
+      'Standardized InfoSec approved security software catalog',
+      'Vendor security compliance, SLA, and SOC 2 verification',
+      'Centralized SSL certificate & identity management tool vault',
+      'Periodic license security reviews & vulnerability management',
     ],
     benefits: [
-      'Prevents unauthorized spending and rogue purchases',
-      'SOC2 and audit compliance readiness',
-      'Full data integrity and operational security',
+      'Ensures 100% adherence to corporate cybersecurity and compliance standards',
+      'Accelerates deployment of mission-critical security tooling',
+      'Complete audit-ready security logs',
     ],
   },
-  'Tracking & Analytics': {
-    subtitle: 'Analytics & Reporting',
-    description: 'Live visibility into procurement workflows, budget utilization, vendor delivery SLAs, and cost savings.',
+  'IT Services': {
+    subtitle: 'Managed Support & Consulting',
+    description: 'Source managed IT support services, cloud migration experts, and SLA-backed maintenance contracts.',
     capabilities: [
-      'Real-time spend dashboards with YTD budget tracking',
-      'Vendor delivery SLA metrics and payment status sync',
-      'Customizable report exports for accounting and auditing',
-      'Automated renewal alerts for software & cloud spend',
+      'Vendor SLA & deliverables milestone tracking',
+      'Time & materials vs fixed-price quotation comparison matrix',
+      'Automated service acceptance sign-off workflow',
+      'Contract performance ratings & supplier scorecard',
     ],
     benefits: [
-      'Instant executive visibility into corporate spend',
-      'Proactive cost reduction and contract optimization',
-      'Data-driven procurement decision making',
+      'Guarantees enterprise SLA compliance on mission-critical IT services',
+      'Prevents billing discrepancies for consulting and developer hours',
+      'Establishes transparent, high-performance vendor partnerships',
+    ],
+  },
+  'Office Accessories': {
+    subtitle: 'Ergonomic & Workplace Essentials',
+    description: 'Streamline bulk procurement of ergonomic chairs, desks, monitor arms, and office supplies.',
+    capabilities: [
+      'Catalog-based ordering with pre-approved department budgets',
+      'Multi-location delivery address and branch dispatch management',
+      'Recurring office supplies auto-reorder thresholds',
+      'Centralized expense reporting & automated reconciliation',
+    ],
+    benefits: [
+      'Simplifies hybrid & remote employee onboarding equipment fulfillment',
+      'Reduces per-unit costs through negotiated bulk corporate orders',
+      'Eliminates requisition chaos and decentralized reimbursements',
+    ],
+  },
+  'Office Technology': {
+    subtitle: 'Smart Displays & AV Gear',
+    description: 'Equip conference rooms, smart boards, video conferencing bars, and digital display systems.',
+    capabilities: [
+      'Room-by-room AV specification templates',
+      'Turnkey installation vendor quote comparisons',
+      'Asset tagging, serial tracking and maintenance schedules',
+      'Remote warranty & RMA support integration',
+    ],
+    benefits: [
+      'Standardizes hybrid meeting rooms across all office locations',
+      'Ensures high-reliability video conferencing hardware',
+      'Direct access to vendor technical support and warranty replacements',
+    ],
+  },
+  'Networking & Telecom': {
+    subtitle: 'Network Infrastructure & ISP',
+    description: 'Procure enterprise switches, routers, fiber internet lines, VoIP systems, and structured cabling.',
+    capabilities: [
+      'Bandwidth SLA and uptime monitoring integration',
+      'Multi-branch ISP lease agreement and contract management',
+      'Hardware lifecycle and firmware update tracking',
+      'Consolidated telecom billing review & automated matching',
+    ],
+    benefits: [
+      'Maintains 99.99% branch network connectivity and uptime',
+      'Optimizes recurring telecom expenditures across office locations',
+      'Prevents single-point-of-failure outages with redundant link tracking',
+    ],
+  },
+  'Training & Certifications': {
+    subtitle: 'Professional Development & Upskilling',
+    description: 'Manage corporate technical training courses, cloud certification vouchers, and team learning subscriptions.',
+    capabilities: [
+      'Team training budget allocation & approval hierarchy',
+      'Certification exam voucher distribution & expiry alerts',
+      'Post-completion verification & score logging into HR system',
+      'Group enterprise training discounts with certified education providers',
+    ],
+    benefits: [
+      'Accelerates engineering skill development and technical excellence',
+      'Maximizes ROI on corporate training and certification budgets',
+      'Tracks organization-wide technical competency and certifications',
     ],
   },
 }
@@ -262,87 +366,85 @@ export default function HomePage() {
   }
 
   return (
-    <>
+    <div className="min-h-screen flex flex-col bg-white">
       <Navbar />
 
-      <main>
-        {/* ══════════════════════════════════════
-            HERO SECTION
-        ══════════════════════════════════════ */}
+      <main className="flex-1">
+        {/* ══════════════════════════════════════════════════════════════
+            HERO SECTION (High-End Enterprise SaaS Background)
+           ══════════════════════════════════════════════════════════════ */}
         <section
-          style={{ backgroundColor: '#EFF6FF' }}
-          className="py-10 md:py-14 overflow-hidden"
+          className="relative overflow-hidden bg-gradient-to-b from-[#F8FAFC] via-[#F0F6FD] to-[#E8F2FC] pt-[84px] pb-10 sm:pt-[92px] sm:pb-12 lg:pt-[100px] lg:pb-14 select-none border-b border-blue-100/60"
           aria-labelledby="hero-heading"
         >
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="grid lg:grid-cols-12 gap-8 items-center">
+          {/* ── Ambient Radial Glow Orbs for High-End Depth ── */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+            {/* 1. Large luminous blue glow centered behind laptop mockup */}
+            <div className="absolute -top-12 right-0 lg:right-[-5%] w-[650px] h-[550px] bg-gradient-to-tr from-blue-400/25 via-indigo-300/20 to-sky-200/30 rounded-full blur-[110px] transform-gpu" />
 
-              {/* Left: copy (5 cols) */}
-              <div className="lg:col-span-5">
-                {/* Eyebrow pill */}
-                <div className="eyebrow mb-2">
+            {/* 2. Soft cyan/blue accent glow behind hero headline */}
+            <div className="absolute top-10 left-[-8%] w-[420px] h-[420px] bg-gradient-to-br from-blue-300/20 via-sky-200/15 to-transparent rounded-full blur-[90px] transform-gpu" />
+
+            {/* 3. High-Precision Engineered Grid Pattern with Soft Fade Mask */}
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#2563eb0a_1px,transparent_1px),linear-gradient(to_bottom,#2563eb0a_1px,transparent_1px)] bg-[size:36px_36px] [mask-image:radial-gradient(ellipse_75%_65%_at_50%_45%,#000_50%,transparent_100%)]" />
+
+            {/* 4. Subtle ambient horizon highlight line */}
+            <div className="absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-200/60 to-transparent" />
+          </div>
+
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="grid lg:grid-cols-12 gap-6 lg:gap-8 items-center">
+
+              {/* ── Left Column: Hero Copy & CTA (5 or 6 cols) ── */}
+              <div className="lg:col-span-6 xl:col-span-5 flex flex-col items-start text-left z-10">
+                {/* Eyebrow Pill Badge */}
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-[#EBF4FE] text-[#2563EB] text-xs font-semibold mb-3.5 shadow-2xs">
+                  <ShoppingCart size={13} className="text-[#2563EB]" />
                   <span>IT Procurement Platform</span>
                 </div>
 
-                {/* H1 */}
+                {/* H1 Main Heading: Line 1 "Smarter Procurement.", Line 2 "Stronger Business." */}
                 <h1
                   id="hero-heading"
-                  className="font-bold text-[#0F172A] mb-3"
-                  style={{
-                    fontSize: 'clamp(30px, 4vw, 42px)',
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.15,
-                  }}
+                  className="text-3xl sm:text-4xl lg:text-[42px] xl:text-[48px] font-black tracking-tight leading-[1.12] mb-3.5 text-[#0F172A] w-full"
                 >
-                  Smarter Procurement.
-                  <br />
-                  Stronger Business.
+                  <span className="block whitespace-normal sm:whitespace-nowrap">Smarter Procurement.</span>
+                  <span className="block text-[#2563EB] whitespace-normal sm:whitespace-nowrap">Stronger Business.</span>
                 </h1>
 
-                {/* Sub-text */}
-                <p
-                  className="mb-5 max-w-lg"
-                  style={{ color: '#64748B', fontSize: '16px', lineHeight: 1.6 }}
-                >
+                {/* Subtitle description */}
+                <p className="text-slate-600 text-sm sm:text-base leading-relaxed max-w-lg mb-5">
                   Procurement OS helps IT companies manage everything they purchase, subscribe, renew, receive and pay for — all in one place.
                 </p>
 
-                {/* CTA buttons */}
-                <div className="flex flex-wrap gap-3 mb-6">
-                  <Link to="/login" className="btn-primary">
-                    Login <ArrowRight size={16} />
+                {/* CTA Action Buttons */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Primary Login Button */}
+                  <Link
+                    to="/login"
+                    className="bg-[#2563EB] hover:bg-blue-700 text-white font-semibold text-sm sm:text-base px-6 sm:px-7 py-2.5 sm:py-3 rounded-full inline-flex items-center gap-2 shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <User size={16} strokeWidth={2.2} />
+                    <span>Login</span>
+                    <ArrowRight size={16} strokeWidth={2.4} />
                   </Link>
-                  <Link to="/features" className="btn-outline">
-                    Learn More
-                  </Link>
-                </div>
 
-                {/* Feature icon row */}
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                  {featureIcons.map(({ icon: Icon, label, color, bg }) => (
-                    <div
-                      key={label}
-                      className="flex flex-col items-center gap-1.5 text-center"
-                    >
-                      <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: bg }}
-                      >
-                        <Icon size={17} color={color} strokeWidth={2} />
-                      </div>
-                      <span
-                        className="text-[10px] font-medium leading-tight"
-                        style={{ color: '#64748B', whiteSpace: 'pre-line' }}
-                      >
-                        {label}
-                      </span>
-                    </div>
-                  ))}
+                  {/* View All Categories Button */}
+                  <button
+                    onClick={() => {
+                      document.getElementById('procurement-categories')?.scrollIntoView({ behavior: 'smooth' })
+                    }}
+                    className="bg-white hover:bg-blue-50/50 text-[#2563EB] hover:text-blue-700 border border-[#2563EB] font-semibold text-sm sm:text-base px-5 sm:px-6 py-2 sm:py-2.5 rounded-full inline-flex items-center gap-2 hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                    aria-label="View all procurement categories"
+                  >
+                    <LayoutGrid size={16} strokeWidth={2.2} className="text-[#2563EB]" />
+                    <span>View All Categories</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Right: dashboard illustration (7 cols - wider & high resolution) */}
-              <div className="lg:col-span-7 flex items-center justify-center lg:justify-end w-full">
+              {/* ── Right Column: Dashboard Illustration (6 or 7 cols) ── */}
+              <div className="lg:col-span-6 xl:col-span-7 flex items-center justify-center lg:justify-end w-full">
                 <DashboardIllustration />
               </div>
 
@@ -350,184 +452,494 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* ══════════════════════════════════════
-            OUR IMPACT / KEY STATS AT A GLANCE
-        ══════════════════════════════════════ */}
-        <section className="py-16 md:py-20 bg-[#F4F8FE] relative overflow-hidden" aria-label="Platform statistics">
-          {/* Top-Right Decorative Blue Grid Dots */}
-          <div className="absolute top-8 right-12 opacity-40 pointer-events-none hidden md:block">
-            <div className="grid grid-cols-4 gap-2">
-              {[...Array(12)].map((_, i) => (
-                <div key={i} className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-              ))}
-            </div>
-          </div>
 
-          <div className="max-w-7xl mx-auto px-6 relative z-10">
-            {/* Header section */}
-            <div className="mb-10">
-              {/* Eyebrow with Dash */}
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-6 h-[2px] bg-blue-600 inline-block rounded-full" />
-                <span className="text-xs font-bold uppercase tracking-widest text-blue-600">
-                  OUR IMPACT
-                </span>
+
+        {/* ══════════════════════════════════════════════════════════════
+            ENTERPRISE IMPACT & TRUST STATS STRIP
+           ══════════════════════════════════════════════════════════════ */}
+        <section className="border-y border-slate-100 bg-white py-6 sm:py-8 select-none relative z-10" aria-label="Key Performance Indicators">
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 items-center divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+
+              {/* Stat 1: Spend Managed */}
+              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8 first:pl-0">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#E0F2FE] text-[#0284C7]">
+                  <ShoppingCart size={26} strokeWidth={2.2} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none">$24M+</span>
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Spend Managed</span>
+                  <span className="text-xs text-slate-400 truncate mt-0.5">Across 10,000+ purchase orders</span>
+                </div>
               </div>
 
-              {/* Title */}
+              {/* Stat 2: Cycle Time */}
+              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#FFEDD5] text-[#EA580C]">
+                  <Zap size={26} strokeWidth={2.2} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-2xl sm:text-3xl font-black text-blue-600 tracking-tight leading-none">75% Faster</span>
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Cycle Time</span>
+                  <span className="text-xs text-slate-400 truncate mt-0.5">From request submission to PO dispatch</span>
+                </div>
+              </div>
+
+              {/* Stat 3: 3-Way Match */}
+              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#DCFCE7] text-[#16A34A]">
+                  <ShieldCheck size={26} strokeWidth={2.2} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none">100%</span>
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">3-Way Match</span>
+                  <span className="text-xs text-slate-400 truncate mt-0.5">Zero audit discrepancies & rogue spend</span>
+                </div>
+              </div>
+
+              {/* Stat 4: Uptime SLA */}
+              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8 last:pr-0">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#F3E8FF] text-[#9333EA]">
+                  <BarChart3 size={26} strokeWidth={2.2} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-2xl sm:text-3xl font-black text-blue-600 tracking-tight leading-none">99.99%</span>
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Uptime SLA</span>
+                  <span className="text-xs text-slate-400 truncate mt-0.5">Enterprise-grade cloud infrastructure</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════════
+            "WHY CHOOSE PROCUREMENT OS" SECTION (Compact & Attractive SaaS Grid)
+           ══════════════════════════════════════════════════════════════ */}
+        <section
+          className="relative pt-12 pb-14 sm:pt-14 sm:pb-16 bg-[#F8FAFC] overflow-hidden"
+          aria-labelledby="why-choose-heading"
+        >
+          {/* Subtle Ambient Background Mesh & Low-Opacity Dot Matrix */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+            <svg
+              className="absolute inset-0 w-full h-full opacity-[0.14]"
+              xmlns="http://www.w3.org/2000/svg"
+              width="100%"
+              height="100%"
+            >
+              <defs>
+                <pattern id="whyChooseDotPattern" width="28" height="28" patternUnits="userSpaceOnUse">
+                  <circle cx="2" cy="2" r="1" fill="#64748B" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#whyChooseDotPattern)" />
+            </svg>
+          </div>
+
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+
+            {/* Section Header */}
+            <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-12">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/70 text-blue-600 text-xs font-semibold tracking-wider uppercase mb-3 shadow-2xs">
+                <Sparkles size={12} className="text-blue-600" />
+                <span>WHY CHOOSE PROCUREMENT OS</span>
+              </div>
+
+              {/* Section Main Title */}
               <h2
-                className="font-extrabold text-[#0F172A] mb-2"
-                style={{ fontSize: 'clamp(28px, 4vw, 36px)', letterSpacing: '-0.02em' }}
+                id="why-choose-heading"
+                className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight leading-tight mb-3"
               >
-                Key Stats <span className="text-blue-600">at a Glance</span>
+                Everything You Need in <span className="text-blue-600">One Platform</span>
               </h2>
 
-              {/* Subtitle */}
-              <p className="text-[#64748B] text-base">
-                Driving efficiency, transparency and growth in procurement.
+              {/* Section Subtitle */}
+              <p className="text-slate-600 text-sm sm:text-base leading-relaxed max-w-xl mx-auto">
+                Simplify procurement, eliminate rogue spending, and empower your teams with complete real-time visibility across your supply chain.
               </p>
             </div>
 
-            {/* Grid of 4 Stat Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {statsCards.map((card) => {
+            {/* 6 Feature Cards Grid: Balanced across desktop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {whyChooseCards.map((card) => {
                 const Icon = card.icon
                 return (
                   <div
                     key={card.title}
-                    className={`relative rounded-3xl p-6 border ${card.bg} ${card.border} transition-all duration-300 hover:shadow-md group overflow-hidden flex flex-col justify-between`}
+                    onClick={() => openCardModal(card.title, card.desc, Icon, card.bg, card.color)}
+                    className="group relative bg-white border border-slate-200/80 hover:border-blue-400/80 rounded-2xl p-5 sm:p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-[0_12px_24px_-4px_rgba(37,99,235,0.08),0_4px_6px_-2px_rgba(0,0,0,0.03)] transition-all duration-300 flex flex-col justify-between cursor-pointer hover:-translate-y-1 overflow-hidden"
                   >
-                    {/* Top Row: Icon + Value/Title */}
+                    {/* Top Accent Gradient Line on hover */}
+                    <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
                     <div>
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-12 h-12 rounded-2xl ${card.iconBg} flex items-center justify-center shrink-0 shadow-xs`}>
-                            <Icon className={card.iconColor} size={22} strokeWidth={2.2} />
-                          </div>
-                          <div>
-                            <span className="text-2xl font-black text-[#0F172A] tracking-tight block leading-none mb-1">
-                              {card.value}
-                            </span>
-                            <span className="text-sm font-bold text-[#0F172A] block leading-tight">
-                              {card.title}
-                            </span>
-                          </div>
+                      {/* Top Row: Icon Badge & Category Tagline */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div
+                          className={`w-10 h-10 rounded-xl ${card.iconBg} ${card.iconColor} border border-slate-100/80 flex items-center justify-center transition-transform duration-300 group-hover:scale-105 shadow-2xs shrink-0`}
+                        >
+                          <Icon size={19} strokeWidth={2.2} />
                         </div>
+                        <span className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full border ${card.badgeBg} tracking-tight`}>
+                          {card.tagline}
+                        </span>
                       </div>
 
-                      {/* Description */}
-                      <p className="text-xs text-[#64748B] font-medium leading-relaxed mt-3 relative z-10">
+                      {/* Card Title */}
+                      <h3 className="text-base sm:text-[17px] font-bold text-slate-900 group-hover:text-blue-600 transition-colors mb-1.5 leading-snug">
+                        {card.title}
+                      </h3>
+
+                      {/* Card Description */}
+                      <p className="text-xs sm:text-[13px] text-slate-500 leading-relaxed mb-4">
                         {card.desc}
                       </p>
+
+                      {/* Miniature Workflow / Metric Preview Widget */}
+                      <div className="mb-4">
+                        {card.miniVisual === 'pipeline' && (
+                          <div className="h-11 px-3 rounded-xl bg-slate-50/90 border border-slate-200/70 group-hover:bg-blue-50/30 group-hover:border-blue-200/60 flex items-center justify-between text-[11px] font-mono select-none transition-colors">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                              <span className="font-semibold text-slate-800">PR #1084</span>
+                            </div>
+                            <ArrowRight size={11} className="text-slate-400" />
+                            <span className="text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-md font-sans font-semibold text-[10px]">
+                              Approved
+                            </span>
+                            <ArrowRight size={11} className="text-slate-400" />
+                            <span className="text-blue-700 bg-blue-100/90 px-2 py-0.5 rounded-md font-sans font-semibold text-[10px]">
+                              PO Issued
+                            </span>
+                          </div>
+                        )}
+
+                        {card.miniVisual === 'compliance' && (
+                          <div className="h-11 px-2.5 rounded-xl bg-slate-50/90 border border-slate-200/70 group-hover:bg-emerald-50/30 group-hover:border-emerald-200/60 flex items-center justify-between text-[10px] font-medium text-slate-700 select-none transition-colors">
+                            <span className="flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/70 font-semibold text-[10px]">
+                              <CheckCircle2 size={11} className="text-emerald-600" /> PO Match
+                            </span>
+                            <span className="flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/70 font-semibold text-[10px]">
+                              <CheckCircle2 size={11} className="text-emerald-600" /> Receipt
+                            </span>
+                            <span className="flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/70 font-semibold text-[10px]">
+                              <CheckCircle2 size={11} className="text-emerald-600" /> Invoice
+                            </span>
+                          </div>
+                        )}
+
+                        {card.miniVisual === 'savings' && (
+                          <div className="h-11 px-3 rounded-xl bg-slate-50/90 border border-slate-200/70 group-hover:bg-purple-50/30 group-hover:border-purple-200/60 flex items-center justify-between text-[11px] select-none transition-colors">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-purple-700 bg-purple-100/90 px-1.5 py-0.5 rounded font-mono">3 Bids</span>
+                              <span className="text-slate-600 font-medium text-[11px]">Smart Ranking</span>
+                            </div>
+                            <span className="font-bold text-purple-700 text-[11px] bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200/70">
+                              -18.4% cost
+                            </span>
+                          </div>
+                        )}
+
+                        {card.miniVisual === 'scale' && (
+                          <div className="h-11 px-3 rounded-xl bg-slate-50/90 border border-slate-200/70 group-hover:bg-amber-50/30 group-hover:border-amber-200/60 flex items-center justify-between text-[11px] select-none transition-colors">
+                            <div className="flex items-center gap-1.5 text-slate-700 font-semibold text-[10px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>99.99% Uptime SLA</span>
+                            </div>
+                            <span className="text-amber-800 text-[10px] bg-amber-50 px-2 py-0.5 rounded border border-amber-200/70 font-mono font-bold">
+                              Tiered Matrix
+                            </span>
+                          </div>
+                        )}
+
+                        {card.miniVisual === 'collaboration' && (
+                          <div className="h-11 px-3 rounded-xl bg-slate-50/90 border border-slate-200/70 group-hover:bg-teal-50/30 group-hover:border-teal-200/60 flex items-center justify-between text-[10px] font-medium select-none transition-colors">
+                            <div className="flex items-center -space-x-1.5">
+                              <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px] font-bold ring-2 ring-white">TL</span>
+                              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[9px] font-bold ring-2 ring-white">MG</span>
+                              <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-[9px] font-bold ring-2 ring-white">FN</span>
+                              <span className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center text-[9px] font-bold ring-2 ring-white">VN</span>
+                            </div>
+                            <span className="text-teal-800 font-semibold text-[10px] bg-teal-50 px-2.5 py-0.5 rounded border border-teal-200/70">
+                              4 Portals Live Sync
+                            </span>
+                          </div>
+                        )}
+
+                        {card.miniVisual === 'security' && (
+                          <div className="h-11 px-3 rounded-xl bg-slate-50/90 border border-slate-200/70 group-hover:bg-rose-50/30 group-hover:border-rose-200/60 flex items-center justify-between text-[10px] font-medium select-none transition-colors">
+                            <span className="flex items-center gap-1 text-slate-700 bg-rose-50/90 px-2 py-0.5 rounded border border-rose-200/70 text-[10px] font-semibold">
+                              <ShieldCheck size={11} className="text-rose-600" /> SOC 2 Type II
+                            </span>
+                            <span className="text-rose-800 font-mono text-[10px] bg-rose-50 px-2 py-0.5 rounded border border-rose-200/70 font-bold">
+                              AES-256 Bit
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Bottom-Right Corner Decorative Quarter-Circle */}
-                    <div
-                      className={`w-20 h-20 rounded-tl-full ${card.cornerAccent} absolute -bottom-2 -right-2 pointer-events-none transition-transform duration-300 group-hover:scale-110 opacity-70`}
-                    />
+                    {/* Bottom Action: "Explore feature" with neat button */}
+                    <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-slate-500 group-hover:text-blue-600 transition-colors">
+                      <span>Explore feature</span>
+                      <div className="w-6 h-6 rounded-full bg-slate-100 group-hover:bg-blue-600 border border-slate-200/60 group-hover:border-blue-600 flex items-center justify-center text-slate-400 group-hover:text-white transition-all duration-200 shadow-2xs group-hover:shadow-xs">
+                        <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </div>
                   </div>
                 )
               })}
             </div>
+
           </div>
         </section>
 
-        {/* ══════════════════════════════════════
-            FEATURES PREVIEW (teaser)
-        ══════════════════════════════════════ */}
-        <section className="py-16 md:py-20 bg-white">
-          <div className="max-w-7xl mx-auto px-6 text-center">
-            <div className="eyebrow mx-auto w-fit">Key features</div>
-            <h2
-              className="font-bold text-[#0F172A] mb-4"
-              style={{ fontSize: 'clamp(26px, 4vw, 32px)', letterSpacing: '-0.02em' }}
-            >
-              Built for Modern IT Procurement
-            </h2>
-            <p className="text-[#64748B] max-w-xl mx-auto mb-10" style={{ fontSize: '16px' }}>
-              From purchase requests to invoice matching — every workflow in one connected platform.
-            </p>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
-              {[
-                {
-                  icon: FileText,   title: 'Purchase Requests',
-                  desc: 'Create & track purchase requests with custom approval fields.',
-                  bg: '#DBEAFE', color: '#2563EB',
-                },
-                {
-                  icon: CheckCircle2, title: 'Approvals Workflow',
-                  desc: 'Dynamic multi-level approval workflow with full audit trail.',
-                  bg: '#DCFCE7', color: '#16A34A',
-                },
-                {
-                  icon: Wallet, title: 'Budget & Spend Control',
-                  desc: 'Track budgets, reduce costs, and get real-time insights.',
-                  bg: '#FFEDD5', color: '#D97706',
-                },
-                {
-                  icon: Tag, title: 'Vendor Management',
-                  desc: 'Manage vendors, RFQs & quotations in one place.',
-                  bg: '#EDE9FE', color: '#7C3AED',
-                },
-                {
-                  icon: Package, title: 'Purchase Orders',
-                  desc: 'Track POs end-to-end with real-time status updates.',
-                  bg: '#FCE7F3', color: '#DB2777',
-                },
-                {
-                  icon: RefreshCw, title: 'Complete Lifecycle',
-                  desc: 'From request to payment and beyond — fully connected.',
-                  bg: '#CCFBF1', color: '#0D9488',
-                },
-              ].map(({ icon: Icon, title, desc, bg, color }, index) => (
-                <div
-                  key={title}
-                  className="group relative bg-white border border-[#E5E7EB] rounded-2xl p-6 transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-xl hover:shadow-blue-500/10 hover:border-blue-300 flex flex-col justify-between overflow-hidden"
-                  style={{
-                    animationDelay: `${index * 50}ms`,
-                  }}
-                >
-                  {/* Top accent colored bar on hover */}
-                  <div
-                    className="absolute top-0 left-0 right-0 h-1 transition-opacity duration-300 opacity-0 group-hover:opacity-100"
-                    style={{ backgroundColor: color }}
-                  />
+        {/* ══════════════════════════════════════════════════════════════
+            4-STEP END-TO-END PROCUREMENT WORKFLOW SECTION (ANIMATED PIPELINE)
+           ══════════════════════════════════════════════════════════════ */}
+        <section className="py-16 sm:py-20 bg-gradient-to-b from-white via-slate-50/50 to-white border-t border-slate-200/80 select-none relative overflow-hidden" aria-label="How Procurement OS Works">
+          {/* Ambient Subtle Background Grid */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(59,130,246,0.04),transparent_70%)] pointer-events-none" />
 
+          <div className="max-w-[1440px] 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 relative z-10">
+
+            {/* Header */}
+            <div className="text-center max-w-2xl mx-auto mb-14">
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-blue-700 text-xs font-semibold tracking-wider uppercase mb-3 shadow-2xs">
+                <Sparkles size={12} className="text-blue-600" />
+                <span>Orchestration Lifecycle</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 tracking-tight leading-tight mb-3">
+                How <span className="text-blue-600">Procurement OS</span> Works
+              </h2>
+              <p className="text-slate-600 text-xs sm:text-sm leading-relaxed max-w-xl mx-auto">
+                From initial request to final invoice settlement — an automated, audit-proof workflow for modern enterprise organizations.
+              </p>
+            </div>
+
+            {/* 4-Step Interactive Animated Cards Grid */}
+            <div className="relative">
+              {/* Desktop Connecting Flow Beam */}
+              <div className="hidden lg:block absolute top-12 left-[12%] right-[12%] h-0.5 bg-gradient-to-r from-blue-300 via-indigo-300 to-emerald-300 z-0 opacity-40" />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">
+                {/* Step 1 */}
+                <div
+                  onClick={() => openCardModal('Raise & Approve', 'Employees submit requisitions with auto-budget checks, policy rules, and instant multi-tier manager routing.', FileText, '#DBEAFE', '#2563EB')}
+                  className="group bg-white rounded-2xl p-6 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-blue-500/10 hover:border-blue-400/80 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col justify-between"
+                >
+                  <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   <div>
                     <div className="flex items-center justify-between mb-4">
-                      <div
-                        className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-6 shadow-xs"
-                        style={{ backgroundColor: bg }}
-                      >
-                        <Icon size={20} color={color} strokeWidth={2} />
+                      <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center shadow-md shadow-blue-500/25 group-hover:scale-110 transition-transform">
+                        01
+                      </span>
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200/80">
+                        Requisition
+                      </span>
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-2xs group-hover:rotate-6 transition-transform">
+                        <FileText size={18} strokeWidth={2.2} />
                       </div>
                     </div>
-                    <h3
-                      className="font-bold mb-2 transition-colors duration-200 group-hover:text-blue-600"
-                      style={{ fontSize: '16px', color: '#0F172A' }}
-                    >
-                      {title}
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors tracking-tight">
+                      Raise & Approve
                     </h3>
-                    <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.6 }}>{desc}</p>
+                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-4">
+                      Employees submit requisitions with auto-budget checks and instant multi-tier routing.
+                    </p>
+                  </div>
+                  {/* Micro Live Preview Widget */}
+                  <div className="pt-3 border-t border-slate-100 bg-slate-50/70 rounded-xl p-2.5 border border-slate-200/60 flex items-center justify-between text-[11px] group-hover:bg-blue-50/50 transition-colors">
+                    <span className="font-mono font-bold text-slate-700">REQ-2026-081</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200/80 flex items-center gap-1 text-[10px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Approved ✓
+                    </span>
                   </div>
                 </div>
-              ))}
+
+                {/* Step 2 */}
+                <div
+                  onClick={() => openCardModal('RFQ & Quotations', 'Publish competitive bidding requests to verified vendors and compare line-item prices side-by-side.', Tag, '#EDE9FE', '#7C3AED')}
+                  className="group bg-white rounded-2xl p-6 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-indigo-500/10 hover:border-indigo-400/80 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col justify-between"
+                >
+                  <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-indigo-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-md shadow-indigo-500/25 group-hover:scale-110 transition-transform">
+                        02
+                      </span>
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200/80">
+                        Bidding
+                      </span>
+                      <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-2xs group-hover:rotate-6 transition-transform">
+                        <Tag size={18} strokeWidth={2.2} />
+                      </div>
+                    </div>
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-2 group-hover:text-indigo-600 transition-colors tracking-tight">
+                      RFQ & Quotations
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-4">
+                      Publish bidding requests to verified vendors and compare line-item prices side-by-side.
+                    </p>
+                  </div>
+                  {/* Micro Live Preview Widget */}
+                  <div className="pt-3 border-t border-slate-100 bg-slate-50/70 rounded-xl p-2.5 border border-slate-200/60 flex items-center justify-between text-[11px] group-hover:bg-indigo-50/50 transition-colors">
+                    <span className="text-slate-600 font-medium">3 Vendor Quotes</span>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-200/80 text-[10px]">
+                      -14.2% Best Rate
+                    </span>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div
+                  onClick={() => openCardModal('PO & Delivery', 'Automatically issue digitally signed Purchase Orders, manage dispatch timelines, and track shipment delivery status.', Package, '#CCFBF1', '#0D9488')}
+                  className="group bg-white rounded-2xl p-6 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-teal-500/10 hover:border-teal-400/80 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col justify-between"
+                >
+                  <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-teal-600 to-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white font-black text-xs flex items-center justify-center shadow-md shadow-teal-500/25 group-hover:scale-110 transition-transform">
+                        03
+                      </span>
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-teal-50 text-teal-700 border-teal-200/80">
+                        Logistics
+                      </span>
+                      <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center shadow-2xs group-hover:rotate-6 transition-transform">
+                        <Package size={18} strokeWidth={2.2} />
+                      </div>
+                    </div>
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-2 group-hover:text-teal-600 transition-colors tracking-tight">
+                      PO & Delivery
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-4">
+                      Automatically issue digitally signed Purchase Orders and track shipment delivery status.
+                    </p>
+                  </div>
+                  {/* Micro Live Preview Widget */}
+                  <div className="pt-3 border-t border-slate-100 bg-slate-50/70 rounded-xl p-2.5 border border-slate-200/60 flex items-center justify-between text-[11px] group-hover:bg-teal-50/50 transition-colors">
+                    <span className="font-mono text-slate-600 font-bold">PO-4589 Issued</span>
+                    <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 font-bold border border-teal-200/80 text-[10px] flex items-center gap-1">
+                      In Transit 🚚
+                    </span>
+                  </div>
+                </div>
+
+                {/* Step 4 */}
+                <div
+                  onClick={() => openCardModal('3-Way Match & Pay', 'Reconcile Purchase Order, Goods Receipt Note, and vendor invoice automatically for secure disbursement.', ShieldCheck, '#DCFCE7', '#16A34A')}
+                  className="group bg-white rounded-2xl p-6 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:shadow-emerald-500/10 hover:border-emerald-400/80 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col justify-between"
+                >
+                  <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-600 to-green-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-green-600 text-white font-black text-xs flex items-center justify-center shadow-md shadow-emerald-500/25 group-hover:scale-110 transition-transform">
+                        04
+                      </span>
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200/80">
+                        Settlement
+                      </span>
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-2xs group-hover:rotate-6 transition-transform">
+                        <ShieldCheck size={18} strokeWidth={2.2} />
+                      </div>
+                    </div>
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-2 group-hover:text-emerald-600 transition-colors tracking-tight">
+                      3-Way Match & Pay
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-4">
+                      Reconcile PO, delivery note, and vendor invoice automatically for secure disbursement.
+                    </p>
+                  </div>
+                  {/* Micro Live Preview Widget */}
+                  <div className="pt-3 border-t border-slate-100 bg-slate-50/70 rounded-xl p-2.5 border border-slate-200/60 flex items-center justify-between text-[11px] group-hover:bg-emerald-50/50 transition-colors">
+                    <span className="text-slate-600 font-medium">3-Way Match</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200/80 text-[10px] flex items-center gap-1">
+                      Settled ⚡
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="mt-10">
-              <Link to="/features" className="btn-primary inline-flex">
-                See All Features <ArrowRight size={16} />
+
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════════
+            PROCUREMENT CATEGORIES SECTION
+           ══════════════════════════════════════════════════════════════ */}
+        <ProcurementCategoriesSection
+          onSelectCategory={(cat) => openCardModal(cat.title, cat.desc, cat.icon, '#DBEAFE', '#2563EB')}
+        />
+
+        {/* ══════════════════════════════════════════════════════════════
+            BOTTOM CALL-TO-ACTION (CTA) BANNER (FULL-WIDTH PROFESSIONAL LIGHT UI)
+           ══════════════════════════════════════════════════════════════ */}
+        <section className="w-full py-16 sm:py-20 bg-gradient-to-b from-slate-50/80 via-white to-blue-50/25 border-t border-slate-200/80 relative overflow-hidden select-none" aria-label="Get Started">
+          {/* Subtle Ambient Background Mesh Across Full Width */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_50%_0%,rgba(59,130,246,0.07),transparent_70%)] pointer-events-none" />
+
+          {/* Decorative Corner Accents */}
+          <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-blue-100/30 to-transparent rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-indigo-100/30 to-transparent rounded-full blur-3xl pointer-events-none" />
+
+          <div className="max-w-4xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
+            {/* Eyebrow Badge */}
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-blue-700 text-xs font-semibold uppercase tracking-wider mb-4 shadow-2xs">
+              <Sparkles size={13} className="text-blue-600" />
+              <span>Transform Your Procurement Operations</span>
+            </div>
+
+            {/* Main Heading */}
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 tracking-tight mb-3.5 leading-tight">
+              Ready to Upgrade to <span className="text-blue-600">Procurement OS</span>?
+            </h2>
+
+            {/* Subtitle */}
+            <p className="text-slate-600 text-sm sm:text-base max-w-xl mx-auto leading-relaxed mb-7">
+              Join leading IT organizations managing their purchase requests, supplier quotations, and 3-way invoice matching in one unified platform.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center justify-center gap-3.5 mb-8">
+              <Link
+                to="/login"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm sm:text-base px-7 py-3 rounded-full inline-flex items-center gap-2 shadow-md shadow-blue-600/25 hover:shadow-lg hover:shadow-blue-600/35 hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer"
+              >
+                <span>Login</span>
+                <ArrowRight size={16} strokeWidth={2.4} />
               </Link>
+              <Link
+                to="/contact"
+                className="bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 hover:border-slate-400 font-semibold text-sm sm:text-base px-6 py-3 rounded-full inline-flex items-center gap-1.5 shadow-2xs hover:shadow-xs hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer"
+              >
+                Contact Sales
+              </Link>
+            </div>
+
+            {/* Trust & Guarantee Micro-Pills */}
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 pt-6 border-t border-slate-200/70 text-xs font-semibold text-slate-500">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                <span>Instant Deployment</span>
+              </div>
+              <span className="text-slate-300 hidden sm:inline">•</span>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                <span>Multi-Tier Approval Hierarchy</span>
+              </div>
+              <span className="text-slate-300 hidden sm:inline">•</span>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                <span>100% Audit & Tax Compliance</span>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* ══════════════════════════════════════
-            PROCUREMENT CATEGORIES SECTION
-        ══════════════════════════════════════ */}
-        <ProcurementCategoriesSection />
       </main>
 
-      {/* Card Detail Modal */}
+      {/* Interactive Detail Modal */}
       <CardDetailModal
         isOpen={!!selectedCard}
         onClose={() => setSelectedCard(null)}
@@ -535,6 +947,6 @@ export default function HomePage() {
       />
 
       <Footer />
-    </>
+    </div>
   )
 }

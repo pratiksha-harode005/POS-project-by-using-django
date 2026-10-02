@@ -3,7 +3,7 @@ import { ApiRequestParams } from './managerApi'
 
 export const getFinanceDashboardStats = async () => {
   try {
-    const res = await apiClient.get('/requests/')
+    const res = await apiClient.get('/requests/?page_size=1000')
     return res.data
   } catch {
     return null
@@ -12,7 +12,7 @@ export const getFinanceDashboardStats = async () => {
 
 export const getPendingFinancialApprovals = async (params?: ApiRequestParams) => {
   try {
-    const res = await apiClient.get('/requests/', { params: { ...params, current_stage: 2 } })
+    const res = await apiClient.get('/requests/', { params: { page_size: 1000, ...params, current_stage: 2 } })
     return res.data
   } catch {
     return { results: [], count: 0 }

@@ -1,9 +1,10 @@
 import React from 'react'
 import {
-  X, Printer, CheckCircle2, DollarSign, FileText,
+  X, Printer, CheckCircle2, IndianRupee, FileText,
   ShieldCheck, Sparkles, Tag
 } from 'lucide-react'
 import { QuotationItem } from '../../context/ManagerDataContext'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -35,10 +36,15 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
     window.print()
   }
 
-  const grossBase = quote.unitPrice * quote.quantity
+  const qty = Math.max(quote.quantity || 1, 1)
+  const grossBase = quote.baseAmount || quote.price || (quote.unitPrice * qty)
   const discount = quote.discountAmount || 0
   const taxable = grossBase - discount
-  const unitLanded = Math.round(quote.totalAmount / quote.quantity)
+  const gstPct = quote.gstPercent || quote.gstRate || 18
+  const taxVal = quote.taxAmount || Math.round(taxable * (gstPct / 100))
+  const totalVal = quote.totalAmount || (taxable + taxVal + (quote.shippingCost || 0))
+  const unitRate = quote.unitPrice || Math.round(grossBase / qty)
+  const unitLanded = Math.round(totalVal / qty)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
@@ -69,9 +75,9 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
             <p className="text-slate-300 text-xs flex items-center gap-2 flex-wrap">
               <span>{quote.rfqId}: <b>{quote.rfqTitle}</b></span>
               <span>•</span>
-              <span>Submitted: <b>{quote.quoteDate}</b></span>
+              <span>Submitted: <b>{formatDate(quote.quoteDate || quote.submittedAt)}</b></span>
               <span>•</span>
-              <span className="text-amber-300 font-semibold">Valid Until: {quote.validUntil}</span>
+              <span className="text-amber-300 font-semibold">Valid Until: {formatDate(quote.validUntil)}</span>
             </p>
           </div>
 
@@ -130,7 +136,7 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
           {/* 2. Key Commercial Metrics (4 Financial Tiles) */}
           <div>
             <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
-              <DollarSign size={13} className="text-indigo-600" /> Commercial Financial Structure
+              <IndianRupee size={13} className="text-indigo-600" /> Commercial Financial Structure
             </h4>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -141,7 +147,7 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
                   {fmt(grossBase)}
                 </span>
                 <span className="text-[10px] text-slate-500">
-                  {fmt(quote.unitPrice)} × {quote.quantity} units
+                  {fmt(unitRate)} × {qty} units
                 </span>
               </div>
 
@@ -158,12 +164,12 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
 
               {/* GST & Levies */}
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-400 uppercase block">GST & Taxes (18%)</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">GST & Taxes ({gstPct}%)</span>
                 <span className="text-base font-black text-purple-700 mt-0.5 block">
-                  +{fmt(quote.taxAmount)}
+                  +{fmt(taxVal)}
                 </span>
                 <span className="text-[10px] text-slate-500">
-                  CGST 9% + SGST 9% (or IGST)
+                  {gstPct === 18 ? 'CGST 9% + SGST 9% (or IGST)' : `Standard GST ${gstPct}%`}
                 </span>
               </div>
 
@@ -171,7 +177,7 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Freight & Insurance</span>
                 <span className="text-base font-black text-slate-900 mt-0.5 block">
-                  {quote.shippingCost === 0 ? 'Free / Included' : fmt(quote.shippingCost)}
+                  {quote.shippingCost === 0 ? 'Free / Included' : fmt(quote.shippingCost || 0)}
                 </span>
                 <span className="text-[10px] text-slate-500">
                   DDP Doorstep Delivery
@@ -186,10 +192,10 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
                   Final Landed Proposal Value (All Inclusive)
                 </span>
                 <span className="text-2xl font-black text-emerald-900 tracking-tight">
-                  {fmt(quote.totalAmount)}
+                  {fmt(totalVal)}
                 </span>
                 <p className="text-[11px] text-emerald-700 italic mt-0.5">
-                  Amount in words: <strong className="font-semibold">{numberToIndianWords(quote.totalAmount)}</strong>
+                  Amount in words: <strong className="font-semibold">{numberToIndianWords(totalVal)}</strong>
                 </p>
               </div>
 
@@ -237,12 +243,12 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
                       </span>
                     </td>
                     <td className="p-3 text-center font-mono text-slate-600">84713010</td>
-                    <td className="p-3 text-center font-bold text-slate-800">{quote.quantity} Units</td>
-                    <td className="p-3 text-right font-medium text-slate-700">{fmt(quote.unitPrice)}</td>
-                    <td className="p-3 text-right text-emerald-600 font-medium">-{fmt(Math.round(discount / quote.quantity))}</td>
+                    <td className="p-3 text-center font-bold text-slate-800">{qty} Units</td>
+                    <td className="p-3 text-right font-medium text-slate-700">{fmt(unitRate)}</td>
+                    <td className="p-3 text-right text-emerald-600 font-medium">-{fmt(Math.round(discount / qty))}</td>
                     <td className="p-3 text-right font-semibold text-slate-800">{fmt(taxable)}</td>
-                    <td className="p-3 text-right text-purple-700 font-medium">{fmt(quote.taxAmount)}</td>
-                    <td className="p-3 text-right font-black text-slate-900 text-xs">{fmt(quote.totalAmount)}</td>
+                    <td className="p-3 text-right text-purple-700 font-medium">{fmt(taxVal)}</td>
+                    <td className="p-3 text-right font-black text-slate-900 text-xs">{fmt(totalVal)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -271,7 +277,7 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500 font-medium">Quotation Validity Period:</span>
-                  <span className="text-amber-700 font-bold">30 Days (Valid until {quote.validUntil})</span>
+                  <span className="text-amber-700 font-bold">30 Days (Valid until {formatDate(quote.validUntil)})</span>
                 </div>
               </div>
 

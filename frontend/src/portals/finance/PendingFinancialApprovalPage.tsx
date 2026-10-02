@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CheckCircle, XCircle, Clock, AlertTriangle,
   FileText, ArrowRight, ShieldCheck, User, Building, Calendar,
-  Paperclip, DollarSign, X, Check, ArrowUpRight, Eye, Layers
+  Paperclip, IndianRupee, X, Check, ArrowUpRight, Eye, Layers
 } from 'lucide-react'
 import { useFinanceData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
@@ -40,6 +40,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
   const { isUnread, markAsRead } = useActivity()
   const {
     allRequests,
+    financeRequests,
     pendingFinancialApprovals,
     approvedFinanceRequests,
     rejectedFinanceRequests,
@@ -56,12 +57,12 @@ export const PendingFinancialApprovalPage: React.FC = () => {
 
   // Computed requests matching the active filter
   const displayedRequests = useMemo(() => {
-    if (statusFilter === 'ALL') return allRequests
+    if (statusFilter === 'ALL') return financeRequests
     if (statusFilter === 'PENDING') return pendingFinancialApprovals
     if (statusFilter === 'APPROVED') return approvedFinanceRequests
     if (statusFilter === 'REJECTED') return rejectedFinanceRequests
-    return allRequests
-  }, [statusFilter, allRequests, pendingFinancialApprovals, approvedFinanceRequests, rejectedFinanceRequests])
+    return financeRequests
+  }, [statusFilter, financeRequests, pendingFinancialApprovals, approvedFinanceRequests, rejectedFinanceRequests])
 
   // Modal State
   const [activeReq, setActiveReq] = useState<ProcurementRequest | null>(null)
@@ -71,6 +72,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
   const [comment, setComment] = useState('')
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null)
   const [viewingRequest, setViewingRequest] = useState<ProcurementRequest | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleOpenViewDetails = (req: ProcurementRequest) => {
     markAsRead(req.id)
@@ -84,6 +86,23 @@ export const PendingFinancialApprovalPage: React.FC = () => {
 
   const openAction = (req: ProcurementRequest, act: ActionType) => {
     markAsRead(req.id)
+    const isApp = Boolean(
+      req.status === 'approved' ||
+      req.status === 'finance_approved' ||
+      (req.currentStage !== undefined && req.currentStage >= 4) ||
+      req.status === 'quotes_received' ||
+      req.status === 'assigned_to_vendor' ||
+      req.status === 'delivered' ||
+      req.status === 'invoiced' ||
+      req.status === 'completed' ||
+      req.financeApprovedBy ||
+      req.financeApprovedDate ||
+      req.financeStatus === 'Approved'
+    )
+    if (isApp && act === 'APPROVE') {
+      showToast(`Request ${req.id} is already approved.`, 'info')
+      return
+    }
     setActiveReq(req)
     if (act === 'APPROVE') {
       setShowDossierModal(true)
@@ -100,44 +119,64 @@ export const PendingFinancialApprovalPage: React.FC = () => {
   }
 
   const handleConfirmFinancialDossier = (params: ApprovalParameters) => {
-    if (!activeReq) return
-    approveFinanceRequest(activeReq.id, params.approvalComments, 'Mark Finance Officer')
-    showToast(`✓ Request ${activeReq.id} approved successfully! Routed to PO generation.`)
-    setShowDossierModal(false)
-    setActiveReq(null)
+    if (!activeReq || isSubmitting) return
+    setIsSubmitting(true)
+    try {
+      approveFinanceRequest(activeReq.id, params.approvalComments, 'Mark Finance Officer', params.approvedAmount)
+      showToast(`✓ Request ${activeReq.id} approved successfully! Routed to PO generation.`)
+      setShowDossierModal(false)
+      setActiveReq(null)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const handleConfirmAction = () => {
-    if (!activeReq || !modalAction) return
+  const handleConfirmAction = async () => {
+    if (!activeReq || !modalAction || isSubmitting) return
+    setIsSubmitting(true)
 
-    if (modalAction === 'APPROVE') {
-      approveFinanceRequest(activeReq.id, comment, 'Mark Finance Officer')
-      showToast(`✓ Request ${activeReq.id} approved successfully! Routed to PO generation.`)
-    } else if (modalAction === 'REJECT') {
-      if (!reason) {
-        showToast('Rejection reason is required', 'error')
-        return
+    try {
+      if (modalAction === 'APPROVE') {
+        approveFinanceRequest(activeReq.id, comment, 'Mark Finance Officer')
+        showToast(`✓ Request ${activeReq.id} approved successfully! Routed to PO generation.`)
+      } else if (modalAction === 'REJECT') {
+        if (!reason) {
+          showToast('Rejection reason is required', 'error')
+          setIsSubmitting(false)
+          return
+        }
+        rejectFinanceRequest(activeReq.id, reason, comment, 'Mark Finance Officer')
+        showToast(`✕ Request ${activeReq.id} rejected. Audit recorded.`, 'error')
+      } else if (modalAction === 'HOLD') {
+        if (!comment.trim()) {
+          showToast('Hold reason/comment is required', 'error')
+          setIsSubmitting(false)
+          return
+        }
+        holdFinanceRequest(activeReq.id, comment, 'Mark Finance Officer')
+        showToast(`⏸ Request ${activeReq.id} placed on fiscal hold.`, 'info')
+      } else if (modalAction === 'RECOMMEND_ADMIN') {
+        if (!comment.trim()) {
+          showToast('Please provide recommendation notes / justification for Admin', 'error')
+          setIsSubmitting(false)
+          return
+        }
+        try {
+          await recommendToHigherAuthority(activeReq.id, reason, comment, 'Mark Finance Officer')
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Could not send the request to Admin.'
+          showToast(message, 'error')
+          setIsSubmitting(false)
+          return
+        }
+        showToast(`✓ Request ${activeReq.id} recommended to Higher Authority (Admin) for executive approval.`, 'success')
       }
-      rejectFinanceRequest(activeReq.id, reason, comment, 'Mark Finance Officer')
-      showToast(`✕ Request ${activeReq.id} rejected. Audit recorded.`, 'error')
-    } else if (modalAction === 'HOLD') {
-      if (!comment.trim()) {
-        showToast('Hold reason/comment is required', 'error')
-        return
-      }
-      holdFinanceRequest(activeReq.id, comment, 'Mark Finance Officer')
-      showToast(`⏸ Request ${activeReq.id} placed on fiscal hold.`, 'info')
-    } else if (modalAction === 'RECOMMEND_ADMIN') {
-      if (!comment.trim()) {
-        showToast('Please provide recommendation notes / justification for Admin', 'error')
-        return
-      }
-      recommendToHigherAuthority(activeReq.id, reason, comment, 'Mark Finance Officer')
-      showToast(`✓ Request ${activeReq.id} recommended to Higher Authority (Admin) for executive approval.`, 'success')
+
+      setActiveReq(null)
+      setModalAction(null)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    setActiveReq(null)
-    setModalAction(null)
   }
 
   return (
@@ -165,7 +204,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
               FINANCE APPROVAL
             </span>
             <span className="text-xs text-slate-400 font-medium">
-              {statusFilter === 'ALL' && `${allRequests.length} Total Purchase Requests`}
+              {statusFilter === 'ALL' && `${financeRequests.length} Total Purchase Requests`}
               {statusFilter === 'PENDING' && `${pendingFinancialApprovals.length} Requests Awaiting Sign-off`}
               {statusFilter === 'APPROVED' && `${approvedFinanceRequests.length} Approved Requests`}
               {statusFilter === 'REJECTED' && `${rejectedFinanceRequests.length} Disapproved Requests`}
@@ -198,7 +237,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                   : 'bg-slate-200 text-slate-700'
               }`}
             >
-              {allRequests.length}
+              {financeRequests.length}
             </span>
           </button>
 
@@ -318,9 +357,26 @@ export const PendingFinancialApprovalPage: React.FC = () => {
             const budgetAvailable = matchedBudget ? matchedBudget.available : 950000
             const hasSufficientBudget = budgetAvailable >= req.amount
 
-            const isApproved = req.status === 'approved' || req.status === 'finance_approved'
-            const isRejected = req.status === 'rejected' || req.status === 'finance_rejected'
-            const isPending = !isApproved && !isRejected
+            const isApproved = Boolean(
+              req.status === 'approved' ||
+              req.status === 'finance_approved' ||
+              (req.currentStage !== undefined && req.currentStage >= 4) ||
+              req.status === 'quotes_received' ||
+              req.status === 'assigned_to_vendor' ||
+              req.status === 'delivered' ||
+              req.status === 'invoiced' ||
+              req.status === 'completed' ||
+              req.financeApprovedBy ||
+              req.financeApprovedDate ||
+              req.financeStatus === 'Approved'
+            )
+            const isRejected = Boolean(
+              req.status === 'rejected' ||
+              req.status === 'finance_rejected' ||
+              req.financeStatus === 'Rejected'
+            )
+            const isAwaitingAdmin = req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin'
+            const isPending = !isApproved && !isRejected && !isAwaitingAdmin
             const isNew = isUnread(req.id) && !isApproved && !isRejected
 
             return (
@@ -526,7 +582,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                 )}
 
                 {/* Higher Authority Banner if recommended to admin */}
-                {statusFilter === 'PENDING' && req.status === 'recommended_to_admin' && (
+                {(req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin') && (
                   <div className="bg-purple-50/90 border border-purple-200 rounded-xl p-3 flex items-center justify-between text-xs text-purple-900">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
@@ -567,7 +623,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                   </div>
 
                   {/* Actions for PENDING */}
-                  {(statusFilter === 'PENDING' || (statusFilter === 'ALL' && isPending)) && (
+                  {isPending && (
                     <div className="flex items-center gap-2 flex-wrap">
                       {/* Right 1: View */}
                       <button
@@ -605,7 +661,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                   )}
 
                   {/* Actions for APPROVED */}
-                  {(statusFilter === 'APPROVED' || (statusFilter === 'ALL' && isApproved)) && (
+                  {isApproved && (
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleOpenViewDetails(req)}
@@ -762,14 +818,18 @@ export const PendingFinancialApprovalPage: React.FC = () => {
             {/* Modal Buttons */}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
+                type="button"
+                disabled={isSubmitting}
                 onClick={() => setModalAction(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
+                type="button"
+                disabled={isSubmitting}
                 onClick={handleConfirmAction}
-                className={`px-4 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 ${
+                className={`px-4 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 disabled:opacity-50 ${
                   modalAction === 'APPROVE'
                     ? 'bg-emerald-600 hover:bg-emerald-700'
                     : modalAction === 'REJECT'
@@ -779,12 +839,18 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                     : 'bg-purple-600 hover:bg-purple-700'
                 }`}
               >
-                {modalAction === 'APPROVE' && 'Confirm Approval'}
-                {modalAction === 'REJECT' && 'Confirm Rejection'}
-                {modalAction === 'HOLD' && 'Place on Hold'}
-                {modalAction === 'RECOMMEND_ADMIN' && (
+                {isSubmitting ? (
+                  <span>Processing...</span>
+                ) : (
                   <>
-                    <ArrowUpRight size={14} /> Confirm Recommendation to Admin
+                    {modalAction === 'APPROVE' && 'Confirm Approval'}
+                    {modalAction === 'REJECT' && 'Confirm Rejection'}
+                    {modalAction === 'HOLD' && 'Place on Hold'}
+                    {modalAction === 'RECOMMEND_ADMIN' && (
+                      <>
+                        <ArrowUpRight size={14} /> Confirm Recommendation to Admin
+                      </>
+                    )}
                   </>
                 )}
               </button>
@@ -798,18 +864,84 @@ export const PendingFinancialApprovalPage: React.FC = () => {
         isOpen={!!viewingRequest}
         request={viewingRequest}
         onClose={() => setViewingRequest(null)}
-        onApprove={(req) => {
-          setViewingRequest(null)
-          openAction(req, 'APPROVE')
-        }}
-        onReject={(req) => {
-          setViewingRequest(null)
-          openAction(req, 'REJECT')
-        }}
-        onRecommend={(req) => {
-          setViewingRequest(null)
-          openAction(req, 'RECOMMEND_ADMIN')
-        }}
+        onApprove={(() => {
+          if (!viewingRequest) return undefined
+          const isApp = Boolean(
+            viewingRequest.status === 'approved' ||
+            viewingRequest.status === 'finance_approved' ||
+            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 4) ||
+            viewingRequest.status === 'quotes_received' ||
+            viewingRequest.status === 'assigned_to_vendor' ||
+            viewingRequest.status === 'delivered' ||
+            viewingRequest.status === 'invoiced' ||
+            viewingRequest.status === 'completed' ||
+            viewingRequest.financeApprovedBy ||
+            viewingRequest.financeApprovedDate ||
+            viewingRequest.financeStatus === 'Approved'
+          )
+          const isRej = Boolean(
+            viewingRequest.status === 'rejected' ||
+            viewingRequest.status === 'finance_rejected' ||
+            viewingRequest.financeStatus === 'Rejected'
+          )
+          if (isApp || isRej) return undefined
+          return (req) => {
+            setViewingRequest(null)
+            openAction(req, 'APPROVE')
+          }
+        })()}
+        onReject={(() => {
+          if (!viewingRequest) return undefined
+          const isApp = Boolean(
+            viewingRequest.status === 'approved' ||
+            viewingRequest.status === 'finance_approved' ||
+            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 4) ||
+            viewingRequest.status === 'quotes_received' ||
+            viewingRequest.status === 'assigned_to_vendor' ||
+            viewingRequest.status === 'delivered' ||
+            viewingRequest.status === 'invoiced' ||
+            viewingRequest.status === 'completed' ||
+            viewingRequest.financeApprovedBy ||
+            viewingRequest.financeApprovedDate ||
+            viewingRequest.financeStatus === 'Approved'
+          )
+          const isRej = Boolean(
+            viewingRequest.status === 'rejected' ||
+            viewingRequest.status === 'finance_rejected' ||
+            viewingRequest.financeStatus === 'Rejected'
+          )
+          if (isApp || isRej) return undefined
+          return (req) => {
+            setViewingRequest(null)
+            openAction(req, 'REJECT')
+          }
+        })()}
+        onRecommend={(() => {
+          if (!viewingRequest) return undefined
+          const isApp = Boolean(
+            viewingRequest.status === 'approved' ||
+            viewingRequest.status === 'finance_approved' ||
+            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 4) ||
+            viewingRequest.status === 'quotes_received' ||
+            viewingRequest.status === 'assigned_to_vendor' ||
+            viewingRequest.status === 'delivered' ||
+            viewingRequest.status === 'invoiced' ||
+            viewingRequest.status === 'completed' ||
+            viewingRequest.financeApprovedBy ||
+            viewingRequest.financeApprovedDate ||
+            viewingRequest.financeStatus === 'Approved'
+          )
+          const isRej = Boolean(
+            viewingRequest.status === 'rejected' ||
+            viewingRequest.status === 'finance_rejected' ||
+            viewingRequest.financeStatus === 'Rejected'
+          )
+          if (isApp || isRej) return undefined
+          return (req) => {
+            setViewingRequest(null)
+            openAction(req, 'RECOMMEND_ADMIN')
+          }
+        })()}
       />
 
       {/* Structured Financial Request Approval Dossier Modal (Image 2) */}

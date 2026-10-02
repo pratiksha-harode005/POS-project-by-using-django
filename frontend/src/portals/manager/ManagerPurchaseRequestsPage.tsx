@@ -5,6 +5,7 @@ import {
   Eye, CheckSquare
 } from 'lucide-react'
 import { useManagerData } from '../../context/ManagerDataContext'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -52,7 +53,7 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
           statusFilter === 'ALL' ||
           (statusFilter === 'Pending' && (r.status.includes('pending') || r.status.includes('finance_review') || r.status.includes('sent_to_finance'))) ||
           (statusFilter === 'Approved' && (r.status === 'approved' || r.status === 'finance_approved' || r.financeStatus === 'Approved')) ||
-          (statusFilter === 'Rejected' && (r.status === 'rejected' || r.status === 'finance_rejected'))
+          (statusFilter === 'Rejected' && (r.status === 'rejected' || r.status === 'finance_rejected' || r.status.toLowerCase().includes('reject')))
 
         return matchesSearch && matchesDept && matchesPriority && matchesStatus
       })
@@ -60,9 +61,9 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
         if (sortField === 'amount') {
           return sortAsc ? a.amount - b.amount : b.amount - a.amount
         } else {
-          return sortAsc
-            ? new Date(a.date).getTime() - new Date(b.date).getTime()
-            : new Date(b.date).getTime() - new Date(a.date).getTime()
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.created_at ? new Date(a.created_at).getTime() : new Date(a.date).getTime())
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.created_at ? new Date(b.created_at).getTime() : new Date(b.date).getTime())
+          return sortAsc ? timeA - timeB : timeB - timeA
         }
       })
   }, [allRequests, search, deptFilter, priorityFilter, statusFilter, sortField, sortAsc])
@@ -343,7 +344,7 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
                         </span>
                       </td>
                       <td className="p-4 text-slate-700 font-medium whitespace-nowrap">
-                        {r.date}
+                        {formatDate(r.date)}
                       </td>
                       <td className="p-4 text-center whitespace-nowrap">
                         <button

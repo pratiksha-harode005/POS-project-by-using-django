@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import {
   FileCheck, Clock, CheckCircle, XCircle, Calendar, Search,
   Filter, Download, Eye, ArrowUpRight, ChevronRight, User,
-  Building, DollarSign, AlertTriangle, Check, FileText, Sparkles,
+  Building, IndianRupee, AlertTriangle, Check, FileText, Sparkles,
   Paperclip, ShieldCheck, X
 } from 'lucide-react'
 import { numberToIndianWords } from '../../utils/paymentLedgerPdfGenerator'
@@ -658,12 +658,13 @@ export const ReceivedReportsPage: React.FC = () => {
         statusFilter === 'ALL' || r.status.toUpperCase() === statusFilter
 
       // 3. Search query
+      const q = (search || '').toLowerCase().trim()
       const matchSearch =
-        !search ||
-        r.title.toLowerCase().includes(search.toLowerCase()) ||
-        r.id.toLowerCase().includes(search.toLowerCase()) ||
-        r.teamLead.toLowerCase().includes(search.toLowerCase()) ||
-        r.department.toLowerCase().includes(search.toLowerCase())
+        !q ||
+        String(r.title || '').toLowerCase().includes(q) ||
+        String(r.id || '').toLowerCase().includes(q) ||
+        String(r.teamLead || '').toLowerCase().includes(q) ||
+        String(r.department || '').toLowerCase().includes(q)
 
       // 4. Department filter
       const matchDept = selectedDept === 'All' || r.department === selectedDept

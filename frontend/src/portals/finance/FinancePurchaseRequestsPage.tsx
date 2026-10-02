@@ -11,7 +11,7 @@ const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
 export const FinancePurchaseRequestsPage: React.FC = () => {
   const navigate = useNavigate()
-  const { allRequests, approveFinanceRequest } = useFinanceData()
+  const { financeRequests, approveFinanceRequest } = useFinanceData()
   const [searchParams] = useSearchParams()
 
   // State
@@ -30,10 +30,29 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
 
   const handleConfirmApproval = (params: ApprovalParameters) => {
     if (!approveModalReq) return
+    const isAlreadyApp = Boolean(
+      approveModalReq.financeStatus === 'Approved' ||
+      approveModalReq.status === 'approved' ||
+      approveModalReq.status === 'finance_approved' ||
+      (approveModalReq.currentStage !== undefined && approveModalReq.currentStage >= 4) ||
+      approveModalReq.status === 'quotes_received' ||
+      approveModalReq.status === 'assigned_to_vendor' ||
+      approveModalReq.status === 'delivered' ||
+      approveModalReq.status === 'invoiced' ||
+      approveModalReq.status === 'completed' ||
+      approveModalReq.financeApprovedBy ||
+      approveModalReq.financeApprovedDate
+    )
+    if (isAlreadyApp) {
+      showToast(`Request ${approveModalReq.id} is already approved.`, 'error')
+      setApproveModalReq(null)
+      return
+    }
     approveFinanceRequest(
       approveModalReq.id,
       params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
-      'Mark Finance Officer'
+      'Mark Finance Officer',
+      params.approvedAmount
     )
     showToast(`✓ Request ${approveModalReq.id} approved! Forwarded for PO release.`, 'success')
     setApproveModalReq(null)
@@ -55,18 +74,20 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
 
   // Departments list for dropdown
   const departments = useMemo(() => {
-    return Array.from(new Set(allRequests.map((r) => r.department)))
-  }, [allRequests])
+    return Array.from(new Set(financeRequests.map((r) => r.department)))
+  }, [financeRequests])
 
   // Filtered & Sorted List
   const filteredRequests = useMemo(() => {
-    return allRequests
+    const q = (search || '').toLowerCase().trim()
+    return financeRequests
       .filter((r) => {
         const matchesSearch =
-          r.id.toLowerCase().includes(search.toLowerCase()) ||
-          r.title.toLowerCase().includes(search.toLowerCase()) ||
-          r.requester.toLowerCase().includes(search.toLowerCase()) ||
-          r.department.toLowerCase().includes(search.toLowerCase())
+          !q ||
+          String(r.id || '').toLowerCase().includes(q) ||
+          String(r.title || '').toLowerCase().includes(q) ||
+          String(r.requester || '').toLowerCase().includes(q) ||
+          String(r.department || '').toLowerCase().includes(q)
 
         const matchesDept = deptFilter === 'ALL' || r.department === deptFilter
         const matchesPriority = priorityFilter === 'ALL' || r.priority === priorityFilter
@@ -87,7 +108,7 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
             : new Date(b.date).getTime() - new Date(a.date).getTime()
         }
       })
-  }, [allRequests, search, deptFilter, priorityFilter, statusFilter, sortField, sortAsc])
+  }, [financeRequests, search, deptFilter, priorityFilter, statusFilter, sortField, sortAsc])
 
   // Pagination slice — when pageSize is ALL, all records are displayed
   const actualPageSize = pageSize === 'ALL' ? (filteredRequests.length || 1) : pageSize
@@ -114,7 +135,7 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
             <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
               LEDGER AUDIT
             </span>
-            <span className="text-xs text-slate-400 font-medium">{allRequests.length} Total Enterprise Requests</span>
+            <span className="text-xs text-slate-400 font-medium">{financeRequests.length} Total Enterprise Requests</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1">
             Finance Purchase Requests
@@ -296,9 +317,25 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
                 </tr>
               ) : (
                 paginatedRequests.map((r) => {
-                  const isFinanceApproved = r.financeStatus === 'Approved' || r.status === 'finance_approved'
-                  const isFinanceRejected = r.financeStatus === 'Rejected' || r.status === 'finance_rejected'
-                  const isFinanceHold = r.financeStatus === 'On Hold' || r.status === 'finance_on_hold'
+                  const isFinanceApproved = Boolean(
+                    r.financeStatus === 'Approved' ||
+                    r.status === 'approved' ||
+                    r.status === 'finance_approved' ||
+                    (r.currentStage !== undefined && r.currentStage >= 4) ||
+                    r.status === 'quotes_received' ||
+                    r.status === 'assigned_to_vendor' ||
+                    r.status === 'delivered' ||
+                    r.status === 'invoiced' ||
+                    r.status === 'completed' ||
+                    r.financeApprovedBy ||
+                    r.financeApprovedDate
+                  )
+                  const isFinanceRejected = Boolean(
+                    r.financeStatus === 'Rejected' ||
+                    r.status === 'rejected' ||
+                    r.status === 'finance_rejected'
+                  )
+                  const isFinanceHold = Boolean(r.financeStatus === 'On Hold' || r.status === 'finance_on_hold')
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
@@ -369,7 +406,12 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
                       </td>
                       <td className="p-4 text-center whitespace-nowrap">
                         <div className="inline-flex items-center gap-2">
-                          {!isFinanceApproved && !isFinanceRejected && (
+                          {isFinanceApproved ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-xl shadow-2xs">
+                              <CheckCircle2 size={12} className="text-emerald-700" />
+                              Finance Approved
+                            </span>
+                          ) : !isFinanceRejected ? (
                             <button
                               onClick={() => {
                                 setApproveModalReq(r)
@@ -380,7 +422,7 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
                               <CheckCircle2 size={12} />
                               Approve
                             </button>
-                          )}
+                          ) : null}
                           <button
                             onClick={() => navigate(`/portal/finance/request-details?id=${r.id}`)}
                             className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-300 shadow-2xs transition-all cursor-pointer"

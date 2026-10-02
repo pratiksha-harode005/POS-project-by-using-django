@@ -8,6 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useFinanceData, Complaint, ComplaintStatus } from '../../context/ManagerDataContext'
 import { useAuth } from '../../context/AuthContext'
+import { formatDate } from '../../utils/formatDate'
 
 interface RecentComplaint {
   id: string
@@ -911,7 +912,7 @@ export const FinanceComplaintsPage: React.FC = () => {
                             {c.status}
                           </span>
                         </td>
-                        <td className="py-2.5 text-slate-400 text-right">{c.date}</td>
+                        <td className="py-2.5 text-slate-400 text-right">{formatDate(c.date)}</td>
                       </tr>
                     )
                   })}
@@ -1036,7 +1037,7 @@ export const FinanceComplaintsPage: React.FC = () => {
                           {c.status}
                         </span>
                       </td>
-                      <td className="py-3 text-slate-400 text-right">{c.date}</td>
+                      <td className="py-3 text-slate-400 text-right">{formatDate(c.date)}</td>
                     </tr>
                   ))}
                 </tbody>

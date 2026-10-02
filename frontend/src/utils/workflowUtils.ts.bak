@@ -1,0 +1,331 @@
+/**
+ * Procurement Workflow Utilities
+ * Handles dual workflow models:
+ * 1. SOFTWARE / DIGITAL WORKFLOW (6 Stages):
+ *    Create Request → Manager Approval → Finance Approval → Admin Approval → Verification and Order Complete → Payment
+ * 2. HARDWARE WORKFLOW (10 Stages):
+ *    Create Request → Manager Approval → Finance Approval → Admin Approval → RFQ Sent → Vendor Quotes Received → Delivery → Invoice → Verification and Order Complete → Payment
+ */
+
+export type WorkflowType = 'SOFTWARE' | 'HARDWARE'
+
+export const SOFTWARE_STAGES = [
+  'Create Request',
+  'Manager Approval',
+  'Finance Approval',
+  'Admin Approval',
+  'Verification and Order Complete',
+  'Payment',
+] as const
+
+export const HARDWARE_STAGES = [
+  'Create Request',
+  'Manager Approval',
+  'Finance Approval',
+  'Admin Approval',
+  'RFQ Sent',
+  'Vendor Quotes Received',
+  'Product Order',
+  'Delivery',
+  'Verification and Order Complete',
+  'Payment',
+] as const
+
+const SOFTWARE_CATEGORIES = new Set([
+  'Software & SaaS',
+  'Cloud & Infrastructure',
+  'Cybersecurity',
+  'IT Services',
+  'Training & Certifications',
+  'Software',
+  'SaaS',
+  'Cloud',
+  'Digital',
+  'Subscription',
+  'License',
+])
+
+const SOFTWARE_KEYWORDS = [
+  'software',
+  'saas',
+  'cloud',
+  'license',
+  'subscription',
+  'digital',
+  'api',
+  'aws',
+  'azure',
+  'gcp',
+  'jira',
+  'figma',
+  'slack',
+  'github',
+  'zoom',
+  'antivirus',
+  'database',
+  'security tool',
+  'devops',
+]
+
+const HARDWARE_CATEGORIES = new Set([
+  'IT Hardware',
+  'Office Accessories',
+  'Office Technology',
+  'Networking & Telecom',
+  'Hardware',
+  'Equipment',
+  'Furniture',
+])
+
+/**
+ * Detects whether a request belongs to the Software/Digital or Hardware workflow
+ */
+export function detectWorkflowType(category?: string, title?: string): WorkflowType {
+  const cat = (category || '').trim()
+  const tit = (title || '').toLowerCase()
+
+  if (SOFTWARE_CATEGORIES.has(cat)) return 'SOFTWARE'
+  if (HARDWARE_CATEGORIES.has(cat)) return 'HARDWARE'
+
+  const catLower = cat.toLowerCase()
+  if (SOFTWARE_KEYWORDS.some(k => catLower.includes(k) || tit.includes(k))) {
+    return 'SOFTWARE'
+  }
+
+  // Default to Hardware for physical assets
+  return 'HARDWARE'
+}
+
+export interface WorkflowProgression {
+  workflowType: WorkflowType
+  stages: readonly string[]
+  currentStageIndex: number // 0-based
+  totalStages: number
+  currentStageName: string
+  statusBadge: string
+  isCompleted: boolean
+  isRejected: boolean
+  isReturned: boolean
+  currentlyWith: string
+}
+
+export interface RequestWorkflowInput {
+  status?: string
+  financeStatus?: string
+  category?: string
+  title?: string
+  paymentStatus?: string
+  currentStage?: number
+  history?: any[]
+  workflowTypeOverride?: WorkflowType
+  rfqId?: string
+  rfq_id?: string
+  rfqs?: any[]
+  poNumber?: string
+  po_id?: string
+  po_number?: string
+  grnNumber?: string
+  grn_number?: string
+  receipt_id?: string
+  invoiceNumber?: string
+  invoice_number?: string
+  isVerified?: boolean
+  documentsVerified?: boolean
+  grn_status?: string
+  invoice_status?: string
+  is_invoice_verified?: boolean
+}
+
+/**
+ * Computes the exact progression, current stage index, and visual indicators
+ * for a request according to its workflow type.
+ */
+export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgression {
+  const workflowType = req.workflowTypeOverride || detectWorkflowType(req.category, req.title)
+  const isSoftware = workflowType === 'SOFTWARE'
+  const stages = isSoftware ? SOFTWARE_STAGES : HARDWARE_STAGES
+  const totalStages = stages.length
+
+  const st = (req.status || '').toLowerCase().trim()
+  const fst = (req.financeStatus || '').toLowerCase().trim()
+  const pst = (req.paymentStatus || '').toLowerCase().trim()
+
+  const isCompleted =
+    st === 'completed' ||
+    pst === 'paid' ||
+    fst === 'completed' ||
+    (isSoftware && st === 'payment_pending' && pst === 'paid')
+
+  const isRejected =
+    st === 'rejected' ||
+    st === 'finance_rejected' ||
+    fst.includes('reject')
+
+  const isReturned =
+    st === 'clarification_requested' ||
+    st === 'returned' ||
+    fst.includes('return')
+
+  const hasRfq = Boolean(req.rfqId || req.rfq_id || (Array.isArray(req.rfqs) && req.rfqs.length > 0))
+  const hasQuotes = Boolean(
+    (Array.isArray(req.rfqs) && req.rfqs.some(r => (Array.isArray(r.quotations) && r.quotations.length > 0) || (Array.isArray(r.vendors) && r.vendors.some((v: any) => v.response === 'Received')))) ||
+    st === 'quotes_received' ||
+    st === 'under_evaluation'
+  )
+  const hasPo = Boolean(req.poNumber || req.po_id || req.po_number)
+  const hasGrn = Boolean(req.grnNumber || req.grn_number || req.receipt_id)
+  const hasInvoice = Boolean(req.invoiceNumber || req.invoice_number)
+
+  const checkDocsVerified = (): boolean => {
+    if (req.documentsVerified || req.isVerified) return true
+    if (req.is_invoice_verified && (req.grn_status === 'Verified' || req.grn_status === 'Confirmed')) return true
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const invs: string[] = JSON.parse(localStorage.getItem('kss_manager_verified_invoices') || '[]')
+        const grns: string[] = JSON.parse(localStorage.getItem('kss_manager_verified_grns') || '[]')
+        const keys = [
+          req.invoiceNumber,
+          req.invoice_number,
+          req.grnNumber,
+          req.grn_number,
+          req.poNumber,
+          req.po_id,
+          req.po_number,
+          req.rfqId,
+          req.rfq_id,
+        ].filter(Boolean) as string[]
+
+        const hasInvVerified = keys.some(k => invs.some(i => i.toUpperCase().includes(k.toUpperCase()) || k.toUpperCase().includes(i.toUpperCase())))
+        const hasGrnVerified = keys.some(k => grns.some(g => g.toUpperCase().includes(k.toUpperCase()) || k.toUpperCase().includes(g.toUpperCase())))
+        if (hasInvVerified && (hasGrnVerified || hasGrn)) return true
+      } catch (e) {}
+    }
+    return false
+  }
+
+  const areDocsVerified = checkDocsVerified()
+
+  let effectiveStage = req.currentStage
+  if (!isSoftware && !isRejected && !isReturned && !isCompleted) {
+    if (typeof effectiveStage === 'number') {
+      if (hasRfq && effectiveStage < 4) effectiveStage = 4
+      if (hasQuotes && effectiveStage < 5) effectiveStage = 5
+      if (hasPo && effectiveStage < 6) effectiveStage = 6
+      if (hasGrn && effectiveStage < 7) effectiveStage = 7
+      if (areDocsVerified && effectiveStage < 8) effectiveStage = 8
+    } else {
+      if (areDocsVerified) effectiveStage = 8
+      else if (hasGrn) effectiveStage = 7
+      else if (hasPo) effectiveStage = 6
+      else if (hasQuotes) effectiveStage = 5
+      else if (hasRfq) effectiveStage = 4
+    }
+  }
+
+  // Determine stageIndex based on effectiveStage or string status
+  let stageIndex = 0
+  if (typeof effectiveStage === 'number' && !isNaN(effectiveStage)) {
+    stageIndex = Math.min(Math.max(effectiveStage, 0), totalStages - 1)
+  } else {
+    // String status fallback
+    if (isSoftware) {
+      if (st === 'pending_arrival' || st === 'draft') stageIndex = 0
+      else if (st === 'pending_approval' || st === 'pending') stageIndex = 1
+      else if (st === 'finance_review' || st === 'sent_to_finance' || st === 'recommended_to_finance' || st === 'recommended') stageIndex = 2
+      else if (st === 'recommended_to_admin' || fst === 'recommended to admin') stageIndex = 3
+      else if (st === 'approved' || st === 'in_procurement' || st === 'verified' || st === 'order_complete') stageIndex = 4
+      else stageIndex = 5
+    } else {
+      if (st === 'pending_arrival' || st === 'draft') stageIndex = 0
+      else if (st === 'pending_approval' || st === 'pending') stageIndex = 1
+      else if (st === 'finance_review' || st === 'sent_to_finance' || st === 'recommended_to_finance' || st === 'recommended') stageIndex = 2
+      else if (st === 'recommended_to_admin' || fst === 'recommended to admin') stageIndex = 3
+      else if (st === 'approved' || st === 'rfq_pending' || st === 'rfq_sent') stageIndex = 4
+      else if (st === 'quotes_received' || st === 'under_evaluation') stageIndex = 5
+      else if (st === 'in_procurement' || st === 'product_order' || st === 'assigned_to_vendor') stageIndex = 6
+      else if (st === 'delivered' || st === 'delivery' || st === 'goods_received') stageIndex = 7
+      else if (st === 'verified' || st === 'order_complete' || st === 'matched') stageIndex = 8
+      else stageIndex = 9
+    }
+  }
+
+  if (isCompleted) {
+    stageIndex = totalStages - 1
+  } else if (isReturned) {
+    stageIndex = 0
+  }
+
+  const currentStageName = stages[stageIndex] || stages[0]
+
+  let currentlyWith = 'Requester'
+  if (isCompleted) {
+    currentlyWith = 'Completed & Archived'
+  } else if (isReturned) {
+    currentlyWith = 'Returned to Team Lead'
+  } else if (isRejected) {
+    currentlyWith = 'Rejected & Closed'
+  } else {
+    switch (currentStageName) {
+      case 'Create Request':
+        currentlyWith = 'Team Lead / Requester'
+        break
+      case 'Manager Approval':
+        currentlyWith = 'Manager — Sarah Manager'
+        break
+      case 'Finance Approval':
+        currentlyWith = 'Finance — Mark Finance Officer'
+        break
+      case 'Admin Approval':
+        currentlyWith = 'Admin — Executive Authority'
+        break
+      case 'RFQ Sent':
+        currentlyWith = 'Procurement Sourcing Desk (RFQ Dispatched)'
+        break
+      case 'Vendor Quotes Received':
+        currentlyWith = 'Vendor Sourcing Desk (Quotations Under Evaluation)'
+        break
+      case 'Product Order':
+        currentlyWith = 'Selected Vendor (Purchase Order Issued)'
+        break
+      case 'Delivery':
+        currentlyWith = 'Dock & Receiving (Shipment & Delivery Challan)'
+        break
+      case 'Verification and Order Complete':
+        currentlyWith = isSoftware
+          ? 'IT Operations & Provisioning (License Verification)'
+          : 'Accounts Payable & Procurement Audit (Goods Receipt & Invoice Match)'
+        break
+      case 'Payment':
+        currentlyWith = isSoftware
+          ? 'Accounts & Treasury (Payment Processing)'
+          : 'Finance Treasury (Payment Processing & Disbursement)'
+        break
+      default:
+        currentlyWith = 'Procurement System'
+    }
+  }
+
+  let statusBadge = ''
+  if (isCompleted) {
+    statusBadge = '100% Completed / Paid'
+  } else if (isRejected) {
+    statusBadge = `Rejected (Stage ${stageIndex + 1}/${totalStages})`
+  } else if (isReturned) {
+    statusBadge = `Returned (Stage ${stageIndex + 1}/${totalStages})`
+  } else {
+    statusBadge = `${currentStageName} (Stage ${stageIndex + 1}/${totalStages})`
+  }
+
+  return {
+    workflowType,
+    stages,
+    currentStageIndex: stageIndex,
+    totalStages,
+    currentStageName,
+    statusBadge,
+    isCompleted,
+    isRejected,
+    isReturned,
+    currentlyWith,
+  }
+}

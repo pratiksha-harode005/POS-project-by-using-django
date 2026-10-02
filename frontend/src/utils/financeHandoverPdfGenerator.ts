@@ -173,7 +173,7 @@ export async function generateFinanceHandoverPdf(options: HandoverPdfOptions): P
       { content: 'Approval Routing:', styles: { fontStyle: 'bold', textColor: [100, 116, 139] } },
       { content: req.approvalLevel || 'Level 2 - Manager Sign-off', styles: { textColor: [15, 23, 42] } },
       { content: 'Handover Status:', styles: { fontStyle: 'bold', textColor: [100, 116, 139] } },
-      { content: 'Verified & Forwarded to Finance', styles: { textColor: [147, 51, 234], fontStyle: 'bold' } },
+      { content: (req.paymentStatus === 'Paid' || req.paymentTransactionRef) ? `Settled (UTR: ${req.paymentTransactionRef || 'TREASURY-PAID'})` : 'Verified & Forwarded to Finance', styles: { textColor: (req.paymentStatus === 'Paid' || req.paymentTransactionRef) ? [22, 101, 52] : [147, 51, 234], fontStyle: 'bold' } },
     ],
   ]
 
@@ -400,7 +400,7 @@ export async function generateFinanceHandoverPdf(options: HandoverPdfOptions): P
   doc.setTextColor(100, 116, 139)
   doc.text(`Transmitted By: ${managerName}`, midX, footerY + 30)
   doc.text(`Designation: Procurement Authority & Line Manager`, midX, footerY + 41)
-  doc.text(`Audit Trail Token: SHA256-${req.id.replace(/-/g, '')}-VERIFIED`, midX, footerY + 52)
+  doc.text(`Audit Trail Token: SHA256-${String(req.id || '').replace(/-/g, '')}-VERIFIED`, midX, footerY + 52)
 
   // Right Signature Block
   const sigX = pageWidth - margin - 12

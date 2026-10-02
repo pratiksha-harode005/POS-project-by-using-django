@@ -5,7 +5,7 @@ import {
   FileText, Check, X, AlertCircle, ArrowUpRight, Search,
   Filter, Calendar, Building, User, Layers, Printer,
   Eye, ChevronRight, HelpCircle, AlertTriangle, CheckSquare,
-  DollarSign, TrendingUp, Sparkles, Tag, Shield
+  IndianRupee, TrendingUp, Sparkles, Tag, Shield
 } from 'lucide-react'
 import { useManagerData, ProcurementRequest, TicketProduct, ApprovalParameters } from '../../context/ManagerDataContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
@@ -14,6 +14,7 @@ import { RequestDetailsModal } from '../../components/portal/RequestDetailsModal
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
 import { DocumentPdfViewerModal } from '../../components/portal/DocumentPdfViewerModal'
 import { getWorkflowProgression } from '../../utils/workflowUtils'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -73,6 +74,13 @@ export const AdminRequestsPage: React.FC = () => {
   // Modals
   const [viewReq, setViewReq] = useState<ProcurementRequest | null>(null)
   const [trackingReq, setTrackingReq] = useState<ProcurementRequest | null>(null)
+
+  // Live updated reference to tracking request from allRequests state
+  const liveTrackingReq = useMemo(() => {
+    if (!trackingReq) return null
+    return allRequests.find(r => r.id === trackingReq.id) || trackingReq
+  }, [trackingReq, allRequests])
+
   const [viewModalDoc, setViewModalDoc] = useState<{
     docType: 'productOrder' | 'goodsReceipt' | 'invoice'
     product: TicketProduct
@@ -80,10 +88,10 @@ export const AdminRequestsPage: React.FC = () => {
 
   // Products belonging to the current tracking request
   const matchedTicketProducts = useMemo(() => {
-    if (!trackingReq) return []
-    const ticket = tickets?.find(t => t.requestId === trackingReq.id || t.id === trackingReq.id)
+    if (!liveTrackingReq) return []
+    const ticket = tickets?.find(t => t.requestId === liveTrackingReq.id || t.id === liveTrackingReq.id)
     return ticket?.products || []
-  }, [trackingReq, tickets])
+  }, [liveTrackingReq, tickets])
   const [rejectModalReq, setRejectModalReq] = useState<ProcurementRequest | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [returnModalReq, setReturnModalReq] = useState<ProcurementRequest | null>(null)
@@ -108,19 +116,38 @@ export const AdminRequestsPage: React.FC = () => {
   // Segmented request lists - strictly single active stage for Admin
   const pendingRequests = useMemo(() => {
     return allRequests.filter(r => {
-      return r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin'
+      const isApp = (
+        r.status === 'approved' ||
+        r.status === 'finance_approved' ||
+        (r.status as string) === 'In Procurement' ||
+        r.status === 'payment_pending' ||
+        r.status === 'completed' ||
+        r.financeStatus === 'Admin Approved' ||
+        r.financeStatus === 'Admin Approved - Queued for Payment' ||
+        r.financeStatus === 'Completed' ||
+        r.financeStatus === 'Approved' ||
+        (r.currentStage !== undefined && r.currentStage >= 4)
+      )
+      const isRej = r.status.includes('rejected') || Boolean(r.financeStatus?.includes('Rejected'))
+      const isRet = r.status === 'clarification_requested' || Boolean(r.financeStatus?.includes('Returned'))
+      if (isApp || isRej || isRet) return false
+      return r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin' || (r.currentStage === 3 && (r.status as string) !== 'approved')
     })
   }, [allRequests])
 
   const approvedRequests = useMemo(() => {
     return allRequests.filter(r => {
       return (
+        r.status === 'approved' ||
+        r.status === 'finance_approved' ||
+        (r.status as string) === 'In Procurement' ||
         r.status === 'payment_pending' ||
         r.status === 'completed' ||
         r.financeStatus === 'Admin Approved' ||
         r.financeStatus === 'Admin Approved - Queued for Payment' ||
         r.financeStatus === 'Completed' ||
-        (r.status === 'approved' && Boolean(r.approvedBy?.includes('Admin')))
+        r.financeStatus === 'Approved' ||
+        (r.currentStage !== undefined && r.currentStage >= 4)
       )
     })
   }, [allRequests])
@@ -201,7 +228,8 @@ export const AdminRequestsPage: React.FC = () => {
     adminApproveRequest(
       approveModalReq.id,
       params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
-      'Executive Administrator'
+      'Executive Administrator',
+      params.approvedAmount
     )
     showToast(`✓ Request ${approveModalReq.id} approved with executive authority!`, 'success')
     setApproveModalReq(null)
@@ -550,10 +578,22 @@ export const AdminRequestsPage: React.FC = () => {
             })
             const currentStage = prog.currentStageIndex + 1
             const totalStages = prog.totalStages
-            const isApproved = statusFilter === 'APPROVED' || req.status === 'approved' || req.status === 'finance_approved' || req.financeStatus === 'Admin Approved'
+            const isApproved = (
+              statusFilter === 'APPROVED' ||
+              req.status === 'approved' ||
+              req.status === 'finance_approved' ||
+              (req.status as string) === 'In Procurement' ||
+              req.status === 'payment_pending' ||
+              req.status === 'completed' ||
+              req.financeStatus === 'Admin Approved' ||
+              req.financeStatus === 'Admin Approved - Queued for Payment' ||
+              req.financeStatus === 'Approved' ||
+              req.financeStatus === 'Completed' ||
+              (req.currentStage !== undefined && req.currentStage >= 4)
+            )
             const isRejected = statusFilter === 'REJECTED' || req.status === 'rejected' || req.status === 'finance_rejected' || Boolean(req.financeStatus?.includes('Rejected'))
             const isReturned = statusFilter === 'RETURNED' || req.status === 'clarification_requested' || Boolean(req.financeStatus?.includes('Returned'))
-            const isPendingFinal = req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin'
+            const isPendingFinal = !isApproved && !isRejected && !isReturned && (req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin' || (req.currentStage === 3 && (req.status as string) !== 'approved'))
 
             // Matched budget for live budget availability check
             const matchedBudget = budgets?.find(
@@ -625,7 +665,7 @@ export const AdminRequestsPage: React.FC = () => {
                     <p className="text-xs text-slate-600 font-medium">
                       Requester: <b className="text-slate-950 font-bold">{req.requester}</b> • Department:{' '}
                       <b className="text-slate-950 font-bold">{req.department}</b> • Category:{' '}
-                      <b className="text-slate-950 font-bold">{req.category}</b> • Date: <b className="text-indigo-900 font-bold">{req.date}</b>
+                      <b className="text-slate-950 font-bold">{req.category}</b> • Date: <b className="text-indigo-900 font-bold">{formatDate(req.date)}</b>
                     </p>
                   </div>
 
@@ -779,7 +819,7 @@ export const AdminRequestsPage: React.FC = () => {
       </div>
 
       {/* Modal 1: Request Progress Tracking Stepper */}
-      {trackingReq && (
+      {liveTrackingReq && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
           <div className="bg-white rounded-2xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-purple-900 to-indigo-900 text-white">
@@ -788,7 +828,7 @@ export const AdminRequestsPage: React.FC = () => {
                   Request Progress Tracking
                 </span>
                 <h3 className="text-base font-bold">
-                  Tracking: {trackingReq.title} ({trackingReq.id})
+                  Tracking: {liveTrackingReq.title} ({liveTrackingReq.id})
                 </h3>
               </div>
               <button
@@ -803,22 +843,29 @@ export const AdminRequestsPage: React.FC = () => {
               <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase">Department / Requester</span>
-                  <strong className="text-slate-800">{trackingReq.department} • {trackingReq.requester}</strong>
+                  <strong className="text-slate-800">{liveTrackingReq.department} • {liveTrackingReq.requester}</strong>
                 </div>
                 <div className="text-right">
                   <span className="text-slate-400 block text-[10px] uppercase">Requisition Value</span>
-                  <strong className="text-slate-900 font-bold text-sm">{fmt(trackingReq.amount)}</strong>
+                  <strong className="text-slate-900 font-bold text-sm">{fmt(liveTrackingReq.amount)}</strong>
                 </div>
               </div>
 
               <TrackingStepper
-                category={trackingReq.category}
-                title={trackingReq.title}
-                status={trackingReq.status}
-                financeStatus={trackingReq.financeStatus}
-                paymentStatus={trackingReq.paymentStatus}
-                lastUpdated={trackingReq.date}
-                history={trackingReq.history}
+                currentStage={liveTrackingReq.currentStage}
+                category={liveTrackingReq.category}
+                title={liveTrackingReq.title}
+                status={liveTrackingReq.status}
+                approval_steps={(liveTrackingReq as any).approval_steps}
+                financeStatus={liveTrackingReq.financeStatus}
+                paymentStatus={liveTrackingReq.paymentStatus}
+                lastUpdated={liveTrackingReq.date}
+                history={liveTrackingReq.history}
+                poNumber={(liveTrackingReq as any).poNumber || (liveTrackingReq as any).po_number}
+                grnNumber={(liveTrackingReq as any).grnNumber || (liveTrackingReq as any).grn_number}
+                invoiceNumber={(liveTrackingReq as any).invoiceNumber || (liveTrackingReq as any).invoice_number}
+                is_invoice_verified={(liveTrackingReq as any).is_invoice_verified}
+                rfqId={(liveTrackingReq as any).rfqId || (liveTrackingReq as any).rfq_id}
               />
 
               {/* Product-Level Tracking & Multi-Receipt Lifecycle */}
@@ -848,7 +895,7 @@ export const AdminRequestsPage: React.FC = () => {
                       const grnVerified = prod.goodsReceipt.verified
                       const invVerified = prod.invoice.verified
                       const allDocsVerified = grnVerified && invVerified
-                      const isPaid = prod.paymentSettled || trackingReq.paymentStatus === 'Paid' || trackingReq.status === 'completed'
+                      const isPaid = prod.paymentSettled || liveTrackingReq.paymentStatus === 'Paid' || liveTrackingReq.status === 'completed'
 
                       return (
                         <div key={prod.id || idx} className="bg-slate-50/60 rounded-2xl border border-slate-200 p-5 space-y-4 shadow-2xs">
@@ -894,7 +941,7 @@ export const AdminRequestsPage: React.FC = () => {
                               </div>
                               <div>
                                 <p className="font-mono text-xs font-bold text-slate-900">{prod.productOrder.id}</p>
-                                <p className="text-[10px] text-slate-500">Date: {prod.productOrder.date || trackingReq.date}</p>
+                                <p className="text-[10px] text-slate-500">Date: {formatDate(prod.productOrder.date || liveTrackingReq.date)}</p>
                               </div>
                               <button
                                 type="button"
@@ -1127,17 +1174,29 @@ export const AdminRequestsPage: React.FC = () => {
             title: viewModalDoc.product.name,
             subtitle: `${viewModalDoc.product.quantity} ${viewModalDoc.product.unit} • ${viewModalDoc.product.vendor}`,
             vendor: viewModalDoc.product.vendor,
-            date: viewModalDoc.product[viewModalDoc.docType].date || viewModalDoc.product[viewModalDoc.docType].receivedDate || viewModalDoc.product[viewModalDoc.docType].invoiceDate || trackingReq?.date || '2026-09-18',
+            date: viewModalDoc.product[viewModalDoc.docType].date || viewModalDoc.product[viewModalDoc.docType].receivedDate || viewModalDoc.product[viewModalDoc.docType].invoiceDate || liveTrackingReq?.date || '2026-09-18',
             amount: viewModalDoc.product.totalAmount,
             verified: viewModalDoc.product[viewModalDoc.docType].verified,
             verifiedBy: viewModalDoc.product[viewModalDoc.docType].verifiedBy,
             verifiedAt: viewModalDoc.product[viewModalDoc.docType].verifiedAt,
             gstNumber: viewModalDoc.product.invoice.gstNumber,
-            taxAmount: viewModalDoc.product.invoice.taxAmount,
+            taxAmount: viewModalDoc.product[viewModalDoc.docType]?.taxAmount ?? viewModalDoc.product.invoice.taxAmount ?? viewModalDoc.product.goodsReceipt.taxAmount,
+            baseAmount: viewModalDoc.product[viewModalDoc.docType]?.baseAmount ?? viewModalDoc.product.goodsReceipt.baseAmount ?? viewModalDoc.product.invoice.baseAmount,
+            gstRate: viewModalDoc.product[viewModalDoc.docType]?.gstRate ?? viewModalDoc.product.goodsReceipt.gstRate ?? viewModalDoc.product.invoice.gstRate,
             receivedQty: viewModalDoc.product.goodsReceipt.receivedQty,
             acceptedQty: viewModalDoc.product.goodsReceipt.acceptedQty,
             unit: viewModalDoc.product.unit,
-            productDetails: viewModalDoc.product[viewModalDoc.docType].productDetails || `${viewModalDoc.product.quantity}x ${viewModalDoc.product.name}`
+            productDetails: viewModalDoc.product[viewModalDoc.docType].productDetails || `${viewModalDoc.product.quantity}x ${viewModalDoc.product.name}`,
+            warrantyDuration: viewModalDoc.product.goodsReceipt.warrantyDuration || viewModalDoc.product.warrantyDuration,
+            freeServiceCount: viewModalDoc.product.goodsReceipt.freeServiceCount || viewModalDoc.product.freeServiceCount,
+            installationType: viewModalDoc.product.goodsReceipt.installationType || viewModalDoc.product.installationType,
+            techSupportDuration: viewModalDoc.product.goodsReceipt.techSupportDuration || viewModalDoc.product.techSupportDuration,
+            replacementPolicy: viewModalDoc.product.goodsReceipt.replacementPolicy || viewModalDoc.product.replacementPolicy,
+            accessoriesIncluded: viewModalDoc.product.goodsReceipt.accessoriesIncluded || viewModalDoc.product.accessoriesIncluded,
+            leadTime: viewModalDoc.product.goodsReceipt.leadTime || viewModalDoc.product.leadTime,
+            notes: viewModalDoc.product.goodsReceipt.notes || viewModalDoc.product.notes,
+            expectedDeliveryDate: viewModalDoc.product.goodsReceipt.expectedDeliveryDate || viewModalDoc.product.expectedDeliveryDate,
+            grnDocNumber: viewModalDoc.product.goodsReceipt.grnDocNumber
           }}
           onClose={() => setViewModalDoc(null)}
         />

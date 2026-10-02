@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import {
-  GitCompare, Award, CheckCircle, ShieldCheck, DollarSign,
+  GitCompare, Award, CheckCircle, ShieldCheck, IndianRupee,
   Clock, Check, X, AlertTriangle, ArrowRight, Layers
 } from 'lucide-react'
 import { useManagerData, QuotationItem } from '../../context/ManagerDataContext'

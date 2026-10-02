@@ -16,23 +16,27 @@ export const FinanceApprovedRejectedPage: React.FC = () => {
 
   // Approved records matching search
   const filteredApproved = useMemo(() => {
+    const q = (search || '').toLowerCase().trim()
+    if (!q) return approvedFinanceRequests
     return approvedFinanceRequests.filter((r) => {
       return (
-        r.id.toLowerCase().includes(search.toLowerCase()) ||
-        r.title.toLowerCase().includes(search.toLowerCase()) ||
-        (r.financeApprovedBy || '').toLowerCase().includes(search.toLowerCase())
+        String(r.id || '').toLowerCase().includes(q) ||
+        String(r.title || '').toLowerCase().includes(q) ||
+        String(r.financeApprovedBy || '').toLowerCase().includes(q)
       )
     })
   }, [approvedFinanceRequests, search])
 
   // Rejected records matching search
   const filteredRejected = useMemo(() => {
+    const q = (search || '').toLowerCase().trim()
+    if (!q) return rejectedFinanceRequests
     return rejectedFinanceRequests.filter((r) => {
       return (
-        r.id.toLowerCase().includes(search.toLowerCase()) ||
-        r.title.toLowerCase().includes(search.toLowerCase()) ||
-        (r.rejectionReason || '').toLowerCase().includes(search.toLowerCase()) ||
-        (r.rejectedBy || '').toLowerCase().includes(search.toLowerCase())
+        String(r.id || '').toLowerCase().includes(q) ||
+        String(r.title || '').toLowerCase().includes(q) ||
+        String(r.rejectionReason || '').toLowerCase().includes(q) ||
+        String(r.rejectedBy || '').toLowerCase().includes(q)
       )
     })
   }, [rejectedFinanceRequests, search])

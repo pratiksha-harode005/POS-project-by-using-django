@@ -10,6 +10,7 @@ import { useManagerData, PurchaseOrderItem, VendorInvoice } from '../../context/
 import { useAuth } from '../../context/AuthContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
 import { detectWorkflowType } from '../../utils/workflowUtils'
+import { formatDate } from '../../utils/formatDate'
 
 const REJECTION_REASONS = [
   { value: 'Price Mismatch with PO', label: 'Price Mismatch with PO', desc: 'Billed rates or item totals differ from approved Purchase Order terms.' },
@@ -51,7 +52,7 @@ export const ManagerPurchaseOrdersPage: React.FC = () => {
 
   // Combined PO + Invoice records
   const combinedRecords = useMemo(() => {
-    return purchaseOrders.map(po => {
+    const records = purchaseOrders.map(po => {
       const matchedInvoice = invoices.find(inv =>
         inv.poId === po.id ||
         inv.poNumber === po.poNumber ||
@@ -86,6 +87,15 @@ export const ManagerPurchaseOrdersPage: React.FC = () => {
         docType,
       }
     })
+
+    records.sort((a, b) => {
+      const dateA = (a.po as any)?.issueDate || (a.po as any)?.created_at || (a.po as any)?.date || ''
+      const dateB = (b.po as any)?.issueDate || (b.po as any)?.created_at || (b.po as any)?.date || ''
+      if (dateA && dateB && dateA !== dateB) return dateA.localeCompare(dateB)
+      return (a.po?.id || '').localeCompare(b.po?.id || '')
+    })
+
+    return records
   }, [purchaseOrders, invoices])
 
   // Unique list of vendors and team leads for dynamic filter dropdowns
@@ -992,7 +1002,7 @@ export const ManagerPurchaseOrdersPage: React.FC = () => {
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[11px]">Due Date</span>
-                          <span className="font-semibold text-slate-700">{selectedInvoice.dueDate}</span>
+                          <span className="font-semibold text-slate-700">{formatDate(selectedInvoice.dueDate)}</span>
                         </div>
                       </div>
 

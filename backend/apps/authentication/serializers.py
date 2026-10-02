@@ -1,23 +1,13 @@
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from apps.users.serializers import UserSerializer
+from django.db.models import Q
 
 User = get_user_model()
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
-        username_or_email = attrs.get('username', '')
-
-        # If user entered an email address instead of username, resolve to actual username
-        if '@' in username_or_email:
-            try:
-                user = User.objects.get(email__iexact=username_or_email)
-                attrs['username'] = user.username
-            except User.DoesNotExist:
-                # Try fallback matching username
-                pass
-
         data = super().validate(attrs)
         data['user'] = UserSerializer(self.user).data
         return data
@@ -31,3 +21,4 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         if user.vendor_id_code:
             token['vendor_id_code'] = user.vendor_id_code
         return token
+

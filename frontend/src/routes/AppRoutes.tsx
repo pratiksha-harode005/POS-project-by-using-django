@@ -81,7 +81,6 @@ import {
   VendorQuotationsPage,
   VendorPurchaseOrdersPage,
   VendorDeliveriesPage,
-  VendorReceiptsPage,
   VendorInvoicesPage,
   VendorPaymentStatusPage,
   VendorDocumentsPage,
@@ -130,6 +129,7 @@ export default function AppRoutes() {
 function TeamLeadRoutes() {
   return (
     <Routes>
+      <Route index element={<Navigate to="/portal/team_lead/dashboard" replace />} />
       <Route path="dashboard" element={<TeamLeadDashboard />} />
       <Route path="my-requests" element={<MyRequestsPage />} />
       <Route path="create-request" element={<CreateRequestPage />} />
@@ -137,7 +137,7 @@ function TeamLeadRoutes() {
       <Route path="payment-status" element={<PaymentStatusPage />} />
       <Route path="notifications" element={<SharedNotificationsPage />} />
       <Route path="profile" element={<SharedProfilePage />} />
-      <Route path="*" element={<Navigate to="dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/portal/team_lead/dashboard" replace />} />
     </Routes>
   )
 }
@@ -145,6 +145,7 @@ function TeamLeadRoutes() {
 function ManagerRoutes() {
   return (
     <Routes>
+      <Route index element={<Navigate to="/portal/manager/dashboard" replace />} />
       <Route path="dashboard" element={<ManagerDashboard />} />
       <Route path="request-arrival" element={<RequestArrivalPage />} />
       <Route path="my-requests" element={<MyOrdersPage />} />
@@ -159,19 +160,19 @@ function ManagerRoutes() {
       <Route path="raise-ticket" element={<RaiseTicketPage />} />
       <Route path="raise-complaint" element={<RaiseComplaintPage />} />
       {/* Backward compat redirect */}
-      <Route path="three-way-matching" element={<Navigate to="raise-ticket" replace />} />
+      <Route path="three-way-matching" element={<Navigate to="/portal/manager/raise-ticket" replace />} />
       <Route path="request-details" element={<ManagerRequestDetailsPage />} />
       <Route path="history" element={<ApprovedRejectedPage />} />
       <Route path="recommended-finance" element={<RecommendedToFinancePage />} />
       <Route path="payments" element={<FinancePaymentsPage />} />
       <Route path="payment" element={<FinancePaymentsPage />} />
-      <Route path="budgets" element={<Navigate to="payments" replace />} />
+      <Route path="budgets" element={<Navigate to="/portal/manager/payments" replace />} />
       <Route path="rfqs" element={<ManagerRFQsPage />} />
       <Route path="vendor-quotations" element={<CommonVendorQuotationsPage role="MANAGER" />} />
       <Route path="received-reports" element={<ReceivedReportsPage />} />
       <Route path="notifications" element={<SharedNotificationsPage />} />
       <Route path="profile" element={<SharedProfilePage />} />
-      <Route path="*" element={<Navigate to="dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/portal/manager/dashboard" replace />} />
     </Routes>
   )
 }
@@ -179,6 +180,7 @@ function ManagerRoutes() {
 function FinanceRoutes() {
   return (
     <Routes>
+      <Route index element={<Navigate to="/portal/finance/dashboard" replace />} />
       <Route path="dashboard" element={<FinanceDashboard />} />
       <Route path="my-requests" element={<FinanceMyRequestsPage />} />
       <Route path="my-orders" element={<FinanceMyRequestsPage />} />
@@ -201,7 +203,7 @@ function FinanceRoutes() {
       <Route path="received-reports" element={<FinanceReceivedReportsPage />} />
       <Route path="notifications" element={<SharedNotificationsPage />} />
       <Route path="profile" element={<SharedProfilePage />} />
-      <Route path="*" element={<Navigate to="dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/portal/finance/dashboard" replace />} />
     </Routes>
   )
 }
@@ -209,13 +211,14 @@ function FinanceRoutes() {
 function AdminRoutes() {
   return (
     <Routes>
+      <Route index element={<Navigate to="/portal/admin/dashboard" replace />} />
       <Route path="dashboard" element={<AdminDashboard />} />
       <Route path="requests" element={<AdminRequestsPage />} />
       <Route path="vendors" element={<AdminVendorsPage />} />
       <Route path="rfqs" element={<ManagerRFQsPage />} />
       <Route path="quotations" element={<CommonVendorQuotationsPage role="ADMIN" />} />
       <Route path="vendor-quotations" element={<CommonVendorQuotationsPage role="ADMIN" />} />
-      <Route path="vendor-comparison" element={<Navigate to="vendor-quotations" replace />} />
+      <Route path="vendor-comparison" element={<Navigate to="/portal/admin/vendor-quotations" replace />} />
       <Route path="purchase-orders" element={<AdminPurchaseOrdersPage />} />
       <Route path="receipts" element={<AdminReceiptsPage />} />
       <Route path="contracts" element={<AdminContractsPage />} />
@@ -227,7 +230,7 @@ function AdminRoutes() {
       <Route path="raise-complaint" element={<RaiseComplaintPage />} />
       <Route path="notifications" element={<SharedNotificationsPage />} />
       <Route path="profile" element={<SharedProfilePage />} />
-      <Route path="*" element={<Navigate to="dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/portal/admin/dashboard" replace />} />
     </Routes>
   )
 }
@@ -246,7 +249,7 @@ function VendorRoutes() {
       <Route path="vendor/:vendorId/quotations" element={<VendorQuotationsPage />} />
       <Route path="vendor/:vendorId/purchase-orders" element={<VendorPurchaseOrdersPage />} />
       <Route path="vendor/:vendorId/deliveries" element={<VendorDeliveriesPage />} />
-      <Route path="vendor/:vendorId/receipts" element={<VendorReceiptsPage />} />
+      <Route path="vendor/:vendorId/receipts" element={<Navigate to="../documents" replace />} />
       <Route path="vendor/:vendorId/invoices" element={<VendorInvoicesPage />} />
       <Route path="vendor/:vendorId/payment-status" element={<VendorPaymentStatusPage />} />
       <Route path="vendor/:vendorId/notifications" element={<SharedNotificationsPage />} />
@@ -260,7 +263,7 @@ function VendorRoutes() {
       <Route path="quotations" element={<VendorQuotationsPage />} />
       <Route path="purchase-orders" element={<VendorPurchaseOrdersPage />} />
       <Route path="deliveries" element={<VendorDeliveriesPage />} />
-      <Route path="receipts" element={<VendorReceiptsPage />} />
+      <Route path="receipts" element={<Navigate to="/portal/vendor/documents" replace />} />
       <Route path="invoices" element={<VendorInvoicesPage />} />
       <Route path="payment-status" element={<VendorPaymentStatusPage />} />
       <Route path="notifications" element={<SharedNotificationsPage />} />

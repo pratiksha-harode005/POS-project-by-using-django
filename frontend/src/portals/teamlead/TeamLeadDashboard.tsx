@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus,
@@ -21,6 +21,9 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useProcurement } from '../../context/ProcurementContext'
+import { useAuth } from '../../context/AuthContext'
+import { getNotifications, markNotificationRead, BackendNotification } from '../../api/notificationApi'
+import { formatDate } from '../../utils/formatDate'
 
 const STATUS_COLORS: Record<string, string> = {
   Pending: '#f59e0b',
@@ -34,7 +37,51 @@ const STATUS_COLORS: Record<string, string> = {
 
 export const TeamLeadDashboard: React.FC = () => {
   const navigate = useNavigate()
-  const { requests, notifications } = useProcurement()
+  const { user, role } = useAuth()
+  const { requests, notifications: contextNotifications } = useProcurement()
+  const [liveNotifications, setLiveNotifications] = useState<any[]>([])
+
+  const fetchLiveNotifications = useCallback(async () => {
+    try {
+      const activeRole = (role || 'TEAM_LEAD').toUpperCase()
+      let params: { role?: string; user?: string } = { role: activeRole }
+      if (user?.username) {
+        params = { user: user.username, role: activeRole }
+      }
+      const data: BackendNotification[] = await getNotifications(params)
+      if (Array.isArray(data) && data.length > 0) {
+        setLiveNotifications(
+          data.map((n) => ({
+            id: n.id,
+            title: n.title || 'System Notification',
+            message: n.message || '',
+            timestamp: n.timestamp || 'Just now',
+            isRead: n.is_read !== undefined ? Boolean(n.is_read) : Boolean(n.isRead),
+            requestId: n.request_id || n.requestId || (n.purchase_request ? `REQ-${n.purchase_request}` : undefined),
+            category: n.category || 'Approval',
+            targetRole: activeRole,
+          }))
+        )
+      }
+    } catch (err) {
+      console.warn('Failed to fetch live notifications for TeamLeadDashboard:', err)
+    }
+  }, [user?.username, role])
+
+  useEffect(() => {
+    fetchLiveNotifications()
+    const handleUpdate = () => fetchLiveNotifications()
+    window.addEventListener('kss_backend_updated', handleUpdate)
+    window.addEventListener('focus', handleUpdate)
+    window.addEventListener('storage', handleUpdate)
+    const interval = setInterval(fetchLiveNotifications, 3000)
+    return () => {
+      window.removeEventListener('kss_backend_updated', handleUpdate)
+      window.removeEventListener('focus', handleUpdate)
+      window.removeEventListener('storage', handleUpdate)
+      clearInterval(interval)
+    }
+  }, [fetchLiveNotifications])
 
   const returnedRequests = requests.filter((r) => r.status === 'Returned')
   const returnedCount = returnedRequests.length
@@ -77,10 +124,31 @@ export const TeamLeadDashboard: React.FC = () => {
 
   const recentRequests = requests.slice(0, 5)
 
-  // Role-aware notifications for Team Lead
-  const recentNotifications = notifications
-    .filter((n) => n.targetRole === 'TEAM_LEAD' || !n.targetRole)
-    .slice(0, 3)
+  // Role-aware notifications for Team Lead with fallback
+  const recentNotifications = (
+    liveNotifications.length > 0
+      ? liveNotifications
+      : contextNotifications.filter((n) => n.targetRole === 'TEAM_LEAD' || !n.targetRole)
+  ).slice(0, 5)
+
+  const handleNotificationClick = async (notif: any) => {
+    if (!notif.isRead) {
+      setLiveNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+      )
+      try {
+        await markNotificationRead(notif.id)
+      } catch (err) {
+        console.warn('Failed to mark notification read:', err)
+      }
+    }
+    navigate('/portal/team_lead/notifications', {
+      state: {
+        selectedNotificationId: notif.id,
+        requestId: notif.requestId,
+      },
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -322,7 +390,7 @@ export const TeamLeadDashboard: React.FC = () => {
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${catColor}`}>
                         {req.category}
                       </span>
-                      <span className="text-[10px] text-gray-400 font-medium">{req.lastUpdated}</span>
+                      <span className="text-[10px] text-gray-400 font-medium">{formatDate(req.lastUpdated)}</span>
                     </div>
                     <h4 className="text-xs font-bold text-gray-900 truncate leading-snug">
                       {req.title?.trim() || (req.status === 'Draft' ? '📝 Untitled draft' : '—')}
@@ -343,9 +411,16 @@ export const TeamLeadDashboard: React.FC = () => {
         {/* ── Recent Notifications ─────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col">
           <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100">
-            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-              <Bell size={16} className="text-blue-600" /> Recent Notifications
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <Bell size={16} className="text-blue-600" /> Recent Notifications
+              </h3>
+              {recentNotifications.filter(n => !n.isRead).length > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-100">
+                  {recentNotifications.filter(n => !n.isRead).length} New
+                </span>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => navigate('/portal/team_lead/notifications')}
@@ -356,48 +431,76 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
 
           <div className="px-4 py-3 space-y-2 flex-1">
-            {recentNotifications.map((notif) => {
-              const displayTitle =
-                notif.title.includes('Approval Required')
-                  ? `Your request ${notif.requestId || ''} is now awaiting Manager approval.`
-                  : notif.title
+            {recentNotifications.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 text-xs flex flex-col items-center justify-center h-48">
+                <CheckCircle size={28} className="text-emerald-500 opacity-80 mb-2" />
+                <p className="font-bold text-gray-700">No notifications right now</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">You are completely up to date!</p>
+              </div>
+            ) : (
+              recentNotifications.map((notif) => {
+                const displayTitle =
+                  notif.title.includes('Approval Required')
+                    ? `Your request ${notif.requestId || ''} is now awaiting Manager approval.`
+                    : notif.title
 
-              const iconCfg: Record<string, { icon: React.ReactNode; bg: string; ring: string }> = {
-                'Approvals': { icon: <CheckCircle size={14} />, bg: 'bg-blue-600', ring: 'ring-2 ring-blue-200' },
-                'Vendor activity': { icon: <Tag size={14} />, bg: 'bg-purple-600', ring: 'ring-2 ring-purple-200' },
-                'Payments': { icon: <Wallet size={14} />, bg: 'bg-green-600', ring: 'ring-2 ring-green-200' },
-                'Status updates': { icon: <RefreshCw size={14} />, bg: 'bg-gray-500', ring: 'ring-2 ring-gray-200' },
-              }
-              const cfg = iconCfg[notif.type] ?? { icon: <Bell size={14} />, bg: 'bg-blue-500', ring: 'ring-2 ring-blue-100' }
+                const iconCfg: Record<string, { icon: React.ReactNode; bg: string; ring: string }> = {
+                  'Approvals': { icon: <CheckCircle size={14} />, bg: 'bg-blue-600', ring: 'ring-2 ring-blue-200' },
+                  'Approval': { icon: <CheckCircle size={14} />, bg: 'bg-blue-600', ring: 'ring-2 ring-blue-200' },
+                  'Vendor activity': { icon: <Tag size={14} />, bg: 'bg-purple-600', ring: 'ring-2 ring-purple-200' },
+                  'RFQ': { icon: <Tag size={14} />, bg: 'bg-purple-600', ring: 'ring-2 ring-purple-200' },
+                  'Payments': { icon: <Wallet size={14} />, bg: 'bg-emerald-600', ring: 'ring-2 ring-emerald-200' },
+                  'Payment': { icon: <Wallet size={14} />, bg: 'bg-emerald-600', ring: 'ring-2 ring-emerald-200' },
+                  'Status updates': { icon: <RefreshCw size={14} />, bg: 'bg-amber-600', ring: 'ring-2 ring-amber-200' },
+                  'Logistics': { icon: <Truck size={14} />, bg: 'bg-cyan-600', ring: 'ring-2 ring-cyan-200' },
+                  'Budget': { icon: <Wallet size={14} />, bg: 'bg-indigo-600', ring: 'ring-2 ring-indigo-200' },
+                  'Compliance': { icon: <AlertTriangle size={14} />, bg: 'bg-rose-600', ring: 'ring-2 ring-rose-200' },
+                }
+                const cfg = iconCfg[notif.category] || iconCfg[notif.type] || { icon: <Bell size={14} />, bg: 'bg-blue-500', ring: 'ring-2 ring-blue-100' }
 
-              return (
-                <div
-                  key={notif.id}
-                  onClick={() => navigate('/portal/team_lead/notifications')}
-                  className={`px-3 py-2.5 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${
-                    notif.isRead
-                      ? 'bg-white hover:bg-gray-50 border-gray-200'
-                      : 'bg-blue-50/40 hover:bg-blue-50/70 border-blue-200'
-                  }`}
-                >
-                  <div className={`relative w-8 h-8 rounded-full ${cfg.bg} text-white flex items-center justify-center flex-shrink-0 mt-0.5 ${!notif.isRead ? cfg.ring : ''}`}>
-                    {cfg.icon}
-                    {!notif.isRead && (
-                      <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h4 className={`text-xs truncate leading-snug ${notif.isRead ? 'font-semibold text-gray-700' : 'font-bold text-gray-900'}`}>
-                        {displayTitle}
-                      </h4>
-                      <span className="text-[10px] text-gray-400 flex-shrink-0 font-medium">{notif.timestamp}</span>
+                return (
+                  <div
+                    key={notif.id}
+                    onClick={() => handleNotificationClick(notif)}
+                    className={`px-3 py-2.5 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${
+                      notif.isRead
+                        ? 'bg-white hover:bg-gray-50 border-gray-200'
+                        : 'bg-blue-50/40 hover:bg-blue-50/70 border-blue-200 shadow-2xs'
+                    }`}
+                  >
+                    <div className={`relative w-8 h-8 rounded-full ${cfg.bg} text-white flex items-center justify-center flex-shrink-0 mt-0.5 ${!notif.isRead ? cfg.ring : ''}`}>
+                      {cfg.icon}
+                      {!notif.isRead && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full" />
+                      )}
                     </div>
-                    <p className="text-[11px] text-gray-500 mt-0.5 leading-snug line-clamp-2">{notif.message}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {notif.category && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-gray-100 text-gray-600 flex-shrink-0">
+                              {notif.category}
+                            </span>
+                          )}
+                          <h4 className={`text-xs truncate leading-snug ${notif.isRead ? 'font-semibold text-gray-700' : 'font-bold text-gray-900'}`}>
+                            {displayTitle}
+                          </h4>
+                        </div>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0 font-medium">{notif.timestamp}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5 leading-snug line-clamp-2">{notif.message}</p>
+                      {notif.requestId && (
+                        <div className="mt-1">
+                          <span className="inline-block text-[9px] font-mono font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                            {notif.requestId}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
         </div>
 

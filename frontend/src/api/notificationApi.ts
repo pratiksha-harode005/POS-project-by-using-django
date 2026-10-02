@@ -1,0 +1,66 @@
+import { apiClient } from './client'
+
+export interface BackendNotification {
+  id: number
+  title: string
+  message: string
+  is_read: boolean
+  isRead?: boolean
+  purchase_request?: number | null
+  request_id?: string
+  requestId?: string
+  timestamp?: string
+  date?: string
+  category?: 'Approval' | 'RFQ' | 'Budget' | 'Logistics' | 'Payment' | 'Compliance'
+  sender?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export const getNotifications = async (params?: { role?: string; user?: string; vendor?: string; page_size?: number }): Promise<BackendNotification[]> => {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await apiClient.get('/notifications/', { params })
+      const data = res.data
+      return Array.isArray(data) ? data : data?.results || []
+    } catch (err: any) {
+      if (attempt === 0) {
+        await new Promise(r => setTimeout(r, 400))
+        continue
+      }
+      return []
+    }
+  }
+  return []
+}
+
+export const getUnreadNotificationCount = async (params?: { role?: string; user?: string; vendor?: string }): Promise<number> => {
+  try {
+    const res = await apiClient.get('/notifications/unread_count/', { params })
+    return typeof res.data?.unread_count === 'number' ? res.data.unread_count : 0
+  } catch {
+    return 0
+  }
+}
+
+export const markNotificationRead = async (id: number | string): Promise<boolean> => {
+  try {
+    await apiClient.post(`/notifications/${id}/mark_read/`)
+    window.dispatchEvent(new Event('kss_backend_updated'))
+    return true
+  } catch (err) {
+    console.error(`Failed to mark notification ${id} as read:`, err)
+    return false
+  }
+}
+
+export const markAllNotificationsRead = async (params?: { role?: string; user?: string; vendor?: string }): Promise<boolean> => {
+  try {
+    await apiClient.post('/notifications/mark_all_read/', params || {})
+    window.dispatchEvent(new Event('kss_backend_updated'))
+    return true
+  } catch (err) {
+    console.error('Failed to mark all notifications as read:', err)
+    return false
+  }
+}

@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import {
   Landmark, CreditCard, AlertCircle, CheckCircle, Clock, TrendingUp,
   FileCheck, ArrowUpRight, ChevronRight, PieChart as PieIcon, BarChart3,
-  DollarSign, ShieldAlert, ArrowRight, Filter, RefreshCw
+  IndianRupee, ShieldAlert, ArrowRight, Filter, RefreshCw
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, ResponsiveContainer,
   Tooltip, Legend, XAxis, YAxis, CartesianGrid
 } from 'recharts'
 import { useFinanceData } from '../../context/ManagerDataContext'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -18,8 +19,8 @@ export const FinanceDashboard: React.FC = () => {
   const {
     budgets,
     financeKPIs,
-    paymentData,
-    payments,
+    financePaymentData,
+    financePayments,
     pendingFinancialApprovals,
     tickets,
     complaints,
@@ -31,22 +32,22 @@ export const FinanceDashboard: React.FC = () => {
   const [distMode, setDistMode] = useState<'department' | 'category'>('department')
 
   // Prepare Budget Utilization Chart Data
-  const budgetUtilizationData = budgets.map((b) => ({
-    name: b.department + ' (' + b.category.split(' ')[0] + ')',
-    Total: b.totalBudget,
-    Allocated: b.allocated,
-    Committed: b.committed,
-    Spent: b.spent,
-    Available: b.available,
+  const budgetUtilizationData = (budgets || []).map((b) => ({
+    name: (b.department || 'General') + (b.category ? ' (' + String(b.category).split(' ')[0] + ')' : ''),
+    Total: b.totalBudget || 0,
+    Allocated: b.allocated || 0,
+    Committed: b.committed || 0,
+    Spent: b.spent || 0,
+    Available: b.available || 0,
   }))
 
   // Prepare Budget Distribution Pie Data
   const deptMap: Record<string, number> = {}
   const catMap: Record<string, number> = {}
 
-  budgets.forEach((b) => {
-    deptMap[b.department] = (deptMap[b.department] || 0) + b.totalBudget
-    catMap[b.category] = (catMap[b.category] || 0) + b.totalBudget
+  ;(budgets || []).forEach((b) => {
+    if (b.department) deptMap[b.department] = (deptMap[b.department] || 0) + (b.totalBudget || 0)
+    if (b.category) catMap[b.category] = (catMap[b.category] || 0) + (b.totalBudget || 0)
   })
 
   const departmentPieData = Object.keys(deptMap).map((k, i) => {
@@ -59,10 +60,10 @@ export const FinanceDashboard: React.FC = () => {
     return { name: k, value: catMap[k], color: palette[i % palette.length] }
   })
 
-  const currentPieData = distMode === 'department' ? departmentPieData : categoryPieData
+  const currentPieData = (distMode === 'department' ? departmentPieData : categoryPieData) || []
 
-  // Payment analytics data from real state
-  const currentPaymentData = paymentData[paymentPeriod]
+  // Payment analytics data from finance-scoped state
+  const currentPaymentData = (financePaymentData && financePaymentData[paymentPeriod]) || []
 
   return (
     <div className="max-w-7xl mx-auto space-y-7 pb-12">
@@ -118,7 +119,7 @@ export const FinanceDashboard: React.FC = () => {
             {fmt(financeKPIs.totalBudget)}
           </p>
           <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2">
-            <span>6 Departments</span>
+            <span>{budgets.length > 0 ? `${new Set(budgets.map((b) => b.department)).size} Departments` : '0 Departments'}</span>
             <span className="flex items-center gap-0.5 text-indigo-600 font-semibold group-hover:translate-x-0.5 transition-transform">
               Overview <ArrowRight size={12} />
             </span>
@@ -141,7 +142,9 @@ export const FinanceDashboard: React.FC = () => {
           </p>
           <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2">
             <span>
-              {((financeKPIs.availableBudget / financeKPIs.totalBudget) * 100).toFixed(1)}% Uncommitted
+              {financeKPIs.totalBudget > 0
+                ? `${((financeKPIs.availableBudget / financeKPIs.totalBudget) * 100).toFixed(1)}% Uncommitted`
+                : '100% Uncommitted'}
             </span>
             <span className="flex items-center gap-0.5 text-emerald-600 font-semibold group-hover:translate-x-0.5 transition-transform">
               Explore <ArrowRight size={12} />
@@ -187,7 +190,9 @@ export const FinanceDashboard: React.FC = () => {
           </p>
           <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2">
             <span>
-              {((financeKPIs.spentBudget / financeKPIs.totalBudget) * 100).toFixed(1)}% Realized
+              {financeKPIs.totalBudget > 0
+                ? `${((financeKPIs.spentBudget / financeKPIs.totalBudget) * 100).toFixed(1)}% Realized`
+                : '0.0% Realized'}
             </span>
             <span className="flex items-center gap-0.5 text-blue-600 font-semibold group-hover:translate-x-0.5 transition-transform">
               Ledger <ArrowRight size={12} />
@@ -533,53 +538,60 @@ export const FinanceDashboard: React.FC = () => {
                 <p className="text-xs text-slate-500 mt-0.5">3-way matched invoices awaiting bank release</p>
               </div>
               <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                {payments.filter((p) => p.status === 'Pending' || p.status === 'Processing').length} Active
+                {financePayments.filter((p) => p.status === 'Pending' || p.status === 'Processing').length} Active
               </span>
             </div>
 
-            <div className="space-y-3">
-              {payments.slice(0, 3).map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => navigate('/portal/finance/payments')}
-                  className="p-3.5 rounded-xl border border-slate-100 hover:border-slate-300 hover:bg-slate-50/60 transition-all cursor-pointer flex items-center justify-between gap-4"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                        {p.id}
-                      </span>
-                      <span className="text-[10px] text-slate-500">{p.vendor}</span>
+            {financePayments.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                <CheckCircle size={28} className="mx-auto mb-2 text-emerald-500" />
+                No pending finance disbursements in queue.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {financePayments.slice(0, 3).map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => navigate('/portal/finance/payments')}
+                    className="p-3.5 rounded-xl border border-slate-100 hover:border-slate-300 hover:bg-slate-50/60 transition-all cursor-pointer flex items-center justify-between gap-4"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                          {p.id}
+                        </span>
+                        <span className="text-[10px] text-slate-500">{p.vendor}</span>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 line-clamp-1">{p.requestTitle}</h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Due: {formatDate(p.dueDate)}</p>
                     </div>
-                    <h4 className="text-xs font-bold text-slate-900 line-clamp-1">{p.requestTitle}</h4>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Due: {p.dueDate}</p>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-extrabold text-slate-900">{fmt(p.amount)}</p>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          p.status === 'Paid'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : p.status === 'Processing'
+                            ? 'bg-blue-50 text-blue-700'
+                            : p.status === 'On Hold'
+                            ? 'bg-rose-50 text-rose-700'
+                            : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {p.status}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-extrabold text-slate-900">{fmt(p.amount)}</p>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                        p.status === 'Paid'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : p.status === 'Processing'
-                          ? 'bg-blue-50 text-blue-700'
-                          : p.status === 'On Hold'
-                          ? 'bg-rose-50 text-rose-700'
-                          : 'bg-amber-50 text-amber-700'
-                      }`}
-                    >
-                      {p.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <button
             onClick={() => navigate('/portal/finance/payments')}
             className="w-full mt-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center justify-center gap-1.5"
           >
-            View All Payments ({payments.length}) <ChevronRight size={14} />
+            View All Payments ({financePayments.length}) <ChevronRight size={14} />
           </button>
         </div>
       </div>

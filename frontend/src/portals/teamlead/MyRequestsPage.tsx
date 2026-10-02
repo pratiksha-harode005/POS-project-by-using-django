@@ -15,16 +15,13 @@ import {
   X,
   CheckCircle,
   Upload,
-  Download,
-  Package,
 } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
-import { isFlowBCategory } from '../../components/portal/TrackingStepper'
-import { getStoredDeliveryDocs } from '../vendor/VendorPortalPages'
 import {
   CATEGORIES,
   SUBCATEGORIES_BY_CATEGORY,
 } from './CreateRequestPage'
+import { formatDate, formatDateTime } from '../../utils/formatDate'
 
 // Departments list (mirrors CreateRequestPage)
 const DEPARTMENTS = [
@@ -146,12 +143,7 @@ export const MyRequestsPage: React.FC = () => {
 
   const handleCategoryChange = (newCat: string) => {
     if (!editForm) return
-    const newConfig = CATEGORY_CONFIGS[newCat]
-    const defaultExtra: Record<string, string> = {}
-    if (newConfig?.extraFieldKey && newConfig?.extraFieldOptions) {
-      defaultExtra[newConfig.extraFieldKey] = newConfig.extraFieldOptions[0]
-    }
-    setEditForm({ ...editForm, category: newCat, preferredVendor: '', extraFields: defaultExtra })
+    setEditForm({ ...editForm, category: newCat, preferredVendor: '', extraFields: {} })
   }
 
   // Determine which role returned the request (for dynamic button label)
@@ -197,7 +189,15 @@ export const MyRequestsPage: React.FC = () => {
     const matchesSearch =
       req.title.toLowerCase().includes(search.toLowerCase()) ||
       req.id.toLowerCase().includes(search.toLowerCase())
-    const matchesStatus = filterStatus === 'All' || req.status === filterStatus
+
+    const reqSt = (req.status || '').toLowerCase().trim()
+    const filterSt = (filterStatus || '').toLowerCase().trim()
+
+    const matchesStatus =
+      filterStatus === 'All' ||
+      reqSt === filterSt ||
+      (filterSt === 'rejected' && (reqSt === 'rejected' || reqSt.includes('reject')))
+
     const matchesCategory = filterCategory === 'All' || req.category === filterCategory
 
     let matchesDate = true
@@ -315,7 +315,7 @@ export const MyRequestsPage: React.FC = () => {
                   <div>
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded border border-blue-200">{req.id}</span>
-                      <span className="text-xs text-gray-400 font-medium">{req.date}</span>
+                      <span className="text-xs text-gray-400 font-medium">{formatDate(req.date)}</span>
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${priorityColor(req.priority)}`}>
                         Priority: {req.priority}
                       </span>
@@ -387,120 +387,22 @@ export const MyRequestsPage: React.FC = () => {
                   )}
                 </div>
 
-                <TrackingStepper currentStage={req.currentStage} status={req.status} category={req.category} title={req.title} flowType={req.flowType} history={req.history as any} />
-
-                {/* Flow A Linked Delivery Documents Panel (Visible at Stage 6+ Delivery/Invoice/Payment for Flow A) */}
-                {!isFlowBCategory(req.category) && req.currentStage >= 6 && (() => {
-                  const poRef = req.poRef || `PO-VNDHW001-10`
-                  const deliveryDocs = getStoredDeliveryDocs(req.id) || getStoredDeliveryDocs(poRef) || {
-                    poRef,
-                    challanDocName: `Delivery_Challan_${req.id}.pdf`,
-                    invoiceDocName: `Commercial_Invoice_${req.id}.pdf`,
-                    warrantyDocName: `OEM_Warranty_Card_${req.id}.pdf`,
-                    deliveryDate: '2026-09-20',
-                    status: 'Delivered & Docs Attached',
-                  }
-
-                  const handleDownloadDeliveryFile = (docName: string) => {
-                    const content = `================================================================
-KSS PROCUREMENT OS - VENDOR SHIPMENT SIGN-OFF DOCUMENT
-================================================================
-Document Name: ${docName}
-Request ID: ${req.id}
-PO Reference: ${poRef}
-Category: ${req.category} / ${req.subcategory}
-Vendor: ${req.preferredVendor || 'Dell Technologies'}
-Delivery Status: ${deliveryDocs.status}
-Verification Date: ${deliveryDocs.deliveryDate || '2026-09-20'}
-
-DESCRIPTION & VERIFICATION CLAUSES:
-- Official vendor dispatch sign-off document.
-- Verified physical goods delivery subject to 3-way matching.
-- Included in automated Audit & Compliance log.
-================================================================
-Certified Procurement Document - KSS Procurement OS
-================================================================
-`
-                    const isDocx = docName.toLowerCase().endsWith('.docx')
-                    const mimeType = isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf'
-                    const blob = new Blob([content], { type: mimeType })
-                    const url = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = docName
-                    document.body.appendChild(a)
-                    a.click()
-                    document.body.removeChild(a)
-                    URL.revokeObjectURL(url)
-                  }
-
-                  return (
-                    <div className="my-4 p-4 bg-purple-50/60 rounded-xl border border-purple-200 space-y-3 text-xs">
-                      <div className="flex items-center justify-between border-b border-purple-200/80 pb-2">
-                        <h4 className="font-bold text-purple-950 flex items-center gap-2 text-xs">
-                          <Package size={16} className="text-purple-700" />
-                          Linked Delivery Documents (Vendor Shipment Sign-off)
-                        </h4>
-                        <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full border border-purple-300">
-                          Flow A Goods Sign-off ({poRef})
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {/* Delivery Challan */}
-                        <div className="p-3 bg-white rounded-lg border border-purple-200 flex flex-col justify-between space-y-2 shadow-2xs">
-                          <div>
-                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">📜 Delivery Challan</span>
-                            <span className="font-bold text-gray-900 truncate block mt-1" title={deliveryDocs.challanDocName}>
-                              {deliveryDocs.challanDocName}
-                            </span>
-                            <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">✓ Dispatch Proof Attached</span>
-                          </div>
-                          <button
-                            onClick={() => handleDownloadDeliveryFile(deliveryDocs.challanDocName)}
-                            className="w-full py-1.5 px-2 bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold rounded border border-purple-200 flex items-center justify-center gap-1 cursor-pointer transition-colors text-[11px]"
-                          >
-                            <Download size={12} /> Download Challan
-                          </button>
-                        </div>
-
-                        {/* Invoice */}
-                        <div className="p-3 bg-white rounded-lg border border-purple-200 flex flex-col justify-between space-y-2 shadow-2xs">
-                          <div>
-                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">🧾 Commercial Invoice</span>
-                            <span className="font-bold text-gray-900 truncate block mt-1" title={deliveryDocs.invoiceDocName}>
-                              {deliveryDocs.invoiceDocName}
-                            </span>
-                            <span className="text-[10px] text-purple-700 font-semibold block mt-0.5">Linked to PO Match</span>
-                          </div>
-                          <button
-                            onClick={() => handleDownloadDeliveryFile(deliveryDocs.invoiceDocName)}
-                            className="w-full py-1.5 px-2 bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold rounded border border-purple-200 flex items-center justify-center gap-1 cursor-pointer transition-colors text-[11px]"
-                          >
-                            <Download size={12} /> Download Invoice
-                          </button>
-                        </div>
-
-                        {/* Warranty Card */}
-                        <div className="p-3 bg-white rounded-lg border border-purple-200 flex flex-col justify-between space-y-2 shadow-2xs">
-                          <div>
-                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">🛡️ Warranty Certificate</span>
-                            <span className="font-bold text-gray-900 truncate block mt-1" title={deliveryDocs.warrantyDocName || 'Warranty_Card.pdf'}>
-                              {deliveryDocs.warrantyDocName || 'Warranty_Certificate_HW.pdf'}
-                            </span>
-                            <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">OEM Hardware Warranty</span>
-                          </div>
-                          <button
-                            onClick={() => handleDownloadDeliveryFile(deliveryDocs.warrantyDocName || 'Warranty_Certificate_HW.pdf')}
-                            className="w-full py-1.5 px-2 bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold rounded border border-purple-200 flex items-center justify-center gap-1 cursor-pointer transition-colors text-[11px]"
-                          >
-                            <Download size={12} /> Download Warranty
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })()}
+                <TrackingStepper
+                  currentStage={req.currentStage}
+                  status={req.status}
+                  category={req.category}
+                  title={req.title}
+                  flowType={req.flowType}
+                  history={req.history as any}
+                  approval_steps={(req as any).approval_steps}
+                  financeStatus={(req as any).financeStatus}
+                  paymentStatus={(req as any).paymentStatus}
+                  poNumber={req.poRef || (req as any).poNumber || (req as any).po_number}
+                  grnNumber={(req as any).grnNumber || (req as any).grn_number}
+                  invoiceNumber={(req as any).invoiceNumber || (req as any).invoice_number}
+                  is_invoice_verified={(req as any).is_invoice_verified || (req as any).documentsVerified}
+                  rfqId={(req as any).rfqId || (req as any).rfq_id}
+                />
 
                 <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
                   <button
@@ -510,7 +412,7 @@ Certified Procurement Document - KSS Procurement OS
                     {isHistoryOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                     {isHistoryOpen ? 'Hide full history' : 'View full history'} ({req.history?.length || 0} steps)
                   </button>
-                  <span className="text-[11px] text-gray-400 font-medium">Last updated: {req.lastUpdated}</span>
+                  <span className="text-[11px] text-gray-400 font-medium">Last updated: {formatDate(req.lastUpdated)}</span>
                 </div>
 
                 {isHistoryOpen && (
@@ -529,7 +431,7 @@ Certified Procurement Document - KSS Procurement OS
                               </div>
                               {step.remark && <p className="text-gray-600 text-[11px] mt-1 pl-7 italic">"{step.remark}"</p>}
                             </div>
-                            <span className="text-[10px] text-gray-400 font-medium">{step.date}</span>
+                            <span className="text-[10px] text-gray-400 font-medium">{formatDateTime(step.date)}</span>
                           </div>
                         ))}
                       </div>
@@ -623,16 +525,22 @@ Certified Procurement Document - KSS Procurement OS
                   {editCategoryConfig?.extraFieldKey && editCategoryConfig?.extraFieldOptions && (
                     <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
                       <label className="block font-bold text-blue-900 mb-1">
-                        Category Detail: {editCategoryConfig.extraFieldLabel} *
+                        Category Detail: {editCategoryConfig.extraFieldLabel} (Optional)
                       </label>
                       <select
-                        value={editForm.extraFields[editCategoryConfig.extraFieldKey] || editCategoryConfig.extraFieldOptions[0]}
-                        onChange={(e) => setEditForm({
-                          ...editForm,
-                          extraFields: { ...editForm.extraFields, [editCategoryConfig.extraFieldKey!]: e.target.value }
-                        })}
+                        value={editForm.extraFields[editCategoryConfig.extraFieldKey] || ''}
+                        onChange={(e) => {
+                          const updated = { ...editForm.extraFields }
+                          if (e.target.value) {
+                            updated[editCategoryConfig.extraFieldKey!] = e.target.value
+                          } else {
+                            delete updated[editCategoryConfig.extraFieldKey!]
+                          }
+                          setEditForm({ ...editForm, extraFields: updated })
+                        }}
                         className="w-full p-2.5 border rounded-lg bg-white border-blue-200 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       >
+                        <option value="">-- Select {editCategoryConfig.extraFieldLabel} (Optional) --</option>
                         {editCategoryConfig.extraFieldOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
                     </div>

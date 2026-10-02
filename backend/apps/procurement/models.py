@@ -11,6 +11,8 @@ class PurchaseOrder(TimeStampedModel):
         ('Draft', 'Draft'),
         ('Issued', 'Issued'),
         ('Confirmed', 'Confirmed'),
+        ('Processing', 'Processing'),
+        ('Shipped', 'Shipped'),
         ('Delivered', 'Delivered'),
         ('Cancelled', 'Cancelled'),
     )
@@ -20,15 +22,24 @@ class PurchaseOrder(TimeStampedModel):
     quotation = models.ForeignKey(Quotation, on_delete=models.SET_NULL, null=True, blank=True, related_name='purchase_orders')
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name='purchase_orders')
     total_amount = models.DecimalField(max_digits=12, decimal_places=2)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Issued')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Issued', db_index=True)
     order_date = models.DateField(auto_now_add=True)
     expected_delivery = models.DateField(null=True, blank=True)
     terms = models.TextField(blank=True)
 
     def save(self, *args, **kwargs):
         if not self.po_id:
-            import uuid
-            self.po_id = f"PO-{uuid.uuid4().hex[:8].upper()}"
+            if self.purchase_request and hasattr(self.purchase_request, 'request_id') and self.purchase_request.request_id:
+                clean_ref = self.purchase_request.request_id.replace('REQ-', '').replace('RFQ-', '').strip().upper()
+                candidate_po_id = f"PO-{clean_ref}"
+                if not PurchaseOrder.objects.filter(po_id=candidate_po_id).exclude(pk=self.pk).exists():
+                    self.po_id = candidate_po_id
+                else:
+                    import uuid
+                    self.po_id = f"PO-{uuid.uuid4().hex[:8].upper()}"
+            else:
+                import uuid
+                self.po_id = f"PO-{uuid.uuid4().hex[:8].upper()}"
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -37,6 +48,8 @@ class PurchaseOrder(TimeStampedModel):
 
 class GoodsReceipt(TimeStampedModel):
     STATUS_CHOICES = (
+        ('Pending Verification', 'Pending Verification'),
+        ('Pending', 'Pending'),
         ('Received', 'Received'),
         ('Partial', 'Partial'),
         ('Verified', 'Verified'),
@@ -46,14 +59,39 @@ class GoodsReceipt(TimeStampedModel):
     receipt_id = models.CharField(max_length=50, unique=True, editable=False)
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='goods_receipts')
     received_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='receipts_handled')
-    delivery_date = models.DateField(auto_now_add=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Verified')
-    notes = models.TextField(blank=True)
+    delivery_date = models.DateField(null=True, blank=True)
+    delivery_location = models.CharField(max_length=255, blank=True, default='')
+    product_name = models.CharField(max_length=255, blank=True, default='')
+    ordered_quantity = models.IntegerField(null=True, blank=True)
+    received_quantity = models.IntegerField(null=True, blank=True)
+    receipt_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Pending Verification', db_index=True)
+    notes = models.TextField(blank=True, default='')
+    # Explicit verification tracking (set when manager clicks Verify)
+    verified_by_name = models.CharField(max_length=200, blank=True, default='')
+    verified_at = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.receipt_id:
             import uuid
             self.receipt_id = f"REC-{uuid.uuid4().hex[:8].upper()}"
+        if not self.delivery_location:
+            if self.purchase_order and self.purchase_order.purchase_request:
+                self.delivery_location = self.purchase_order.purchase_request.delivery_location or 'Main Office / Warehouse'
+            else:
+                self.delivery_location = 'Main Office / Warehouse'
+        if not self.product_name:
+            if self.purchase_order and self.purchase_order.purchase_request:
+                self.product_name = self.purchase_order.purchase_request.title or 'Procurement Items'
+            else:
+                self.product_name = 'Procurement Items'
+        if self.ordered_quantity is None:
+            if self.purchase_order and self.purchase_order.purchase_request:
+                self.ordered_quantity = self.purchase_order.purchase_request.quantity or 1
+            else:
+                self.ordered_quantity = 1
+        if self.received_quantity is None:
+            self.received_quantity = self.ordered_quantity or 1
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -73,7 +111,7 @@ class Contract(TimeStampedModel):
     value = models.DecimalField(max_digits=12, decimal_places=2)
     start_date = models.DateField()
     end_date = models.DateField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Active')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Active', db_index=True)
     document = models.FileField(upload_to='contract_docs/', blank=True, null=True)
 
     def save(self, *args, **kwargs):

@@ -1,8 +1,8 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Bell, CheckCheck, Clock, ShieldAlert, ArrowRight, Settings, Check, X, Filter } from 'lucide-react'
-import { useProcurement, NotificationRecord } from '../../context/ProcurementContext'
+import { useLocation, useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { getNotifications, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
 
 export interface NotificationItem {
   id: number
@@ -16,96 +16,167 @@ export interface NotificationItem {
   sender: string
 }
 
-const ALL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 1,
-    title: 'Request REQ-2026-001 Approved',
-    message: 'High Performance Laptops for Engineering approved by Manager. Routed to Finance Review for capex verification and budget certification.',
-    timestamp: '10 mins ago',
-    date: '2026-09-11 17:45',
-    isRead: false,
-    category: 'Approval',
-    requestId: 'REQ-2026-001',
-    sender: 'Sarah Manager',
-  },
-  {
-    id: 2,
-    title: 'Quotation Received from Dell Technologies',
-    message: 'Quotation QUO-4582 ($35,000.00) submitted for RFQ-2026-001 with 15-day delivery commitment. Awaiting quotation comparison.',
-    timestamp: '45 mins ago',
-    date: '2026-09-11 17:10',
-    isRead: false,
-    category: 'RFQ',
-    requestId: 'REQ-2026-001',
-    sender: 'Dell Technologies Enterprise',
-  },
-  {
-    id: 3,
-    title: 'Budget Threshold Warning — IT Department',
-    message: 'IT Capex utilization reached 78.4% of quarterly ceiling. Approvals above ₹10L require CFO sign-off prior to PO generation.',
-    timestamp: '2 hours ago',
-    date: '2026-09-11 15:55',
-    isRead: false,
-    category: 'Budget',
-    sender: 'Finance System Automated',
-  },
-  {
-    id: 4,
-    title: 'Goods Receipt GRN-2214 Verified',
-    message: 'Warehouse team confirmed physical delivery of 20 units with zero damage. Ready for 3-way matching and ticket raising.',
-    timestamp: '4 hours ago',
-    date: '2026-09-11 13:50',
-    isRead: true,
-    category: 'Logistics',
-    requestId: 'PO-4582',
-    sender: 'Logistics & Receiving',
-  },
-  {
-    id: 5,
-    title: 'Payment Scheduled for PO-4582',
-    message: 'Accounts Payable scheduled wire disbursement for ₹3,50,000 on Sep 14, 2026 after invoice verification.',
-    timestamp: 'Yesterday',
-    date: '2026-09-10 16:30',
-    isRead: true,
-    category: 'Payment',
-    requestId: 'INV-9841',
-    sender: 'Finance Controller',
-  },
-  {
-    id: 6,
-    title: 'Policy Compliance Reminder',
-    message: 'Quarterly vendor audit documentation must be completed before end of month for all active supplier contracts.',
-    timestamp: '3 days ago',
-    date: '2026-09-08 10:00',
-    isRead: true,
-    category: 'Compliance',
-    sender: 'Audit & Risk Team',
-  },
-  {
-    id: 7,
-    title: 'Request REQ-2026-018 Arrived',
-    message: 'New standing desks request for Operations Floor submitted by Ravi Kumar. Awaiting initial manager review.',
-    timestamp: '4 days ago',
-    date: '2026-09-07 11:20',
-    isRead: true,
-    category: 'Approval',
-    requestId: 'REQ-2026-018',
-    sender: 'Ravi Kumar (Operations)',
-  },
-]
-
 export const SharedNotificationsPage: React.FC = () => {
-  const [notifications, setNotifications] = useState<NotificationItem[]>(ALL_NOTIFICATIONS)
-  const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const { user, role } = useAuth()
+  const location = useLocation()
+  const params = useParams<{ vendorId?: string }>()
+  const navigate = useNavigate()
+  const selectedNotificationId = (location.state as { selectedNotificationId?: number })?.selectedNotificationId
+  const currentRole = (role ? role.toUpperCase() : 'MANAGER')
 
-  const handleSelectMessage = (item: NotificationItem) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
-    )
+  const vendorMatch = location.pathname.match(/\/portal\/vendor\/vendor\/([^/]+)/)
+  const vndMatch = location.pathname.match(/(VND-[A-Z0-9-]+|V-[A-Z0-9-]+)/i)
+  const routeVendorId = params.vendorId || (vendorMatch ? vendorMatch[1] : undefined) || (vndMatch ? vndMatch[1] : undefined)
+  const isVendorPortal = location.pathname.includes('/portal/vendor') || (role ? role.toUpperCase() === 'VENDOR' : false)
+  const activeVendorId = routeVendorId || user?.vendor_id_code || (user?.role === 'VENDOR' ? user?.username : undefined) || 'VND-HW-001'
+
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (selectedNotificationId) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`notification-${selectedNotificationId}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [selectedNotificationId, notifications.length])
+
+  const fetchRealNotifications = useCallback(async () => {
+    try {
+      setLoading(true)
+      let queryParams: { role?: string; user?: string; vendor?: string } = { role: currentRole }
+
+      if (isVendorPortal) {
+        queryParams = { vendor: activeVendorId }
+      } else if (user?.username) {
+        queryParams = { user: user.username, role: currentRole }
+      }
+
+      const data: BackendNotification[] = await getNotifications(queryParams)
+      const mapped: NotificationItem[] = data.map((n) => {
+        const readStatus = n.is_read !== undefined ? Boolean(n.is_read) : Boolean(n.isRead)
+        const reqId = n.request_id || n.requestId || (n.purchase_request ? `REQ-${n.purchase_request}` : undefined)
+        return {
+          id: n.id,
+          title: n.title || 'System Notification',
+          message: n.message || '',
+          timestamp: n.timestamp || 'Just now',
+          date: n.date || n.created_at || '',
+          isRead: readStatus,
+          category: n.category || 'Approval',
+          requestId: reqId,
+          sender: n.sender || 'Procurement System',
+        }
+      })
+      setNotifications(mapped)
+    } catch (err) {
+      console.error('Failed to load notifications page data:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [currentRole, isVendorPortal, activeVendorId, user?.username])
+
+  useEffect(() => {
+    fetchRealNotifications()
+
+    const handleBackendUpdate = () => {
+      fetchRealNotifications()
+    }
+
+    window.addEventListener('kss_backend_updated', handleBackendUpdate)
+    window.addEventListener('focus', handleBackendUpdate)
+    window.addEventListener('storage', handleBackendUpdate)
+
+    const interval = setInterval(fetchRealNotifications, 3000)
+
+    return () => {
+      window.removeEventListener('kss_backend_updated', handleBackendUpdate)
+      window.removeEventListener('focus', handleBackendUpdate)
+      window.removeEventListener('storage', handleBackendUpdate)
+      clearInterval(interval)
+    }
+  }, [fetchRealNotifications])
+
+  const handleSelectMessage = async (item: NotificationItem) => {
+    if (!item.isRead) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+      )
+      await markNotificationRead(item.id)
+    }
+    const titleMsg = `${item.title} ${item.message}`.toLowerCase()
+
+    if (isVendorPortal && activeVendorId) {
+      if (titleMsg.includes('purchase order') || titleMsg.includes('po-')) {
+        navigate(`/portal/vendor/vendor/${activeVendorId}/purchase-orders`)
+      } else if (titleMsg.includes('rfq') || titleMsg.includes('quote')) {
+        navigate(`/portal/vendor/vendor/${activeVendorId}/rfqs`)
+      } else if (titleMsg.includes('invoice') || titleMsg.includes('inv-')) {
+        navigate(`/portal/vendor/vendor/${activeVendorId}/invoices`)
+      } else if (titleMsg.includes('receipt') || titleMsg.includes('grn') || titleMsg.includes('delivery')) {
+        navigate(`/portal/vendor/vendor/${activeVendorId}/documents`)
+      }
+      return
+    }
+
+    const activeRole = currentRole.toUpperCase()
+    if (activeRole === 'FINANCE') {
+      if (titleMsg.includes('recommend') || titleMsg.includes('approval') || titleMsg.includes('pending') || titleMsg.includes('submitted')) {
+        navigate('/portal/finance/pending-approvals', { state: { requestId: item.requestId } })
+      } else if (titleMsg.includes('payment') || titleMsg.includes('disbursed') || titleMsg.includes('utr')) {
+        navigate('/portal/finance/payments', { state: { requestId: item.requestId } })
+      } else if (titleMsg.includes('grn') || titleMsg.includes('receipt') || titleMsg.includes('invoice') || titleMsg.includes('3-way') || titleMsg.includes('ticket')) {
+        navigate('/portal/finance/raise-ticket', { state: { requestId: item.requestId } })
+      } else if (titleMsg.includes('rfq') || titleMsg.includes('quotation') || titleMsg.includes('quote')) {
+        navigate('/portal/finance/vendor-quotations')
+      } else if (titleMsg.includes('budget')) {
+        navigate('/portal/finance/budget')
+      }
+    } else if (activeRole === 'MANAGER') {
+      if (titleMsg.includes('recommend') || titleMsg.includes('approval') || titleMsg.includes('submitted')) {
+        navigate('/portal/manager/pending-approvals', { state: { requestId: item.requestId } })
+      } else if (titleMsg.includes('payment')) {
+        navigate('/portal/manager/payments', { state: { requestId: item.requestId } })
+      } else if (titleMsg.includes('ticket') || titleMsg.includes('grn') || titleMsg.includes('invoice')) {
+        navigate('/portal/manager/raise-ticket', { state: { requestId: item.requestId } })
+      } else if (titleMsg.includes('rfq') || titleMsg.includes('quotation')) {
+        navigate('/portal/manager/vendor-quotations')
+      } else if (titleMsg.includes('po') || titleMsg.includes('order')) {
+        navigate('/portal/manager/purchase-orders')
+      }
+    } else if (activeRole === 'ADMIN') {
+      if (titleMsg.includes('recommend') || titleMsg.includes('request') || titleMsg.includes('approval')) {
+        navigate('/portal/admin/requests', { state: { requestId: item.requestId } })
+      } else if (titleMsg.includes('po') || titleMsg.includes('purchase order')) {
+        navigate('/portal/admin/purchase-orders')
+      } else if (titleMsg.includes('receipt') || titleMsg.includes('grn')) {
+        navigate('/portal/admin/receipts')
+      } else if (titleMsg.includes('rfq') || titleMsg.includes('quotation')) {
+        navigate('/portal/admin/vendor-quotations')
+      }
+    } else if (activeRole === 'TEAM_LEAD') {
+      if (titleMsg.includes('payment')) {
+        navigate('/portal/team_lead/payment-status')
+      } else {
+        navigate('/portal/team_lead/my-requests')
+      }
+    }
   }
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    if (isVendorPortal) {
+      await markAllNotificationsRead({ vendor: activeVendorId })
+    } else if (user?.username) {
+      await markAllNotificationsRead({ user: user.username, role: currentRole })
+    } else {
+      await markAllNotificationsRead({ role: currentRole })
+    }
   }
 
   const filtered = notifications.filter((n) => (filter === 'unread' ? !n.isRead : true))
@@ -177,10 +248,13 @@ export const SharedNotificationsPage: React.FC = () => {
         ) : (
           filtered.map((n) => (
             <div
+              id={`notification-${n.id}`}
               key={n.id}
               onClick={() => handleSelectMessage(n)}
               className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 hover:shadow-xs ${
-                n.isRead
+                selectedNotificationId === n.id
+                  ? 'ring-2 ring-indigo-500 bg-indigo-50/70 border-indigo-300 shadow-md'
+                  : n.isRead
                   ? 'bg-white border-slate-200/80 hover:border-slate-300'
                   : 'bg-indigo-50/40 border-indigo-200/90 shadow-2xs'
               }`}

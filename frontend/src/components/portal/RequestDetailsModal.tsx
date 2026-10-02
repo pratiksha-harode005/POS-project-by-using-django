@@ -1,12 +1,56 @@
 import React from 'react'
 import {
   X, PlusCircle, CheckCircle, XCircle, ArrowUpRight, Calendar,
-  MapPin, Building, ShieldCheck, Tag, DollarSign, Clock, Package,
+  MapPin, Building, ShieldCheck, Tag, IndianRupee, Clock, Package,
   FileText, ChevronDown, Check, Info, Cpu, Layers
 } from 'lucide-react'
 import type { ProcurementRequest } from '../../context/ManagerDataContext'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+
+const CATEGORY_CONFIGS: Record<string, { quantityLabel?: string; extraFieldKey?: string; extraFieldLabel?: string }> = {
+  'Software & SaaS': {
+    quantityLabel: 'Number of seats / licenses',
+    extraFieldKey: 'renewalCycle',
+    extraFieldLabel: 'Renewal Cycle',
+  },
+  'Cloud & Infrastructure': {
+    quantityLabel: 'Instance / Resource count',
+    extraFieldKey: 'billingModel',
+    extraFieldLabel: 'Billing Model',
+  },
+  'IT Hardware': {
+    quantityLabel: 'Quantity',
+    extraFieldKey: 'warrantyPeriod',
+    extraFieldLabel: 'Warranty Period',
+  },
+  'Cybersecurity': {
+    quantityLabel: 'Protected Endpoints / User count',
+    extraFieldKey: 'licenseType',
+    extraFieldLabel: 'License Type',
+  },
+  'IT Services': {
+    quantityLabel: 'Estimated Hours / Scope Units',
+    extraFieldKey: 'engagementModel',
+    extraFieldLabel: 'Engagement Model',
+  },
+  'Office Accessories': {
+    quantityLabel: 'Quantity',
+    extraFieldKey: 'assemblyRequired',
+    extraFieldLabel: 'Assembly Required',
+  },
+  'Office Technology': {
+    quantityLabel: 'Quantity',
+    extraFieldKey: 'maintenancePlan',
+    extraFieldLabel: 'Maintenance Plan',
+  },
+  'Networking & Telecom': {
+    quantityLabel: 'Port / Circuit count',
+    extraFieldKey: 'bandwidthTier',
+    extraFieldLabel: 'Bandwidth Tier',
+  },
+}
 
 export interface RequestDetailsModalProps {
   isOpen: boolean
@@ -31,27 +75,41 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
 }) => {
   if (!isOpen || !request) return null
 
-  const subcategory = request.subcategory || 'Office Equipment'
-  const warranty = '1 Year' // or derived from request if there was a warranty field
+  const catConfig = CATEGORY_CONFIGS[request.category]
+  const subcategory = request.subcategory || '—'
 
-  const quantity = request.quantity || 1
-  const requiredByDate = request.requiredBy || '2026-09-30'
+  // Extract category detail / extra field dynamically if provided
+  const extraFieldKey = catConfig?.extraFieldKey
+  const extraFieldLabel = catConfig?.extraFieldLabel || 'Detail'
+  const extraFieldValue =
+    (extraFieldKey && request.extraFields?.[extraFieldKey]) ||
+    (request as any)[extraFieldKey || ''] ||
+    (request.extraFields && Object.keys(request.extraFields).length > 0 ? Object.values(request.extraFields)[0] : null) ||
+    null
 
-  const deliveryLocation = request.deliveryLocation || 'Pune HQ, 4th Floor'
-  const preferredVendor = (request as any).preferredVendor || request.vendor || 'Dell Technologies'
-  const justification = request.justification || 'Required for operational continuity.'
-  const description = request.description || request.title
+  const hasQuantity = request.quantity !== undefined && request.quantity !== null && (request.quantity as any) !== ''
+  const quantity = hasQuantity ? request.quantity : '—'
+  const quantityNum = typeof quantity === 'number' ? quantity : parseInt(String(quantity), 10) || 1
+  const quantityLabel = catConfig?.quantityLabel || 'Quantity'
+
+  const requiredByDate = request.requiredBy ? formatDate(request.requiredBy) : '—'
+
+  const deliveryLocation = request.deliveryLocation || '—'
+  const preferredVendor = (request as any).preferredVendor || request.vendor || '—'
+  const justification = request.justification || '—'
+  const description = request.description || request.title || '—'
 
   // Product specifications breakdown
   const getProductDetails = () => {
     const t = (request.title + ' ' + (request.category || '')).toLowerCase()
+    const warrantyDisplay = extraFieldValue && extraFieldKey === 'warrantyPeriod' ? String(extraFieldValue) : 'Standard'
     if (t.includes('laptop') || t.includes('macbook')) {
       return {
         modelName: 'Apple MacBook Pro 14" M3 Pro / Dell Latitude Enterprise Workstation',
         partNumber: 'SKU-HW-LPT-2026-09',
         technicalSpecs: 'Apple M3 Pro / Intel Core i9, 32GB Unified RAM, 1TB NVMe PCIe Gen4 SSD, Liquid Retina XDR Display, 70W Fast Charger.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} Enterprise AppleCare+ / OEM Onsite Support with 24x7 priority coverage`,
+        unitPrice: Math.round(request.amount / quantityNum),
+        warrantyTerms: `${warrantyDisplay} Enterprise OEM Onsite Support with priority coverage`,
         certifications: 'RoHS, EnergyStar, ISO 27001 Security Compliant',
         deliveryTimeline: '3 to 5 Business Days upon PO Issuance',
       }
@@ -61,8 +119,8 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
         modelName: 'Dell PowerEdge R760 2U Rack Server Dual Intel Xeon',
         partNumber: 'SKU-SRV-R760-2026',
         technicalSpecs: '2x Intel Xeon Gold 6430 (64 Cores), 128GB DDR5 ECC Registered RAM, 4x 3.84TB Enterprise NVMe SSD in RAID 10, Dual 1100W Redundant Titanium PSUs.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} OEM 24x7 Mission-Critical ProSupport with 4-Hour Onsite Response`,
+        unitPrice: Math.round(request.amount / quantityNum),
+        warrantyTerms: `${warrantyDisplay} Mission-Critical ProSupport with Onsite Response`,
         certifications: 'Tier-4 Datacenter Certified, CE, FCC, UL',
         deliveryTimeline: '7 to 10 Business Days',
       }
@@ -72,8 +130,8 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
         modelName: 'Dell UltraSharp 32" 4K USB-C Hub Monitor (U3223QE)',
         partNumber: 'SKU-MON-U32-2026',
         technicalSpecs: 'IPS Black Technology, 4K UHD 3840x2160 @ 60Hz, 90W USB-C Power Delivery, Built-in KVM Switch & RJ45 Ethernet Port.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} Advanced Exchange Service & Premium Panel Guarantee`,
+        unitPrice: Math.round(request.amount / quantityNum),
+        warrantyTerms: `${warrantyDisplay} Advanced Exchange Service & Premium Panel Guarantee`,
         certifications: 'TCO Certified Displays 9.0, EPEAT Gold',
         deliveryTimeline: '2 to 4 Business Days',
       }
@@ -83,8 +141,8 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
         modelName: 'Enterprise SaaS Annual Multi-Seat Production License & Cloud Capacity',
         partNumber: 'SKU-SW-CORP-2026',
         technicalSpecs: 'Dedicated Tenant Deployment, SSO/SAML 2.0 Integration, 99.99% Uptime SLA, Audit Logging, Automated Daily Encrypted Backups.',
-        unitPrice: Math.round(request.amount / quantity),
-        warrantyTerms: `${warranty} 24x7 Premium Enterprise Technical SLA Support with Dedicated Account Manager`,
+        unitPrice: Math.round(request.amount / quantityNum),
+        warrantyTerms: `${warrantyDisplay} 24x7 Premium Enterprise Technical SLA Support with Dedicated Account Manager`,
         certifications: 'SOC 2 Type II, ISO 27001, GDPR, HIPAA Certified',
         deliveryTimeline: 'Instant Digital Provisioning within 2 Hours of Finance Clearance',
       }
@@ -93,8 +151,8 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
       modelName: `${request.title} — Commercial Enterprise Specification`,
       partNumber: `SKU-COMM-${request.id}`,
       technicalSpecs: `Commercial grade deployment specifications certified for ${request.department} operational infrastructure.`,
-      unitPrice: Math.round(request.amount / quantity),
-      warrantyTerms: `${warranty} Comprehensive Enterprise Onsite Warranty & Support`,
+      unitPrice: Math.round(request.amount / quantityNum),
+      warrantyTerms: `${warrantyDisplay} Comprehensive Enterprise Onsite Support`,
       certifications: 'Standard Commercial Standards & Regulatory Clearance',
       deliveryTimeline: '5 to 7 Business Days',
     }
@@ -185,21 +243,23 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
             </div>
           </div>
 
-          {/* Category Detail: Warranty Period * (Image 1 Callout Box) */}
-          <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200 space-y-1.5 shadow-2xs">
-            <label className="block font-bold text-blue-900 text-xs">
-              Category Detail: Warranty Period *
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                readOnly
-                value={warranty}
-                className="w-full p-2.5 border rounded-lg bg-white border-blue-200 font-bold text-blue-950 text-xs outline-none cursor-default"
-              />
-              <ChevronDown size={15} className="absolute right-3 top-3 text-blue-500" />
+          {/* Dynamic Category Detail (Only shown if category detail/extra field exists for this request) */}
+          {extraFieldValue && (
+            <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200 space-y-1.5 shadow-2xs">
+              <label className="block font-bold text-blue-900 text-xs">
+                Category Detail: {extraFieldLabel} *
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  readOnly
+                  value={String(extraFieldValue)}
+                  className="w-full p-2.5 border rounded-lg bg-white border-blue-200 font-bold text-blue-950 text-xs outline-none cursor-default"
+                />
+                <ChevronDown size={15} className="absolute right-3 top-3 text-blue-500" />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 4. Description * */}
           <div>
@@ -220,7 +280,7 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
           {/* 5. Quantity *, Estimated Cost (USD/INR) *, 6. Required By (Date) * */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block font-bold text-gray-700 mb-1">5. Quantity *</label>
+              <label className="block font-bold text-gray-700 mb-1">5. {quantityLabel} *</label>
               <input
                 type="text"
                 readOnly
@@ -406,7 +466,7 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
           {/* Requester & Submission Metadata Footer Strip */}
           <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between text-xs text-slate-700 font-semibold gap-2">
             <span>👤 Requester: <b className="text-slate-950">{request.requester}</b></span>
-            <span>📅 Submitted Date: <b className="text-slate-950">{request.date}</b></span>
+            <span>📅 Submitted Date: <b className="text-slate-950">{formatDate(request.date)}</b></span>
             <span>🏢 Cost Center: <b className="text-indigo-900">{request.costCenter || `CC-${request.department?.toUpperCase().slice(0, 3)}-2026`}</b></span>
           </div>
         </div>

@@ -12,6 +12,10 @@ import { TrackingStepper, StepHistoryItem } from '../../components/portal/Tracki
 import { detectWorkflowType, getWorkflowProgression } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
 import { useManagerData } from '../../context/ManagerDataContext'
+import { formatDate } from '../../utils/formatDate'
+
+import { Send } from 'lucide-react'
+import { recommendToFinanceApi, sendToFinanceApi } from '../../api/managerApi'
 
 export interface ManagerOrder {
   id: string
@@ -27,6 +31,8 @@ export interface ManagerOrder {
   deliveryLocation: string
   budgetCode: string
   date: string
+  createdAt?: string
+  created_at?: string
   time: string
   status: 'Pending' | 'Approved' | 'Rejected' | 'In Procurement' | 'Completed'
   currentStage: number // 0 to 9
@@ -37,7 +43,14 @@ export interface ManagerOrder {
   priority: 'Low' | 'Medium' | 'High' | 'Critical'
   poNumber?: string
   grnNumber?: string
+  invoiceNumber?: string
+  documentsVerified?: boolean
   history?: StepHistoryItem[]
+  isForwardedToFinance?: boolean
+  forwardReason?: string
+  financeStatus?: string
+  paymentStatus?: string
+  rawRequest?: any
 }
 
 const INITIAL_ORDERS: ManagerOrder[] = [
@@ -348,26 +361,88 @@ const INITIAL_ORDERS: ManagerOrder[] = [
 
 export const MyOrdersPage: React.FC = () => {
   const { user } = useAuth()
-  const { allRequests } = useManagerData()
+  const { allRequests, recommendToFinance, sendToFinance } = useManagerData()
+
+  // Track forwarded requests locally for immediate reactivity
+  const [forwardedOrderIds, setForwardedOrderIds] = useState<Set<string>>(new Set())
+  const [forwardModalOrder, setForwardModalOrder] = useState<ManagerOrder | null>(null)
+  const [forwardReason, setForwardReason] = useState('')
+  const [selectedDirectives, setSelectedDirectives] = useState<string[]>([
+    'Priority Capex Clearance',
+    'Budget Allocation Verified'
+  ])
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' } | null>(null)
+
+  const showToast = (msg: string, type: 'success' | 'info' = 'success') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 3500)
+  }
+
+  // In Manager "My Requests", show all requests across the lifecycle
+  const approvedRequests = useMemo(() => {
+    return allRequests || []
+  }, [allRequests])
 
   const liveOrders = useMemo<ManagerOrder[]>(() => {
-    if (!allRequests || allRequests.length === 0) return []
-    return allRequests.map((req) => {
+    if (!approvedRequests || approvedRequests.length === 0) return []
+    const mappedOrders: ManagerOrder[] = approvedRequests.map((req) => {
       const isCompleted = (req.status as string) === 'completed' || req.status === 'delivered'
       const isInProcurement = req.status === 'assigned_to_vendor' || req.status === 'vendor_accepted'
       const isRejected = req.status === 'rejected' || req.status === 'finance_rejected' || req.status === 'vendor_rejected'
       
+      const isForwarded =
+        req.status === 'recommended_to_finance' ||
+        req.status === 'sent_to_finance' ||
+        req.status === 'finance_review' ||
+        req.status === 'finance_approved' ||
+        Boolean((req as any).isRecommendedToFinance) ||
+        Boolean((req as any).recommendationReason) ||
+        (req as any).financeStatus === 'Sent to Finance' ||
+        (req as any).financeStatus === 'Under Review' ||
+        (req as any).financeStatus === 'Awaiting Finance Action' ||
+        (req as any).financeStatus === 'Pending Finance Approval' ||
+        forwardedOrderIds.has(req.id)
+
       let status: 'Pending' | 'Approved' | 'Rejected' | 'In Procurement' | 'Completed' = 'Pending'
       if (isCompleted) status = 'Completed'
       else if (isInProcurement) status = 'In Procurement'
       else if (isRejected) status = 'Rejected'
-      else if (req.status === 'approved' || req.status === 'finance_review' || req.status === 'recommended_to_finance' || req.status === 'finance_approved') status = 'Approved'
+      else if (req.status === 'approved' || req.status === 'finance_approved' || (req.currentStage && req.currentStage >= 4)) status = 'Approved'
       else status = 'Pending'
 
       const qty = req.quantity || 1
-      const totalCost = req.amount || req.approvalParams?.approvedAmount || 0
+      const totalCost = Number(req.amount ?? (req as any).total_estimated_cost ?? (req as any).estimated_cost ?? (req as any).estimatedCost ?? req.approvalParams?.approvedAmount ?? 0) || 0
       const unitPriceVal = qty > 0 ? Math.round(totalCost / qty) : totalCost
       const deptClean = (req.department || 'IT').toUpperCase().replace(/\s+/g, '')
+
+      const poNum = req.poNumber || (req as any).po_number || (req as any).po_id
+      const grnNum = req.grnNumber || (req as any).grn_number || (req as any).receipt_id
+      const invNum = (req as any).invoiceNumber || (req as any).invoice_number || (req as any).invoice_id
+
+      const isDocsVerified = Boolean(
+        (req as any).isVerified ||
+        (req as any).documentsVerified ||
+        (req as any).is_invoice_verified ||
+        (req.currentStage && req.currentStage >= 8) ||
+        (typeof window !== 'undefined' && (() => {
+          try {
+            const invs: string[] = JSON.parse(localStorage.getItem('kss_manager_verified_invoices') || '[]')
+            const grns: string[] = JSON.parse(localStorage.getItem('kss_manager_verified_grns') || '[]')
+            const cleanId = (req.id || '').replace(/^(REQ-|PO-)/, '').toUpperCase()
+            const hasInv = invs.some((i: string) => i.toUpperCase().includes(cleanId))
+            const hasGr = grns.some((g: string) => g.toUpperCase().includes(cleanId))
+            return hasInv && hasGr
+          } catch { return false }
+        })())
+      )
+
+      let effectiveStage = (req.currentStage !== undefined && req.currentStage !== null)
+        ? req.currentStage
+        : (isCompleted ? (req.category === 'Software' ? 5 : 9) : isInProcurement ? 6 : (req.status === 'approved' ? 4 : 1))
+
+      if (isDocsVerified && effectiveStage < 8 && !isCompleted && status !== 'Rejected') {
+        effectiveStage = 8
+      }
 
       return {
         id: req.id,
@@ -383,21 +458,39 @@ export const MyOrdersPage: React.FC = () => {
         deliveryLocation: 'Pune HQ',
         budgetCode: req.costCenter || `CC-${deptClean}-2026-Q3`,
         date: req.date,
+        createdAt: req.createdAt || req.created_at || req.date,
+        created_at: req.created_at || req.createdAt || req.date,
         time: '10:00 AM',
         status: status,
-        currentStage: status === 'Approved' || status === 'In Procurement' ? 4 : (req.currentStage ? req.currentStage : (isCompleted ? 9 : 1)),
-        currentlyWith: status === 'Approved' || status === 'In Procurement' ? 'Procurement Sourcing Desk' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team',
+        currentStage: effectiveStage,
+        currentlyWith: isForwarded ? 'Finance Department Review' : (status === 'Approved' || status === 'In Procurement' ? 'Procurement Sourcing Desk' : req.status === 'pending_approval' ? 'Manager Sign-off' : 'Procurement Team'),
         lastUpdated: req.date,
         department: req.department,
         requester: req.requester,
         priority: (req.priority as any) || 'Medium',
+        isForwardedToFinance: isForwarded,
+        forwardReason: (req as any).recommendationReason || (req as any).notes || 'Forwarded to Finance for budget and disbursement clearance',
+        financeStatus: (req as any).financeStatus || (isForwarded ? 'Pending Finance Approval' : undefined),
+        paymentStatus: req.paymentStatus,
+        history: req.history,
+        poNumber: poNum,
+        grnNumber: grnNum,
+        invoiceNumber: invNum,
+        documentsVerified: isDocsVerified,
+        rawRequest: req
       }
     })
-  }, [allRequests])
+
+    return mappedOrders.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.date ? new Date(a.date).getTime() : 0)
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.date ? new Date(b.date).getTime() : 0)
+      return timeB - timeA
+    })
+  }, [approvedRequests, forwardedOrderIds])
 
   const orders = liveOrders
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'In Procurement' | 'Completed'>('All')
+  const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Forwarded' | 'In Procurement' | 'Completed'>('All')
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Hardware' | 'Software'>('All')
 
   // Set of expanded order IDs
@@ -417,6 +510,48 @@ export const MyOrdersPage: React.FC = () => {
     })
   }
 
+  const handleOpenForwardModal = (order: ManagerOrder) => {
+    setForwardModalOrder(order)
+    setForwardReason(
+      `Requisition ${order.id} (${order.title}) verified and endorsed by Department Manager. Forwarded to Finance for Capex budget reservation, PO issuance, and disbursement approval.`
+    )
+    setSelectedDirectives([
+      'Priority Capex Clearance',
+      'Budget Allocation Verified'
+    ])
+  }
+
+  const toggleDirective = (dir: string) => {
+    setSelectedDirectives(prev =>
+      prev.includes(dir) ? prev.filter(d => d !== dir) : [...prev, dir]
+    )
+  }
+
+  const handleConfirmForward = async () => {
+    if (!forwardModalOrder) return
+    const orderId = forwardModalOrder.id
+    const directivesNote = selectedDirectives.length > 0
+      ? `\n\n[Manager Directives: ${selectedDirectives.join(', ')}]`
+      : ''
+    const fullNote = (forwardReason || '').trim() + directivesNote
+
+    setForwardedOrderIds(prev => new Set(prev).add(orderId))
+
+    if (recommendToFinance) {
+      recommendToFinance(orderId, fullNote)
+    } else {
+      try {
+        await recommendToFinanceApi(orderId, 1, fullNote)
+      } catch (e) {
+        console.warn('API forward error:', e)
+      }
+    }
+
+    setForwardModalOrder(null)
+    setForwardReason('')
+    showToast(`✓ Requisition ${orderId} successfully forwarded to Finance Portal!`, 'success')
+  }
+
   // Filtered orders
   const filteredOrders = useMemo(() => {
     return orders.filter((ord) => {
@@ -434,7 +569,9 @@ export const MyOrdersPage: React.FC = () => {
         statusFilter === 'All'
           ? true
           : statusFilter === 'Pending'
-          ? ord.status === 'Pending' || ord.status === 'Approved'
+          ? (ord.status === 'Pending' || ord.status === 'Approved') && !ord.isForwardedToFinance
+          : statusFilter === 'Forwarded'
+          ? ord.isForwardedToFinance
           : ord.status === statusFilter
 
       const matchesCategory =
@@ -455,7 +592,8 @@ export const MyOrdersPage: React.FC = () => {
     const totalRaw = orders.reduce((sum, o) => sum + (o.rawCost || 0), 0)
     return {
       total: orders.length,
-      pending: orders.filter((o) => o.status === 'Pending' || o.status === 'Approved').length,
+      pending: orders.filter((o) => (o.status === 'Pending' || o.status === 'Approved') && !o.isForwardedToFinance).length,
+      forwarded: orders.filter((o) => o.isForwardedToFinance).length,
       inProcurement: orders.filter((o) => o.status === 'In Procurement').length,
       completed: orders.filter((o) => o.status === 'Completed').length,
       totalVolume: totalRaw,
@@ -479,6 +617,17 @@ export const MyOrdersPage: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-16">
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-white text-xs font-bold transition-all animate-bounce ${
+            toast.type === 'success' ? 'bg-purple-600' : 'bg-blue-600'
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
+
       {/* ── 1. PROFESSIONAL EXECUTIVE PAGE HEADER ── */}
       <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs relative overflow-hidden">
         <div className="absolute -right-16 -top-16 w-72 h-72 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -524,8 +673,8 @@ export const MyOrdersPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── 2. INTERACTIVE KPI METRIC STAT CARDS ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── 2. INTERACTIVE KPI METRIC STAT CARDS (5 CARDS) ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {/* Card 1: Total Requests */}
         <div
           onClick={() => setStatusFilter('All')}
@@ -566,7 +715,7 @@ export const MyOrdersPage: React.FC = () => {
               <Clock size={20} />
             </div>
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-              Stages 1-3
+              Stages 1-2
             </span>
           </div>
           <p className="text-2xl font-black text-slate-900">{metrics.pending}</p>
@@ -578,7 +727,33 @@ export const MyOrdersPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 3: In Procurement / PO */}
+        {/* Card 3: Forwarded to Finance (NEW) */}
+        <div
+          onClick={() => setStatusFilter('Forwarded')}
+          className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-xs group ${
+            statusFilter === 'Forwarded'
+              ? 'border-purple-500 ring-2 ring-purple-500/20 bg-gradient-to-b from-purple-50/20 to-white'
+              : 'border-slate-200/90 hover:border-purple-300'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
+              <ArrowUpRight size={20} />
+            </div>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+              Finance Review
+            </span>
+          </div>
+          <p className="text-2xl font-black text-slate-900">{metrics.forwarded}</p>
+          <div className="flex items-center justify-between mt-0.5">
+            <p className="text-xs font-semibold text-slate-500">Forwarded to Finance</p>
+            {statusFilter === 'Forwarded' && (
+              <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">Active</span>
+            )}
+          </div>
+        </div>
+
+        {/* Card 4: In Procurement / PO */}
         <div
           onClick={() => setStatusFilter('In Procurement')}
           className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-xs group ${
@@ -604,7 +779,7 @@ export const MyOrdersPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 4: Completed & Settled */}
+        {/* Card 5: Completed & Settled */}
         <div
           onClick={() => setStatusFilter('Completed')}
           className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-xs group ${
@@ -691,15 +866,28 @@ export const MyOrdersPage: React.FC = () => {
 
         {/* Status Segmented Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-          {(['All', 'Pending', 'In Procurement', 'Completed'] as const).map((st) => {
+          {(['All', 'Pending', 'Forwarded', 'In Procurement', 'Completed'] as const).map((st) => {
             const count =
               st === 'All'
                 ? metrics.total
                 : st === 'Pending'
                 ? metrics.pending
+                : st === 'Forwarded'
+                ? metrics.forwarded
                 : st === 'In Procurement'
                 ? metrics.inProcurement
                 : metrics.completed
+
+            const label =
+              st === 'All'
+                ? 'All'
+                : st === 'Pending'
+                ? 'In Review'
+                : st === 'Forwarded'
+                ? 'Forwarded to Finance'
+                : st === 'In Procurement'
+                ? 'In Procurement'
+                : 'Completed'
 
             return (
               <button
@@ -711,7 +899,7 @@ export const MyOrdersPage: React.FC = () => {
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                <span>{st === 'Pending' ? 'In Review' : st}</span>
+                <span>{label}</span>
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
                     statusFilter === st ? 'bg-slate-800 text-white' : 'bg-slate-200/80 text-slate-700'
@@ -812,7 +1000,7 @@ export const MyOrdersPage: React.FC = () => {
                         {/* Date and Time */}
                         <span className="text-xs text-slate-400 font-medium flex items-center gap-1.5 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200/60">
                           <Calendar size={12} className="text-slate-400" />
-                          {order.date} <span className="text-slate-300">•</span> {order.time}
+                          {formatDate(order.date)} <span className="text-slate-300">•</span> {order.time}
                         </span>
 
                         {/* Category Pill with Icon */}
@@ -846,6 +1034,13 @@ export const MyOrdersPage: React.FC = () => {
                             Medium Priority
                           </span>
                         )}
+
+                        {order.isForwardedToFinance && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
+                            <ArrowUpRight size={11} className="text-purple-600" />
+                            Transmitted to Finance
+                          </span>
+                        )}
                       </div>
 
                       {/* Title & Description */}
@@ -857,13 +1052,37 @@ export const MyOrdersPage: React.FC = () => {
                       </p>
                     </div>
 
-                    {/* Status Badge and EXPAND (^) Button */}
-                    <div className="flex items-center gap-2.5 self-start">
+                    {/* Status Badge, Forward Button and EXPAND (^) Button */}
+                    <div className="flex items-center gap-2 self-start flex-wrap">
                       {/* Status Pill */}
-                      <span className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 shadow-2xs ${statusBadge}`}>
-                        <span className={`w-2 h-2 rounded-full ${statusDot}`} />
-                        {order.status === 'Pending' ? 'Under Review' : order.status}
-                      </span>
+                      {order.isForwardedToFinance ? (
+                        <span className="text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 shadow-2xs bg-purple-50 text-purple-700 border-purple-200">
+                          <ArrowUpRight size={13} className="text-purple-600" />
+                          Forwarded to Finance
+                        </span>
+                      ) : (
+                        <span className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 shadow-2xs ${statusBadge}`}>
+                          <span className={`w-2 h-2 rounded-full ${statusDot}`} />
+                          {order.status === 'Pending' ? 'Under Review' : order.status}
+                        </span>
+                      )}
+
+                      {/* Option for Forward to Finance */}
+                      {order.status !== 'Completed' && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenForwardModal(order)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs cursor-pointer ${
+                            order.isForwardedToFinance
+                              ? 'bg-purple-100/60 text-purple-800 border-purple-300 hover:bg-purple-100'
+                              : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200 hover:border-purple-300'
+                          }`}
+                          title="Forward / Endorse Requisition to Finance Portal"
+                        >
+                          <Send size={12} className={order.isForwardedToFinance ? 'text-purple-700' : 'text-purple-600'} />
+                          <span>{order.isForwardedToFinance ? 'Re-Forward' : 'Forward to Finance'}</span>
+                        </button>
+                      )}
 
                       {/* Expand / Track Order Button */}
                       <button
@@ -959,7 +1178,7 @@ export const MyOrdersPage: React.FC = () => {
                         {order.currentlyWith}
                       </div>
                       <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                        Updated {order.lastUpdated}
+                        Updated {formatDate(order.lastUpdated)}
                       </div>
                     </div>
                   </div>
@@ -991,6 +1210,13 @@ export const MyOrdersPage: React.FC = () => {
                           </span>
                         )}
                         <Link
+                          to="/portal/manager/recommended-finance"
+                          className="inline-flex items-center gap-1.5 font-bold text-purple-600 hover:text-purple-800 bg-white px-3 py-1.5 rounded-lg border border-purple-200 shadow-2xs hover:bg-purple-50 transition-colors"
+                        >
+                          <ArrowUpRight size={13} />
+                          <span>Finance Review Queue</span>
+                        </Link>
+                        <Link
                           to="/portal/manager/raise-ticket"
                           className="inline-flex items-center gap-1.5 font-bold text-blue-600 hover:text-blue-800 bg-white px-3 py-1.5 rounded-lg border border-blue-200 shadow-2xs hover:bg-blue-50 transition-colors"
                         >
@@ -1006,10 +1232,20 @@ export const MyOrdersPage: React.FC = () => {
                         category={order.category}
                         title={order.title}
                         currentStage={order.currentStage}
-                        status={order.status}
+                        status={order.rawRequest?.status || order.status}
                         currentlyWith={order.currentlyWith}
                         lastUpdated={order.lastUpdated}
-                        history={order.history}
+                        history={order.history || order.rawRequest?.history}
+                        approval_steps={order.rawRequest?.approval_steps || (order as any).approval_steps}
+                        financeStatus={order.financeStatus || order.rawRequest?.financeStatus}
+                        paymentStatus={order.paymentStatus || order.rawRequest?.paymentStatus}
+                        poNumber={order.poNumber || order.rawRequest?.po_number || order.rawRequest?.poNumber}
+                        grnNumber={order.grnNumber || order.rawRequest?.grn_number || order.rawRequest?.grnNumber}
+                        invoiceNumber={order.invoiceNumber || order.rawRequest?.invoice_number || order.rawRequest?.invoiceNumber}
+                        documentsVerified={order.documentsVerified}
+                        isVerified={order.documentsVerified}
+                        is_invoice_verified={order.documentsVerified || order.rawRequest?.is_invoice_verified}
+                        rfqId={(order as any).rfqId || order.rawRequest?.rfq_id || order.rawRequest?.rfqId}
                       />
                     </div>
                   </div>
@@ -1017,6 +1253,114 @@ export const MyOrdersPage: React.FC = () => {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── FORWARD TO FINANCE MODAL ── */}
+      {forwardModalOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-4 animate-scaleUp">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-bold">
+                  <Send size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Forward to Finance Portal</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Transmit requisition dossier to Finance for Capex clearance &amp; disbursement
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setForwardModalOrder(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Requisition Briefing Card */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5">
+              <div className="flex items-center justify-between font-mono font-bold text-blue-700">
+                <span>{forwardModalOrder.id}</span>
+                <span className="text-slate-900 font-sans font-black">{forwardModalOrder.estCost}</span>
+              </div>
+              <p className="font-bold text-slate-800">{forwardModalOrder.title}</p>
+              <div className="flex items-center gap-3 text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+                <span>Dept: <b>{forwardModalOrder.department}</b></span>
+                <span>Vendor: <b>{forwardModalOrder.vendor}</b></span>
+                <span>Qty: <b>{forwardModalOrder.quantity} {forwardModalOrder.unit}</b></span>
+              </div>
+            </div>
+
+            {/* Manager Directives Presets */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Preset Directives &amp; Compliance Tags:
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  'Priority Capex Clearance',
+                  'Budget Allocation Verified',
+                  'Tax Invoice & Quote Attached',
+                  'Settlement Terms: Net 30 Days',
+                  'Direct RTGS Bank Transfer'
+                ].map(tag => {
+                  const isSelected = selectedDirectives.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleDirective(tag)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {isSelected ? '✓ ' : '+ '}{tag}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Manager Reason / Notes Textarea */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Endorsement Message &amp; Escalation Justification:
+              </label>
+              <textarea
+                value={forwardReason}
+                onChange={e => setForwardReason(e.target.value)}
+                rows={3}
+                placeholder="Specify recommendation notes for the Finance Controller..."
+                className="w-full p-3 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all font-medium resize-none"
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setForwardModalOrder(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmForward}
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 transition-colors shadow-xs flex items-center gap-1.5"
+              >
+                <Send size={13} />
+                <span>Confirm &amp; Forward to Finance</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

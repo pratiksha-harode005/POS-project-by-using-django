@@ -7,7 +7,8 @@ import {
   LogOut, Search, User, ChevronDown, Building, FileText,
   CreditCard, ArrowRight, X, ExternalLink, TrendingUp, CheckCircle2
 } from 'lucide-react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useLocation } from 'react-router-dom'
+import { MASTER_VENDORS, getScopedVendorData } from '../../portals/vendor/VendorPortalPages'
 
 interface PortalLayoutProps {
   children: React.ReactNode
@@ -49,7 +50,7 @@ const DEPARTMENTS = [
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
 export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
-  const { user, role, logout, switchRolePortal } = useAuth()
+  const { user, role, logout } = useAuth()
   const { budgets, allRequests, payments } = useManagerData()
   const navigate = useNavigate()
 
@@ -61,13 +62,6 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
   const profileMenuRef = useRef<HTMLDivElement>(null)
 
   const currentRole = role || 'MANAGER'
-
-  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const targetRole = e.target.value as UserRole
-    switchRolePortal(targetRole)
-    setProfileMenuOpen(false)
-    navigate(`/portal/${targetRole.toLowerCase()}/dashboard`)
-  }
 
   const roleColors: Record<UserRole, { bg: string; text: string; border: string }> = {
     TEAM_LEAD: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
@@ -97,19 +91,19 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
   const matchedDepartments = useMemo(() => {
     if (!cleanQuery) return []
     return DEPARTMENTS.filter((d) => {
-      if (d.name.toLowerCase().includes(cleanQuery)) return true
-      if (d.id.toLowerCase() === cleanQuery || cleanQuery.includes(d.id.toLowerCase())) return true
-      return d.aliases.some((alias) => alias.includes(cleanQuery) || cleanQuery.includes(alias))
+      if (d.name && d.name.toLowerCase().includes(cleanQuery)) return true
+      if (d.id && (d.id.toLowerCase() === cleanQuery || cleanQuery.includes(d.id.toLowerCase()))) return true
+      return (d.aliases || []).some((alias) => alias.toLowerCase().includes(cleanQuery) || cleanQuery.includes(alias.toLowerCase()))
     }).map((d) => {
-      const deptBudgets = budgets.filter(
-        (b) => b.department.toLowerCase() === d.id.toLowerCase() || b.department.toLowerCase().includes(d.id.toLowerCase())
+      const deptBudgets = (budgets || []).filter(
+        (b) => (b.department && (b.department.toLowerCase() === d.id.toLowerCase() || b.department.toLowerCase().includes(d.id.toLowerCase())))
       )
-      const totalBudget = deptBudgets.reduce((s, b) => s + b.totalBudget, 0)
-      const allocated = deptBudgets.reduce((s, b) => s + b.allocated, 0)
-      const spent = deptBudgets.reduce((s, b) => s + b.spent, 0)
-      const available = deptBudgets.reduce((s, b) => s + b.available, 0)
-      const reqCount = allRequests.filter(
-        (r) => r.department.toLowerCase() === d.id.toLowerCase() || r.department.toLowerCase().includes(d.id.toLowerCase())
+      const totalBudget = deptBudgets.reduce((s, b) => s + (b.totalBudget || 0), 0)
+      const allocated = deptBudgets.reduce((s, b) => s + (b.allocated || 0), 0)
+      const spent = deptBudgets.reduce((s, b) => s + (b.spent || 0), 0)
+      const available = deptBudgets.reduce((s, b) => s + (b.available || 0), 0)
+      const reqCount = (allRequests || []).filter(
+        (r) => (r.department && (r.department.toLowerCase() === d.id.toLowerCase() || r.department.toLowerCase().includes(d.id.toLowerCase())))
       ).length
       const pace = totalBudget > 0 ? ((spent / totalBudget) * 100).toFixed(1) : '0.0'
       return { ...d, totalBudget, allocated, spent, available, reqCount, pace }
@@ -118,22 +112,22 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
 
   const matchedRequests = useMemo(() => {
     if (!cleanQuery || cleanQuery.length < 2) return []
-    return allRequests.filter((r) =>
-      r.title.toLowerCase().includes(cleanQuery) ||
-      r.id.toLowerCase().includes(cleanQuery) ||
-      r.requester.toLowerCase().includes(cleanQuery) ||
-      r.department.toLowerCase().includes(cleanQuery)
+    return (allRequests || []).filter((r) =>
+      String(r.title || '').toLowerCase().includes(cleanQuery) ||
+      String(r.id || '').toLowerCase().includes(cleanQuery) ||
+      String(r.requester || '').toLowerCase().includes(cleanQuery) ||
+      String(r.department || '').toLowerCase().includes(cleanQuery)
     ).slice(0, 4)
   }, [cleanQuery, allRequests])
 
   const matchedVendors = useMemo(() => {
     if (!cleanQuery || cleanQuery.length < 2) return []
     const map = new Map<string, { totalSpend: number; count: number }>()
-    payments.forEach((p) => {
-      if (p.vendor.toLowerCase().includes(cleanQuery)) {
+    ;(payments || []).forEach((p) => {
+      if (p.vendor && String(p.vendor).toLowerCase().includes(cleanQuery)) {
         const existing = map.get(p.vendor) || { totalSpend: 0, count: 0 }
         map.set(p.vendor, {
-          totalSpend: existing.totalSpend + p.amount,
+          totalSpend: existing.totalSpend + (p.amount || 0),
           count: existing.count + 1,
         })
       }
@@ -189,11 +183,40 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
     }
   }
 
+  const location = useLocation()
+
+  const activeVendorId = useMemo(() => {
+    const vndMatch = location.pathname.match(/(VND-[A-Z0-9-]+)/i)
+    if (vndMatch) return vndMatch[1].toUpperCase()
+
+    const parts = location.pathname.split('/')
+    const vIndex = parts.indexOf('vendor')
+    if (vIndex !== -1 && parts.length > vIndex + 1) {
+      const nextSeg = parts[vIndex + 1]
+      if (nextSeg === 'vendor' && parts.length > vIndex + 2) {
+        return parts[vIndex + 2]
+      }
+      if (!['categories', 'rfqs', 'dashboard', 'quotations', 'purchase-orders', 'deliveries', 'invoices', 'payments', 'documents'].includes(nextSeg)) {
+        return nextSeg
+      }
+    }
+    return null
+  }, [location.pathname])
+
+  const activeVendor = useMemo(() => {
+    if (activeVendorId && currentRole === 'VENDOR') {
+      return getScopedVendorData(activeVendorId).vendor
+    }
+    return null
+  }, [activeVendorId, currentRole])
+
   // Get user details
-  const firstName = user?.first_name || (currentRole === 'ADMIN' ? 'Priyanka' : 'Sachin')
-  const lastName = user?.last_name || (currentRole === 'ADMIN' ? 'Sharma' : (user?.first_name ? '' : 'Kumar'))
-  const initials = `${firstName[0] || 'P'}${lastName[0] || 'S'}`.toUpperCase()
-  const roleDisplay = currentRole.replace('_', ' ').toLowerCase()
+  const firstName = activeVendor ? activeVendor.name : (user?.first_name || (currentRole === 'ADMIN' ? 'Priyanka' : 'Sachin'))
+  const lastName = activeVendor ? '' : (user?.last_name || (currentRole === 'ADMIN' ? 'Sharma' : (user?.first_name ? '' : 'Kumar')))
+  const initials = activeVendor
+    ? activeVendor.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+    : `${firstName[0] || 'P'}${lastName[0] || 'S'}`.toUpperCase()
+  const roleDisplay = activeVendor ? `${activeVendor.category} Vendor` : currentRole.replace('_', ' ').toLowerCase()
 
   return (
     <div className="fixed inset-0 w-screen h-screen flex bg-[#F8FAFC] overflow-hidden font-sans select-text">
@@ -351,7 +374,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
                             <div className="text-right shrink-0">
                               <span className="font-mono font-bold text-slate-900 block">{fmt(r.amount)}</span>
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase font-semibold">
-                                {r.status.replace(/_/g, ' ')}
+                                {String(r.status || '').replace(/_/g, ' ')}
                               </span>
                             </div>
                           </div>
@@ -457,24 +480,6 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
                       <User size={15} className="text-slate-400" />
                       <span>My Profile & Settings</span>
                     </Link>
-                  </div>
-
-                  {/* Switch Portal */}
-                  <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                      Switch Portal
-                    </label>
-                    <select
-                      value={currentRole}
-                      onChange={handleRoleChange}
-                      className="w-full text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg p-1.5 focus:outline-none cursor-pointer"
-                    >
-                      <option value="TEAM_LEAD">Team Lead Portal</option>
-                      <option value="MANAGER">Manager Portal</option>
-                      <option value="FINANCE">Finance Portal</option>
-                      <option value="ADMIN">Admin Portal</option>
-                      <option value="VENDOR">Vendor Portal</option>
-                    </select>
                   </div>
 
                   {/* Sign Out */}

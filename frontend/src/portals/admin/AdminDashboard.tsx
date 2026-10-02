@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import {
   ShieldCheck, FileText, CheckCircle2, XCircle, Clock,
-  TrendingUp, DollarSign, Building, AlertTriangle,
+  TrendingUp, IndianRupee, Building, AlertTriangle,
   ArrowUpRight, RotateCcw, PackageCheck, Layers,
   Calendar, Filter, CheckSquare, Sparkles,
   Eye, CheckCircle, ArrowRight, X, User
@@ -17,6 +17,7 @@ import { TrackingStepper } from '../../components/portal/TrackingStepper'
 import { RequestDetailsModal } from '../../components/portal/RequestDetailsModal'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
 import { PROCUREMENT_CATEGORIES } from './AdminDepartmentsPage'
+import { formatDate } from '../../utils/formatDate'
 
 const priorityStyles: Record<string, string> = {
   Critical: 'bg-rose-100 text-rose-900 border-rose-300 font-bold',
@@ -84,6 +85,10 @@ export const AdminDashboard: React.FC = () => {
   // State for Request Details Modal, Stepper Tracking Modal, and Toast
   const [viewReq, setViewReq] = useState<ProcurementRequest | null>(null)
   const [trackingReq, setTrackingReq] = useState<ProcurementRequest | null>(null)
+  const liveTrackingReq = useMemo(() => {
+    if (!trackingReq) return null
+    return allRequests.find(r => r.id === trackingReq.id) || trackingReq
+  }, [trackingReq, allRequests])
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' } | null>(null)
 
   const showToast = (msg: string, type: 'success' | 'info' = 'success') => {
@@ -100,10 +105,10 @@ export const AdminDashboard: React.FC = () => {
 
   // Products belonging to the current tracking request
   const trackingReqProducts = useMemo(() => {
-    if (!trackingReq) return []
-    const ticket = tickets?.find(t => t.requestId === trackingReq.id || t.id === trackingReq.id)
+    if (!liveTrackingReq) return []
+    const ticket = tickets?.find(t => t.requestId === liveTrackingReq.id || t.id === liveTrackingReq.id)
     return ticket?.products || []
-  }, [trackingReq, tickets])
+  }, [liveTrackingReq, tickets])
 
   const [approvalModalReq, setApprovalModalReq] = useState<ProcurementRequest | null>(null)
 
@@ -582,7 +587,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-300">Total Enterprise Budget</span>
             <div className="w-8 h-8 rounded-xl bg-slate-800 text-emerald-400 flex items-center justify-center">
-              <DollarSign size={16} />
+              <IndianRupee size={16} />
             </div>
           </div>
           <div>
@@ -643,7 +648,7 @@ export const AdminDashboard: React.FC = () => {
                       <span className={`px-2 py-0.5 rounded text-[10px] border ${priorityStyles[req.priority] || priorityStyles.Medium}`}>
                         {req.priority || 'Medium'} Priority
                       </span>
-                      <span className="text-[11px] text-slate-400">Created: {req.date}</span>
+                      <span className="text-[11px] text-slate-400">Created: {formatDate(req.date)}</span>
                     </div>
                     <h4 className="text-sm font-bold text-slate-900 mt-1">{req.title}</h4>
                     <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
@@ -738,7 +743,7 @@ export const AdminDashboard: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <DollarSign size={18} className="text-emerald-600" /> Multi-Tier Budget Allocation & Authority Thresholds
+              <IndianRupee size={18} className="text-emerald-600" /> Multi-Tier Budget Allocation & Authority Thresholds
             </h2>
             <p className="text-xs text-slate-500">
               Clear breakdown of enterprise financial pools governed across Manager, Finance, and Admin sign-off levels.
@@ -1526,14 +1531,14 @@ export const AdminDashboard: React.FC = () => {
       />
 
       {/* Modal 2: Stepper Tracking Modal */}
-      {trackingReq && (
+      {liveTrackingReq && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 shadow-2xl p-6 text-xs space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <span className="text-[10px] font-bold text-indigo-600">{trackingReq.id}</span>
-                <h3 className="text-base font-bold text-slate-900">Procurement Stepper Tracking: {trackingReq.title}</h3>
-                <p className="text-slate-400 text-xs">Category: {trackingReq.category} • Department: {trackingReq.department}</p>
+                <span className="text-[10px] font-bold text-indigo-600">{liveTrackingReq.id}</span>
+                <h3 className="text-base font-bold text-slate-900">Procurement Stepper Tracking: {liveTrackingReq.title}</h3>
+                <p className="text-slate-400 text-xs">Category: {liveTrackingReq.category} • Department: {liveTrackingReq.department}</p>
               </div>
               <button onClick={() => setTrackingReq(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={18} />
@@ -1542,13 +1547,19 @@ export const AdminDashboard: React.FC = () => {
 
             <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200">
               <TrackingStepper
-                status={trackingReq.status}
-                financeStatus={trackingReq.financeStatus}
-                paymentStatus={trackingReq.paymentStatus}
-                category={trackingReq.category}
-                title={trackingReq.title}
-                lastUpdated={trackingReq.date}
-                history={trackingReq.history}
+                currentStage={liveTrackingReq.currentStage}
+                status={liveTrackingReq.status}
+                financeStatus={liveTrackingReq.financeStatus}
+                paymentStatus={liveTrackingReq.paymentStatus}
+                category={liveTrackingReq.category}
+                title={liveTrackingReq.title}
+                lastUpdated={liveTrackingReq.date}
+                history={liveTrackingReq.history}
+                poNumber={(liveTrackingReq as any).poNumber || (liveTrackingReq as any).po_number}
+                grnNumber={(liveTrackingReq as any).grnNumber || (liveTrackingReq as any).grn_number}
+                invoiceNumber={(liveTrackingReq as any).invoiceNumber || (liveTrackingReq as any).invoice_number}
+                is_invoice_verified={(liveTrackingReq as any).is_invoice_verified}
+                rfqId={(liveTrackingReq as any).rfqId || (liveTrackingReq as any).rfq_id}
               />
             </div>
 
@@ -1588,7 +1599,7 @@ export const AdminDashboard: React.FC = () => {
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <button
                 onClick={() => {
-                  const id = trackingReq.id
+                  const id = liveTrackingReq.id
                   setTrackingReq(null)
                   navigate(`/portal/admin/requests?id=${id}`)
                 }}

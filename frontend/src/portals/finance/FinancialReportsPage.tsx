@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import {
   FileCheck, Building, CreditCard, TrendingUp, BarChart2,
   PieChart as PieIcon, ArrowUpDown, ChevronRight, ShieldCheck,
-  CheckCircle2, AlertTriangle, FileText, DollarSign, Check, ExternalLink,
+  CheckCircle2, AlertTriangle, FileText, IndianRupee, Check, ExternalLink,
   Search, X, Filter, RotateCcw, Download, Eye, RefreshCw
 } from 'lucide-react'
 import {
@@ -12,6 +12,7 @@ import {
 import { useSearchParams } from 'react-router-dom'
 import { useFinanceData } from '../../context/ManagerDataContext'
 import { downloadPaymentLedgerPdf, getPaymentLedgerPdfBlobUrl } from '../../utils/paymentLedgerPdfGenerator'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -361,9 +362,9 @@ export const FinancialReportsPage: React.FC = () => {
 
       const matchSearch =
         !tableSearch ||
-        p.id.toLowerCase().includes(tableSearch.toLowerCase()) ||
-        p.vendor.toLowerCase().includes(tableSearch.toLowerCase()) ||
-        p.requestId.toLowerCase().includes(tableSearch.toLowerCase())
+        String(p.id || '').toLowerCase().includes(tableSearch.toLowerCase()) ||
+        String(p.vendor || '').toLowerCase().includes(tableSearch.toLowerCase()) ||
+        String(p.requestId || '').toLowerCase().includes(tableSearch.toLowerCase())
 
       return matchDept && matchSearch
     })
@@ -762,7 +763,7 @@ export const FinancialReportsPage: React.FC = () => {
                       <td className="p-4 font-bold text-slate-900">{p.vendor}</td>
                       <td className="p-4 text-slate-600">{p.invoiceId}</td>
                       <td className="p-4 text-right font-extrabold text-slate-900">{fmt(p.amount)}</td>
-                      <td className="p-4 text-slate-600">{p.paymentDate || p.dueDate}</td>
+                      <td className="p-4 text-slate-600">{formatDate(p.paymentDate || p.dueDate)}</td>
                       <td className="p-4 text-slate-600">{p.paymentMethod}</td>
                       <td className="p-4">
                         <span

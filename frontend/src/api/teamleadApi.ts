@@ -20,9 +20,9 @@ export interface CreateRequestPayload {
   extra_fields?: Record<string, any>
 }
 
-export const getTeamLeadRequests = async (params?: { status?: string; search?: string }) => {
+export const getTeamLeadRequests = async (params?: { status?: string; search?: string; page_size?: number }) => {
   try {
-    const response = await apiClient.get('/requests/', { params })
+    const response = await apiClient.get('/requests/', { params: { page_size: 1000, ...params } })
     return response.data
   } catch (err) {
     console.warn('TeamLead API fallback:', err)

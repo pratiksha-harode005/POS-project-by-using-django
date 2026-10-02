@@ -3,11 +3,11 @@ import {
   Truck, PlusCircle, ShieldCheck, Award, FileText,
   CheckCircle, XCircle, AlertTriangle, Search, Filter,
   Phone, Mail, Building, FileCheck, Check, X, Eye,
-  Clock, DollarSign, Download, UploadCloud, HelpCircle
+  Clock, IndianRupee, Download, UploadCloud, HelpCircle
 } from 'lucide-react'
 import { useManagerData, VendorItem } from '../../context/ManagerDataContext'
 
-const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+const fmt = (v?: number | string | null) => `₹${(Number(v) || 0).toLocaleString('en-IN')}`
 
 export const AdminVendorsPage: React.FC = () => {
   const { vendors, updateVendorStatus, addVendor } = useManagerData()
@@ -54,11 +54,11 @@ export const AdminVendorsPage: React.FC = () => {
     return vendors.filter(v => {
       const q = search.toLowerCase()
       const matchesSearch =
-        v.id.toLowerCase().includes(q) ||
-        v.name.toLowerCase().includes(q) ||
-        v.company.toLowerCase().includes(q) ||
-        v.contactPerson.toLowerCase().includes(q) ||
-        v.category.toLowerCase().includes(q)
+        (v.id || '').toLowerCase().includes(q) ||
+        (v.name || '').toLowerCase().includes(q) ||
+        (v.company || '').toLowerCase().includes(q) ||
+        (v.contactPerson || '').toLowerCase().includes(q) ||
+        (v.category || '').toLowerCase().includes(q)
 
       const matchesCat = categoryFilter === 'ALL' || v.category === categoryFilter
       const matchesStatus = statusFilter === 'ALL' || v.status === statusFilter

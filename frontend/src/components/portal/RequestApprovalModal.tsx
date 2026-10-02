@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import {
-  X, CheckCircle, AlertCircle, ShieldCheck, DollarSign,
+  X, CheckCircle, AlertCircle, ShieldCheck, IndianRupee,
   Building, FileText, Check
 } from 'lucide-react'
 import type { ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
@@ -27,10 +27,15 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   if (!isOpen || !request) return null
 
   // 1. Requested Amount (read-only)
-  const requestedAmount = request.amount
+  const requestedAmount = Number(request.amount ?? (request as any).total_estimated_cost ?? (request as any).estimated_cost ?? (request as any).estimatedCost ?? 0) || 0
 
-  // 2. Approved Amount (editable)
-  const [approvedAmount, setApprovedAmount] = useState<number | string>(request.amount || '')
+  // 2. Approved Amount (editable, capped at 50,000 for Manager, 1,00,000 for Finance)
+  const initialApproved = portalType === 'MANAGER' && requestedAmount > 50000
+    ? 50000
+    : portalType === 'FINANCE' && requestedAmount > 100000
+    ? 100000
+    : requestedAmount
+  const [approvedAmount, setApprovedAmount] = useState<number | string>(initialApproved || '')
 
   // 3. Budget Available
   const [budgetAvailable, setBudgetAvailable] = useState<'Yes' | 'No'>('Yes')
@@ -40,7 +45,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   const [costCenter, setCostCenter] = useState<string>(defaultCostCenter)
 
   // 5. Vendor
-  const defaultVendor = request.vendor || 'Dell Technologies Enterprise'
+  const defaultVendor = request.vendor || ''
   const [vendor, setVendor] = useState<string>(defaultVendor)
 
   // 6. Commercial Evaluation
@@ -66,13 +71,33 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
 
   const [validationError, setValidationError] = useState<string>('')
 
+  const isAlreadyApproved = Boolean(
+    request.status === 'approved' ||
+    request.status === 'finance_approved' ||
+    request.financeStatus?.toLowerCase() === 'approved' ||
+    (request.currentStage !== undefined && request.currentStage >= 4) ||
+    request.status === 'quotes_received' ||
+    request.status === 'assigned_to_vendor' ||
+    request.status === 'delivered' ||
+    request.status === 'invoiced' ||
+    request.status === 'completed' ||
+    request.financeApprovedBy ||
+    request.financeApprovedDate
+  )
+
   // Reset form when request changes
   useEffect(() => {
     if (request) {
-      setApprovedAmount(request.amount || '')
+      const currentReqAmt = Number(request.amount ?? (request as any).total_estimated_cost ?? (request as any).estimated_cost ?? (request as any).estimatedCost ?? 0) || 0
+      const initialApprovedAmt = portalType === 'MANAGER' && currentReqAmt > 50000
+        ? 50000
+        : portalType === 'FINANCE' && currentReqAmt > 100000
+        ? 100000
+        : currentReqAmt
+      setApprovedAmount(initialApprovedAmt || '')
       setBudgetAvailable('Yes')
       setCostCenter(request.costCenter || `CC-${(request.department || 'ENG').toUpperCase().slice(0, 3)}-2026-Q3`)
-      setVendor(request.vendor || 'Dell Technologies Enterprise')
+      setVendor(request.vendor || '')
       setCommercialEvaluation('Completed')
       setBusinessJustification(request.justification || 'Required for department operational and strategic delivery.')
       setBusinessImpact('Direct impact on department deliverables and sprint schedule if unapproved.')
@@ -80,31 +105,40 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
       setApprovalComments('Specifications verified against approved OPEX/CAPEX allocation. Approved for PO generation.')
       setValidationError('')
     }
-  }, [request])
+  }, [request, portalType])
 
   const handleConfirm = (e: React.FormEvent) => {
     e.preventDefault()
 
-    const numApproved = typeof approvedAmount === 'number' ? approvedAmount : parseFloat(String(approvedAmount)) || 0
+    if (isAlreadyApproved) {
+      setValidationError('This request has already been approved. Duplicate approval is not permitted.')
+      return
+    }
 
     // Validate fields
+    const numApproved = Number(approvedAmount) || 0
     if (!numApproved || numApproved <= 0) {
       setValidationError('Approved amount must be greater than zero.')
       return
     }
 
-    if (requestedAmount > 0 && numApproved > requestedAmount) {
+    if (portalType === 'MANAGER' && numApproved > 50000) {
+      setValidationError(`Manager approval limit is ₹50,000. Approved amount (${fmt(numApproved)}) cannot exceed ₹50,000. For amounts exceeding ₹50,000, please use "Recommend to Finance".`)
+      return
+    }
+
+    if (portalType === 'FINANCE' && numApproved > 100000) {
+      setValidationError(`Finance approval limit is ₹1,00,000. Approved amount (${fmt(numApproved)}) cannot exceed ₹1,00,000. For amounts exceeding ₹1,00,000, please use "Recommend to Higher Authority" / "Recommend to Admin".`)
+      return
+    }
+
+    if (requestedAmount > 0 && portalType !== 'FINANCE' && numApproved > requestedAmount) {
       setValidationError(`Approved amount (${fmt(numApproved)}) cannot exceed requested amount (${fmt(requestedAmount)}).`)
       return
     }
 
     if (!costCenter.trim()) {
       setValidationError('Cost center is required to allocate department expenditure.')
-      return
-    }
-
-    if (!vendor.trim()) {
-      setValidationError('Vendor name is required for procurement validation.')
       return
     }
 
@@ -199,7 +233,7 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
           {/* ── PART A: FINANCIAL VALIDATION ── */}
           <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-3">
             <div className="flex items-center gap-2 text-slate-900 font-bold border-b border-slate-100 pb-2">
-              <DollarSign size={16} className="text-emerald-600" />
+              <IndianRupee size={16} className="text-emerald-600" />
               <span className="uppercase tracking-wider text-[11px]">Financial Validation</span>
             </div>
 
@@ -217,12 +251,25 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
 
               {/* 2. Approved Amount */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                  2. Approved Amount (₹) <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-700 font-bold text-[11px]">
+                    2. Approved Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  {portalType === 'MANAGER' && (
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                      Limit: ₹50,000
+                    </span>
+                  )}
+                  {portalType === 'FINANCE' && (
+                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                      Limit: ₹1,00,000
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   min="0"
+                  max={portalType === 'MANAGER' ? 50000 : portalType === 'FINANCE' ? 100000 : undefined}
                   value={approvedAmount}
                   onChange={(e) => {
                     const val = e.target.value
@@ -233,10 +280,30 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
                       setApprovedAmount(isNaN(num) ? '' : num)
                     }
                   }}
-                  className="w-full px-3.5 py-2 bg-white rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 font-mono font-bold text-sm text-slate-900"
+                  className={`w-full px-3.5 py-2 bg-white rounded-xl border font-mono font-bold text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                    (portalType === 'MANAGER' && Number(approvedAmount) > 50000) ||
+                    (portalType === 'FINANCE' && Number(approvedAmount) > 100000)
+                      ? 'border-rose-400 focus:ring-rose-500/20 focus:border-rose-500 bg-rose-50/20'
+                      : 'border-slate-300 focus:ring-emerald-500/20 focus:border-emerald-600'
+                  }`}
+                  placeholder={portalType === 'MANAGER' ? 'Max 50000' : portalType === 'FINANCE' ? 'Max 100000' : 'Enter amount'}
                   required
                 />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Actual authorized amount (cannot exceed requested)</span>
+                <div className="flex items-center justify-between mt-0.5 text-[10px]">
+                  <span className="text-slate-400">
+                    Actual authorized amount (cannot exceed requested)
+                  </span>
+                  {portalType === 'MANAGER' && Number(approvedAmount) > 50000 && (
+                    <span className="text-rose-600 font-bold">
+                      Exceeds ₹50,000 limit!
+                    </span>
+                  )}
+                  {portalType === 'FINANCE' && Number(approvedAmount) > 100000 && (
+                    <span className="text-rose-600 font-bold">
+                      Exceeds ₹1,00,000 limit!
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* 3. Budget Available */}
@@ -309,17 +376,16 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
               {/* 5. Vendor */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                  5. Contracted / Target Vendor <span className="text-rose-500">*</span>
+                  5. Contracted / Target Vendor <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
                 <input
                   type="text"
                   value={vendor}
                   onChange={(e) => setVendor(e.target.value)}
-                  placeholder="e.g. Dell Technologies Enterprise"
+                  placeholder="Optional supplier name..."
                   className="w-full px-3.5 py-2 bg-white rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-medium text-xs text-slate-900"
-                  required
                 />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Designated supplier who receives the PO</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Optional designated supplier who receives the PO</span>
               </div>
 
               {/* 6. Commercial Evaluation */}
@@ -451,13 +517,20 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
               Cancel
             </button>
 
-            <button
-              type="submit"
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-md shadow-emerald-600/25 hover:shadow-lg transition-all active:scale-95"
-            >
-              <CheckCircle size={16} strokeWidth={2.5} />
-              <span>Confirm APPROVE</span>
-            </button>
+            {isAlreadyApproved ? (
+              <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-100 text-emerald-850 font-bold text-xs border border-emerald-300 shadow-2xs">
+                <CheckCircle size={16} className="text-emerald-700" />
+                <span>Already Approved & Released</span>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-md shadow-emerald-600/25 hover:shadow-lg transition-all active:scale-95"
+              >
+                <CheckCircle size={16} strokeWidth={2.5} />
+                <span>Confirm APPROVE</span>
+              </button>
+            )}
           </div>
         </form>
       </div>

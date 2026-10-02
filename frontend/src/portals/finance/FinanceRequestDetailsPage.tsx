@@ -2,13 +2,14 @@ import React, { useState, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   FileText, Check, Clock, X, AlertTriangle, ArrowLeft, Building,
-  User, Calendar, DollarSign, Tag, Paperclip, Truck, Box, Package,
+  User, Calendar, IndianRupee, Tag, Paperclip, Truck, Box, Package,
   CreditCard, GitCompare, ChevronDown, CheckCircle2, ChevronRight,
   PlusCircle, ShieldCheck, Layers, ArrowUpRight, CheckCircle
 } from 'lucide-react'
 import { useFinanceData, ProcurementRequest, RFQ, ApprovalParameters } from '../../context/ManagerDataContext'
 import { getWorkflowProgression } from '../../utils/workflowUtils'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -19,9 +20,9 @@ const HARDWARE_STAGES_CONFIG = [
   { name: 'ADMIN APPROVAL', dept: 'Executive Admin' },
   { name: 'RFQ SENT', dept: 'Sourcing Team' },
   { name: 'VENDOR QUOTES RECEIVED', dept: 'Invited Vendors' },
+  { name: 'PRODUCT ORDER', dept: 'Selected Vendor (PO Issued)' },
   { name: 'DELIVERY', dept: 'Logistics & Dock Receiving' },
-  { name: 'INVOICE', dept: 'Commercial Accounts' },
-  { name: 'VERIFICATION AND ORDER COMPLETE', dept: 'Audit & Order Settlement' },
+  { name: 'VERIFICATION AND ORDER COMPLETE', dept: 'Audit & 3-Way Match' },
   { name: 'PAYMENT', dept: 'Treasury & Bank Clearing' },
 ]
 
@@ -37,9 +38,9 @@ const SOFTWARE_STAGES_CONFIG = [
 export const FinanceRequestDetailsPage: React.FC = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { allRequests, rfqs, approveFinanceRequest } = useFinanceData()
+  const { financeRequests, rfqs, approveFinanceRequest } = useFinanceData()
 
-  const reqId = searchParams.get('id') || allRequests[0]?.id || 'REQ-2026-001'
+  const reqId = searchParams.get('id') || financeRequests[0]?.id || ''
   const [selectedId, setSelectedId] = useState(reqId)
   const [viewMode, setViewMode] = useState<'FORM' | 'STEPPER'>('FORM')
 
@@ -55,10 +56,29 @@ export const FinanceRequestDetailsPage: React.FC = () => {
 
   const handleConfirmApproval = (params: ApprovalParameters) => {
     if (!request) return
+    const isAlreadyApproved = Boolean(
+      request.status === 'approved' ||
+      request.status === 'finance_approved' ||
+      request.financeStatus?.toLowerCase() === 'approved' ||
+      (request.currentStage !== undefined && request.currentStage >= 4) ||
+      request.status === 'quotes_received' ||
+      request.status === 'assigned_to_vendor' ||
+      request.status === 'delivered' ||
+      request.status === 'invoiced' ||
+      request.status === 'completed' ||
+      request.financeApprovedBy ||
+      request.financeApprovedDate
+    )
+    if (isAlreadyApproved) {
+      showToast(`Request ${request.id} is already approved.`, 'error')
+      setApproveModalOpen(false)
+      return
+    }
     approveFinanceRequest(
       request.id,
       params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
-      'Mark Finance Officer'
+      'Mark Finance Officer',
+      params.approvedAmount
     )
     showToast(`✓ Request ${request.id} approved! Forwarded for PO release.`, 'success')
     setApproveModalOpen(false)
@@ -67,8 +87,8 @@ export const FinanceRequestDetailsPage: React.FC = () => {
 
   // Current request
   const request = useMemo(() => {
-    return allRequests.find((r) => r.id === selectedId) || allRequests[0]
-  }, [allRequests, selectedId])
+    return financeRequests.find((r) => r.id === selectedId) || financeRequests[0]
+  }, [financeRequests, selectedId])
 
   // Matched RFQ (department-aligned or general)
   const matchedRfq: RFQ | undefined = useMemo(() => {
@@ -89,6 +109,8 @@ export const FinanceRequestDetailsPage: React.FC = () => {
       category: request.category,
       title: request.title,
       paymentStatus: request.paymentStatus,
+      currentStage: request.currentStage,
+      history: request.history,
     })
   }, [request])
 
@@ -144,8 +166,8 @@ export const FinanceRequestDetailsPage: React.FC = () => {
       })()
     : '2026-09-30'
 
-  const deliveryLocation = 'Pune HQ, 4th Floor'
-  const preferredVendor = request.vendor || (request.category?.toLowerCase().includes('software') ? 'Amazon Web Services' : 'Dell Technologies')
+  const deliveryLocation = request.deliveryLocation || '—'
+  const preferredVendor = request.vendor || '—'
   const justification = request.justification || `${request.title} is required to maintain business continuity, sprint deliverables, and departmental operational goals.`
   const description = request.description || `${request.title} required by ${request.requester} for ${request.department}. Includes enterprise delivery, compliance certifications, and SLA support.`
 
@@ -323,7 +345,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
             onChange={(e) => setSelectedId(e.target.value)}
             className="text-xs font-bold bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
           >
-            {allRequests.map((r) => (
+            {financeRequests.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.id} — {r.title.slice(0, 26)}...
               </option>
@@ -377,7 +399,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
                   <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
                     request.status === 'pending_approval' || request.financeStatus === 'pending'
                       ? 'bg-amber-100 text-amber-900 border-amber-300'
-                      : request.status === 'approved' || request.financeStatus === 'approved'
+                      : request.status === 'approved' || request.status === 'finance_approved' || request.financeStatus?.toLowerCase() === 'approved' || (request.currentStage !== undefined && request.currentStage >= 4)
                       ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                       : request.status === 'recommended_to_admin'
                       ? 'bg-purple-100 text-purple-900 border-purple-300'
@@ -395,7 +417,17 @@ export const FinanceRequestDetailsPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              {request.status === 'finance_approved' || request.financeStatus === 'approved' ? (
+              {request.status === 'approved' ||
+              request.status === 'finance_approved' ||
+              request.financeStatus?.toLowerCase() === 'approved' ||
+              (request.currentStage !== undefined && request.currentStage >= 4) ||
+              request.status === 'quotes_received' ||
+              request.status === 'assigned_to_vendor' ||
+              request.status === 'delivered' ||
+              request.status === 'invoiced' ||
+              request.status === 'completed' ||
+              request.financeApprovedBy ||
+              request.financeApprovedDate ? (
                 <span className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-300 shadow-2xs">
                   <CheckCircle size={14} className="text-emerald-700" /> Finance Approved
                 </span>
@@ -719,7 +751,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-100">
               <div>
                 <span className="text-slate-400 font-bold block uppercase text-[10px]">Creation Date</span>
-                <span className="font-bold text-slate-800">{request.date}</span>
+                <span className="font-bold text-slate-800">{formatDate(request.date)}</span>
               </div>
               <div>
                 <span className="text-slate-400 font-bold block uppercase text-[10px]">Manager Status</span>

@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   Landmark, Send, CheckCircle, X, AlertTriangle, FileText,
   Download, Printer, ShieldCheck, Clock, Check, Paperclip,
-  Building, Calendar, IndianRupee, User, ExternalLink, Sparkles
+  Building, Calendar, IndianRupee, User, ExternalLink, Sparkles,
+  CreditCard, Search, Layers, CheckCircle2, ArrowRight, Copy
 } from 'lucide-react'
 import { useManagerData, ProcurementRequest } from '../../context/ManagerDataContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
@@ -11,6 +12,7 @@ import {
   getFinanceHandoverPdfBlobUrl
 } from '../../utils/financeHandoverPdfGenerator'
 import { numberToIndianWords } from '../../utils/paymentLedgerPdfGenerator'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -20,6 +22,8 @@ const statusColors: Record<string, string> = {
   'Documents Pending': 'bg-orange-100 text-orange-800 border-orange-200',
   'Sent to Finance': 'bg-purple-100 text-purple-800 border-purple-200',
   'Approved': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  'Completed — Payment Settled': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  'Paid': 'bg-emerald-100 text-emerald-800 border-emerald-200',
 }
 
 const PRESET_DIRECTIVES = [
@@ -31,9 +35,42 @@ const PRESET_DIRECTIVES = [
   'Annual Statutory Compliance'
 ]
 
+export const isRequestTransmittedToFinance = (r?: ProcurementRequest | null): boolean => {
+  if (!r) return false
+  const rawSt = String(r.status || '').toLowerCase()
+  const rawFst = String(r.financeStatus || '').toLowerCase()
+  return Boolean(
+    r.isForwardedToFinance ||
+    rawSt === 'sent_to_finance' ||
+    rawSt === 'recommended_to_finance' ||
+    rawSt === 'finance_review' ||
+    rawSt === 'finance_approved' ||
+    rawSt === 'completed' ||
+    r.paymentStatus === 'Paid' ||
+    rawSt.includes('recommend') ||
+    rawSt.includes('finance') ||
+    rawFst.includes('sent to finance') ||
+    rawFst.includes('review') ||
+    rawFst.includes('approved') ||
+    rawFst.includes('finance') ||
+    rawFst.includes('completed') ||
+    rawFst.includes('settled') ||
+    (r.currentStage !== undefined && r.currentStage >= 2) ||
+    (Array.isArray(r.history) && r.history.some((h: any) =>
+      h.action === 'RECOMMEND' ||
+      (typeof h.actorRole === 'string' && h.actorRole.toUpperCase().includes('FINANCE')) ||
+      (typeof h.remark === 'string' && h.remark.toLowerCase().includes('finance'))
+    ))
+  )
+}
+
+type TabFilter = 'ALL' | 'PENDING' | 'TRANSMITTED' | 'SETTLED'
+
 export const FinanceReviewPage: React.FC = () => {
-  const { financeReview, sendToFinance } = useManagerData()
+  const { financeReview, sendToFinance, payments } = useManagerData()
   const { isUnread, markAsRead } = useActivity()
+  const [activeTab, setActiveTab] = useState<TabFilter>('ALL')
+  const [searchQuery, setSearchQuery] = useState('')
   const [sendModal, setSendModal] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [selectedDirectives, setSelectedDirectives] = useState<string[]>([
@@ -43,13 +80,95 @@ export const FinanceReviewPage: React.FC = () => {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null)
   const [isExportingPdf, setIsExportingPdf] = useState(false)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  const [copiedUtr, setCopiedUtr] = useState<string | null>(null)
 
   const showToast = (msg: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
   }
 
-  const req = financeReview.find(r => r.id === sendModal)
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedUtr(text)
+    showToast(`Copied UTR: ${text}`, 'info')
+    setTimeout(() => setCopiedUtr(null), 2500)
+  }
+
+  // Correlate requests with payments
+  const enrichedList = useMemo(() => {
+    return financeReview.map(r => {
+      const matchingPay = payments.find(p =>
+        p.requestId === r.id ||
+        (r.id && p.requestId?.includes(r.id.replace('REQ-', ''))) ||
+        (r.poNumber && p.poNumber === r.poNumber) ||
+        (r.invoiceDetails?.invoiceNumber && p.invoiceId === r.invoiceDetails.invoiceNumber)
+      )
+
+      const isPaid = Boolean(
+        matchingPay?.status === 'Paid' ||
+        r.paymentStatus === 'Paid' ||
+        r.status === 'completed' ||
+        r.currentStage === 9 ||
+        r.paymentTransactionRef
+      )
+
+      const utr = r.paymentTransactionRef || matchingPay?.transactionRef || matchingPay?.referenceNumber || (matchingPay as any)?.reference_number || (isPaid ? `UTR-${(r.paidDate || r.date || new Date().toISOString().split('T')[0]).replace(/-/g, '')}-${r.id.replace(/[^a-zA-Z0-9]/g, '')}` : undefined)
+      const payDate = r.paidDate || matchingPay?.paymentDate || (isPaid ? r.date : undefined)
+      const payAmount = matchingPay?.amount ?? r.amount
+      const vendorName = matchingPay?.vendor || r.vendor || 'Vendor Partner'
+      const poNum = matchingPay?.poNumber || r.poNumber || `PO-${r.id.replace(/^REQ-/, '')}`
+      const invNum = matchingPay?.invoiceId || r.invoiceDetails?.invoiceNumber || `INV-${r.id.replace(/^REQ-/, '')}`
+
+      return {
+        ...r,
+        isPaid,
+        effectiveUtr: utr,
+        effectivePaidDate: payDate,
+        effectivePayAmount: payAmount,
+        effectiveVendor: vendorName,
+        effectivePoNumber: poNum,
+        effectiveInvoiceNumber: invNum,
+        effectivePaymentMethod: matchingPay?.paymentMethod || 'NEFT / RTGS Corporate Treasury',
+      }
+    })
+  }, [financeReview, payments])
+
+  // KPIs
+  const totalCount = enrichedList.length
+  const pendingCount = enrichedList.filter(r => !isRequestTransmittedToFinance(r) && !r.isPaid).length
+  const transmittedCount = enrichedList.filter(r => isRequestTransmittedToFinance(r) && !r.isPaid).length
+  const settledCount = enrichedList.filter(r => r.isPaid).length
+  const totalSettledSpend = enrichedList.filter(r => r.isPaid).reduce((sum, r) => sum + (r.effectivePayAmount || r.amount || 0), 0)
+
+  // Filtered List based on Tab & Search
+  const filteredRequests = useMemo(() => {
+    let list = enrichedList
+
+    if (activeTab === 'PENDING') {
+      list = list.filter(r => !isRequestTransmittedToFinance(r) && !r.isPaid)
+    } else if (activeTab === 'TRANSMITTED') {
+      list = list.filter(r => isRequestTransmittedToFinance(r) && !r.isPaid)
+    } else if (activeTab === 'SETTLED') {
+      list = list.filter(r => r.isPaid)
+    }
+
+    const q = (searchQuery || '').toLowerCase().trim()
+    if (q) {
+      list = list.filter(r =>
+        String(r.id || '').toLowerCase().includes(q) ||
+        String(r.title || '').toLowerCase().includes(q) ||
+        String(r.requester || '').toLowerCase().includes(q) ||
+        String(r.department || '').toLowerCase().includes(q) ||
+        String(r.effectiveVendor || '').toLowerCase().includes(q) ||
+        String(r.effectiveUtr || '').toLowerCase().includes(q) ||
+        String(r.effectivePoNumber || '').toLowerCase().includes(q)
+      )
+    }
+
+    return list
+  }, [enrichedList, activeTab, searchQuery])
+
+  const req = enrichedList.find(r => r.id === sendModal)
 
   const handleOpenSendModal = (r: ProcurementRequest) => {
     markAsRead(r.id)
@@ -118,7 +237,7 @@ export const FinanceReviewPage: React.FC = () => {
   }
 
   // Calculated ledger values for report
-  const gross = req?.amount || 0
+  const gross = req?.effectivePayAmount || req?.amount || 0
   const netBase = Math.round((gross / 1.18) * 100) / 100
   const tax = Math.round((gross - netBase) * 100) / 100
   const amountWords = numberToIndianWords(gross)
@@ -148,35 +267,163 @@ export const FinanceReviewPage: React.FC = () => {
               FINANCE REVIEW DESK
             </span>
             <span className="text-xs text-slate-400 font-medium">
-              {financeReview.length} Requisitions In Pipeline
+              {totalCount} Requisitions in Finance Review Pipeline
             </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1 flex items-center gap-2">
             <Landmark className="text-purple-600" size={26} /> Finance Review
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Audit and forward manager-endorsed requisitions to Finance Directorate via official Handover Reports.
+            Audit manager-endorsed requisitions, monitor Treasury payment settlements, and transmit official Handover Reports to Finance Directorate.
           </p>
         </div>
       </div>
 
+      {/* ── PIPELINE SUMMARY METRIC CARDS ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-400 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Total Pipeline</span>
+            <Layers size={16} className="text-purple-600" />
+          </div>
+          <p className="text-2xl font-black text-slate-900">{totalCount}</p>
+          <span className="text-[11px] text-slate-500 mt-0.5 block">Requisitions evaluated</span>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-400 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Pending Scrutiny</span>
+            <Clock size={16} className="text-amber-500" />
+          </div>
+          <p className="text-2xl font-black text-amber-600">{pendingCount}</p>
+          <span className="text-[11px] text-slate-500 mt-0.5 block">Awaiting transmission</span>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-400 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">In Finance Queue</span>
+            <Send size={16} className="text-blue-600" />
+          </div>
+          <p className="text-2xl font-black text-blue-600">{transmittedCount}</p>
+          <span className="text-[11px] text-slate-500 mt-0.5 block">Forwarded to Finance</span>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-400 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Settled & Paid</span>
+            <CheckCircle2 size={16} className="text-emerald-600" />
+          </div>
+          <p className="text-2xl font-black text-emerald-600">{settledCount}</p>
+          <span className="text-[11px] font-bold text-emerald-700 mt-0.5 block">{fmt(totalSettledSpend)} disbursed</span>
+        </div>
+      </div>
+
+      {/* ── FILTER TABS & SEARCH BAR ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setActiveTab('ALL')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'ALL'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <span>All Dossiers</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${activeTab === 'ALL' ? 'bg-purple-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              {totalCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('PENDING')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'PENDING'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <span>Pending Scrutiny</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${activeTab === 'PENDING' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              {pendingCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('TRANSMITTED')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'TRANSMITTED'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <span>In Finance Queue</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${activeTab === 'TRANSMITTED' ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              {transmittedCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('SETTLED')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'SETTLED'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <span>Settled & Paid</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${activeTab === 'SETTLED' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              {settledCount}
+            </span>
+          </button>
+        </div>
+
+        <div className="relative min-w-[240px] sm:min-w-[280px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search Request ID, Title, UTR, Vendor..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-8 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-600"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Requests Feed */}
-      {financeReview.length === 0 ? (
+      {filteredRequests.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center shadow-2xs">
           <CheckCircle size={48} className="mx-auto mb-4 text-emerald-400" />
-          <p className="text-lg font-bold text-slate-800">No requests pending finance review</p>
-          <p className="text-xs text-slate-400 mt-1">All requisitions have been processed or forwarded to the finance queue.</p>
+          <p className="text-lg font-bold text-slate-800">No requisitions match active filter</p>
+          <p className="text-xs text-slate-400 mt-1">Adjust search query or tab filters to view requisitions in the finance pipeline.</p>
         </div>
       ) : (
         <div className="space-y-4">
-          {financeReview.map(r => {
+          {filteredRequests.map(r => {
             const isNew = isUnread(r.id)
+            const isAlreadySent = isRequestTransmittedToFinance(r)
+            const isSettled = r.isPaid
+
             return (
               <div
                 key={r.id}
                 onClick={() => { if (isNew) markAsRead(r.id) }}
                 className={`rounded-2xl border transition-all p-6 ${
-                  isNew
+                  isSettled
+                    ? 'bg-white border-slate-200 shadow-2xs hover:border-emerald-300 border-l-4 border-l-emerald-600'
+                    : isNew
                     ? 'bg-blue-50/20 border-l-4 border-l-blue-600 border-slate-300 shadow-sm'
                     : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300'
                 }`}
@@ -188,58 +435,169 @@ export const FinanceReviewPage: React.FC = () => {
                       <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
                         {r.id}
                       </span>
-                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${statusColors[r.financeStatus || ''] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                      {r.financeStatus || 'Pending'}
-                    </span>
-                    {r.priority && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                        r.priority === 'Critical' ? 'bg-rose-100 text-rose-800' :
-                        r.priority === 'High' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
-                      }`}>
-                        {r.priority} Priority
-                      </span>
+                      {isSettled ? (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
+                          <CheckCircle2 size={11} /> Paid & Settled
+                        </span>
+                      ) : (
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${statusColors[r.financeStatus || ''] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                          {r.financeStatus || 'Pending'}
+                        </span>
+                      )}
+                      {r.priority && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          r.priority === 'Critical' ? 'bg-rose-100 text-rose-800' :
+                          r.priority === 'High' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {r.priority} Priority
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="text-base font-bold text-slate-900 mb-1">{r.title}</h2>
+                    <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+                      <span>👤 Requester: <b className="text-slate-800">{r.requester}</b></span>
+                      <span>🏢 Department: <b className="text-slate-800">{r.department}</b></span>
+                      <span>📁 Category: <b className="text-slate-800">{r.category || 'General'}</b></span>
+                      <span>📅 Submitted: {formatDate(r.date)}</span>
+                    </div>
+                    {r.justification && (
+                      <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mt-3">
+                        <b className="text-slate-900">Justification:</b> {r.justification}
+                      </p>
                     )}
                   </div>
-                  <h2 className="text-base font-bold text-slate-900 mb-1">{r.title}</h2>
-                  <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-                    <span>👤 Requester: <b className="text-slate-800">{r.requester}</b></span>
-                    <span>🏢 Department: <b className="text-slate-800">{r.department}</b></span>
-                    <span>📁 Category: <b className="text-slate-800">{r.category || 'General'}</b></span>
-                    <span>📅 Submitted: {r.date}</span>
-                  </div>
-                  {r.justification && (
-                    <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mt-3">
-                      <b className="text-slate-900">Justification:</b> {r.justification}
+                  <div className="text-right flex-shrink-0 bg-slate-50 sm:bg-transparent p-3 sm:p-0 rounded-xl">
+                    <p className={`text-2xl font-black tracking-tight ${isSettled ? 'text-emerald-700' : 'text-slate-900'}`}>
+                      {fmt(r.effectivePayAmount || r.amount)}
                     </p>
-                  )}
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase">
+                      {isSettled ? 'Disbursed Spend' : 'Authorized Spend'}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right flex-shrink-0 bg-slate-50 sm:bg-transparent p-3 sm:p-0 rounded-xl">
-                  <p className="text-2xl font-black text-slate-900 tracking-tight">{fmt(r.amount)}</p>
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase">Authorized Spend</p>
-                </div>
-              </div>
 
-              <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-3">
-                <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                  <ShieldCheck size={14} className="text-emerald-600" />
-                  Manager technical scrutiny completed • Ready for formal finance dossier
-                </span>
-                <button
-                  onClick={() => handleOpenSendModal(r)}
-                  disabled={r.financeStatus === 'Sent to Finance'}
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-2xs transition-all"
-                >
-                  <Send size={14} />
-                  {r.financeStatus === 'Sent to Finance' ? 'Already Sent to Finance' : 'Send to Finance (Handover Report)'}
-                </button>
+                {/* ── DEDICATED TREASURY PAYMENT SETTLEMENT BANNER ── */}
+                {isSettled && (
+                  <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-emerald-50/90 to-teal-50/60 border border-emerald-200/80 space-y-2.5">
+                    <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-emerald-200/60">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-emerald-600 text-white flex items-center justify-center text-xs">
+                          <CreditCard size={13} />
+                        </div>
+                        <span className="text-xs font-bold text-emerald-950 uppercase tracking-wide">
+                          Treasury Payment Clearance & Disbursement Dossier
+                        </span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-white px-2.5 py-0.5 rounded-md border border-emerald-300 shadow-2xs">
+                        <CheckCircle2 size={12} className="text-emerald-600" /> Settled via Banking Gateway
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase block">Transaction UTR / Ref</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                            {r.effectiveUtr || 'UTR-TREASURY-SETTLED'}
+                          </span>
+                          {r.effectiveUtr && (
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(r.effectiveUtr!)}
+                              className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-white transition-colors"
+                              title="Copy UTR"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase block">Settlement Date</span>
+                        <span className="font-semibold text-slate-800 block mt-0.5">
+                          {formatDate(r.effectivePaidDate || r.date)}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase block">Beneficiary Vendor</span>
+                        <span className="font-bold text-slate-900 truncate block mt-0.5" title={r.effectiveVendor}>
+                          {r.effectiveVendor}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase block">Payment Channel</span>
+                        <span className="font-medium text-slate-700 block mt-0.5">
+                          {r.effectivePaymentMethod}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-emerald-200/50 flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-900">
+                      <div className="flex items-center gap-3">
+                        <span>PO Ref: <b className="font-mono">{r.effectivePoNumber}</b></span>
+                        <span>Invoice: <b className="font-mono">{r.effectiveInvoiceNumber}</b></span>
+                        <span>Ticket: <b className="font-mono">TCK-{r.id.replace(/^REQ-/, '')}</b></span>
+                      </div>
+                      <span className="text-emerald-700 font-medium">
+                        Disbursed by Corporate Finance Treasury
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-3">
+                  <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <ShieldCheck size={14} className="text-emerald-600" />
+                    {isSettled
+                      ? 'Requisition settled • Complete audit trail and banking ledger recorded'
+                      : isAlreadySent
+                      ? 'Requisition dossier forwarded & active in Finance Directorate review queue'
+                      : 'Manager technical scrutiny completed • Ready for formal finance dossier'}
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSendModal(r)}
+                      className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition-colors border border-slate-200 cursor-pointer"
+                      title="View Handover Dossier & Export PDF"
+                    >
+                      <FileText size={14} className="text-slate-500" />
+                      Handover Dossier
+                    </button>
+
+                    {isSettled ? (
+                      <span className="inline-flex items-center gap-1.5 font-bold text-xs px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                        <CheckCircle2 size={14} className="text-emerald-600" />
+                        Settled & Paid
+                      </span>
+                    ) : isAlreadySent ? (
+                      <span className="inline-flex items-center gap-1.5 font-bold text-xs px-3.5 py-2 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs">
+                        <CheckCircle size={14} className="text-purple-600" />
+                        Sent to Finance
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSendModal(r)}
+                        className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-2xs transition-all cursor-pointer"
+                      >
+                        <Send size={14} />
+                        Send to Finance
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
         </div>
       )}
 
-      {/* ── HIGH-LEVEL REPORT FORMAT MODAL (SEND TO FINANCE) ── */}
+      {/* ── HIGH-LEVEL REPORT FORMAT MODAL (HANDOVER & PAYMENT DOSSIER) ── */}
       {sendModal && req && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-6 animate-fadeIn overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-4xl w-full my-auto shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
@@ -271,7 +629,7 @@ export const FinanceReviewPage: React.FC = () => {
                   onClick={handleDownloadPdf}
                   disabled={isExportingPdf}
                   title="Download Handover Report PDF"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors border border-slate-700 disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors border border-slate-700 disabled:opacity-50 cursor-pointer"
                 >
                   <Download size={14} className={isExportingPdf ? 'animate-bounce' : ''} />
                   <span className="hidden sm:inline">Export PDF</span>
@@ -280,14 +638,14 @@ export const FinanceReviewPage: React.FC = () => {
                   type="button"
                   onClick={handlePreviewPdf}
                   title="Print / View Preview"
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors border border-slate-700"
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors border border-slate-700 cursor-pointer"
                 >
                   <Printer size={15} />
                 </button>
                 <button
                   type="button"
                   onClick={() => setSendModal(null)}
-                  className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors ml-1"
+                  className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors ml-1 cursor-pointer"
                 >
                   <X size={20} />
                 </button>
@@ -315,13 +673,13 @@ export const FinanceReviewPage: React.FC = () => {
 
                   <div className="text-right sm:border-l sm:border-slate-100 sm:pl-6 flex-shrink-0">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Total Authorized Value
+                      {req.isPaid ? 'Total Settled Spend' : 'Total Authorized Value'}
                     </span>
                     <p className="text-2xl font-black text-purple-700 font-mono tracking-tight">
                       {fmt(gross)}
                     </p>
                     <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 mt-1">
-                      <CheckCircle size={10} /> Manager Cleared
+                      <CheckCircle size={10} /> {req.isPaid ? 'Payment Disbursed & Settled' : 'Manager Cleared'}
                     </span>
                   </div>
                 </div>
@@ -342,6 +700,43 @@ export const FinanceReviewPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* ── TREASURY PAYMENT SETTLEMENT SECTION (IF PAID) ── */}
+              {req.isPaid && (
+                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200 p-5 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5 uppercase tracking-wide">
+                      <CreditCard size={15} className="text-emerald-700" /> Official Treasury Payment Certificate
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-800 bg-white px-2.5 py-0.5 rounded border border-emerald-300">
+                      ✓ Disbursed & Reconciled
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-white/80 p-3 rounded-xl border border-emerald-100">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">UTR Reference Number</span>
+                      <span className="font-mono font-black text-slate-900 text-xs">
+                        {req.effectiveUtr || 'UTR-TREASURY-SETTLED'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Settlement Date</span>
+                      <span className="font-bold text-slate-800 text-xs">
+                        {formatDate(req.effectivePaidDate || req.date)}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Vendor Beneficiary</span>
+                      <span className="font-bold text-slate-900 text-xs">
+                        {req.effectiveVendor}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 2-Column Audit & Ledger Profile Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -369,7 +764,7 @@ export const FinanceReviewPage: React.FC = () => {
                       </tr>
                       <tr>
                         <td className="px-4 py-2.5 text-slate-400 font-semibold">Submission Date</td>
-                        <td className="px-4 py-2.5 text-slate-800 font-medium">{req.date}</td>
+                        <td className="px-4 py-2.5 text-slate-800 font-medium">{formatDate(req.date)}</td>
                       </tr>
                       <tr>
                         <td className="px-4 py-2.5 text-slate-400 font-semibold">Approval Level</td>
@@ -490,7 +885,7 @@ export const FinanceReviewPage: React.FC = () => {
                         key={dir}
                         type="button"
                         onClick={() => toggleDirective(dir)}
-                        className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 ${
+                        className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
                           active
                             ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
                             : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
@@ -518,15 +913,37 @@ export const FinanceReviewPage: React.FC = () => {
                 </div>
 
                 {/* Audit Notice Alert */}
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-900">
-                  <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold text-amber-950">Official Audit Trail Notification:</span>
-                    <p className="text-[11px] text-amber-800 mt-0.5">
-                      Transmitting this report locks managerial clearance, updates the central database to <span className="font-mono font-bold">sent_to_finance</span>, and alerts Finance Officers with this formal dossier in their queue.
-                    </p>
+                {req.isPaid ? (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-emerald-900">
+                    <CheckCircle size={16} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-emerald-950">Payment Settled & Cleared by Treasury:</span>
+                      <p className="text-[11px] text-emerald-800 mt-0.5">
+                        This requisition has been fully disbursed via banking transfer. Transaction reference UTR: <span className="font-mono font-bold">{req.effectiveUtr}</span>. Handover report reflects closed status.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                ) : isRequestTransmittedToFinance(req) ? (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-purple-900">
+                    <CheckCircle size={16} className="text-purple-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-purple-950">Dossier Transmitted to Finance Directorate:</span>
+                      <p className="text-[11px] text-purple-800 mt-0.5">
+                        This requisition has been formally forwarded and is active in the Finance review pipeline. You can export or print the official Handover Report PDF at any time.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-900">
+                    <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-amber-950">Official Audit Trail Notification:</span>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        Transmitting this report locks managerial clearance, updates the central database to <span className="font-mono font-bold">sent_to_finance</span>, and alerts Finance Officers with this formal dossier in their queue.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -541,29 +958,41 @@ export const FinanceReviewPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setSendModal(null)}
-                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 >
-                  Cancel
+                  Close
                 </button>
 
                 <button
                   type="button"
                   onClick={handleDownloadPdf}
                   disabled={isExportingPdf}
-                  className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   <Download size={14} />
                   <span>Download Report</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md shadow-purple-600/20 transition-all hover:translate-y-[-0.5px]"
-                >
-                  <Send size={15} />
-                  <span>Confirm & Send to Finance</span>
-                </button>
+                {req.isPaid ? (
+                  <span className="inline-flex items-center gap-1.5 font-bold text-xs px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                    <CheckCircle2 size={15} className="text-emerald-600" />
+                    Settled & Disbursed
+                  </span>
+                ) : isRequestTransmittedToFinance(req) ? (
+                  <span className="inline-flex items-center gap-1.5 font-bold text-xs px-4 py-2.5 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs">
+                    <CheckCircle size={15} className="text-purple-600" />
+                    Transmitted to Finance
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSend}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md shadow-purple-600/20 transition-all hover:translate-y-[-0.5px] cursor-pointer"
+                  >
+                    <Send size={15} />
+                    <span>Confirm & Send to Finance</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -588,7 +1017,7 @@ export const FinanceReviewPage: React.FC = () => {
                     const win = window.open(previewPdfUrl, '_blank')
                     win?.focus()
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors cursor-pointer"
                 >
                   <ExternalLink size={13} /> Open External
                 </button>
@@ -597,7 +1026,7 @@ export const FinanceReviewPage: React.FC = () => {
                     URL.revokeObjectURL(previewPdfUrl)
                     setPreviewPdfUrl(null)
                   }}
-                  className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                  className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
                 >
                   <X size={18} />
                 </button>

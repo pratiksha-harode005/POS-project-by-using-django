@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { History, Search, Filter, Download, ArrowUpDown, ChevronLeft, ChevronRight, FileSpreadsheet, FileText } from 'lucide-react'
 import { useProcurement } from '../../context/ProcurementContext'
+import { formatDate } from '../../utils/formatDate'
 
 export const RequestHistoryPage: React.FC = () => {
   const { requests } = useProcurement()
@@ -38,7 +39,13 @@ export const RequestHistoryPage: React.FC = () => {
   }
 
   const filtered = requests.filter((item) => {
-    const matchesStatus = filterStatus === 'All' || item.status === filterStatus
+    const itemSt = (item.status || '').toLowerCase().trim()
+    const filterSt = (filterStatus || '').toLowerCase().trim()
+    const matchesStatus =
+      filterStatus === 'All' ||
+      itemSt === filterSt ||
+      (filterSt === 'rejected' && (itemSt === 'rejected' || itemSt.includes('reject')))
+
     const matchesCategory = filterCategory === 'All' || item.category === filterCategory
     const matchesSearch =
       item.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -271,7 +278,7 @@ export const RequestHistoryPage: React.FC = () => {
                   <td className="p-4 font-bold text-gray-900">
                     ${(row.estimatedCost || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="p-4 text-gray-500">{row.date}</td>
+                  <td className="p-4 text-gray-500">{formatDate(row.date)}</td>
                   <td className="p-4 text-gray-600 font-semibold">{computeDaysInStage(row.date)}</td>
                   <td className="p-4">
                     {/* Clickable Status Badge to set filter */}

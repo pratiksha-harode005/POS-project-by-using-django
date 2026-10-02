@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CreditCard, Search, Filter, CheckCircle2, Clock, AlertTriangle,
   FileText, ArrowRight, Eye, ChevronRight, X, Send, Check, ShieldCheck,
-  Building, Download, DollarSign, RefreshCw, XCircle, Printer
+  Building, Download, IndianRupee, RefreshCw, XCircle, Printer
 } from 'lucide-react'
 import { useFinanceData, PaymentRecord, PaymentStatus } from '../../context/ManagerDataContext'
 import { useAuth } from '../../context/AuthContext'
@@ -15,6 +15,7 @@ import {
   getPaymentBillPdfBlobUrl,
   numberToIndianWords
 } from '../../utils/paymentLedgerPdfGenerator'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -123,13 +124,15 @@ export const FinancePaymentsPage: React.FC = () => {
 
   // Filtered Payments
   const filteredPayments = useMemo(() => {
+    const q = (search || '').toLowerCase().trim()
     return payments.filter((p) => {
       const matchSearch =
-        p.id.toLowerCase().includes(search.toLowerCase()) ||
-        p.requestId.toLowerCase().includes(search.toLowerCase()) ||
-        p.vendor.toLowerCase().includes(search.toLowerCase()) ||
-        p.invoiceId.toLowerCase().includes(search.toLowerCase()) ||
-        p.requestTitle.toLowerCase().includes(search.toLowerCase())
+        !q ||
+        String(p.id || '').toLowerCase().includes(q) ||
+        String(p.requestId || '').toLowerCase().includes(q) ||
+        String(p.vendor || '').toLowerCase().includes(q) ||
+        String(p.invoiceId || '').toLowerCase().includes(q) ||
+        String(p.requestTitle || '').toLowerCase().includes(q)
       const matchStatus = statusFilter === 'ALL' || p.status === statusFilter
       return matchSearch && matchStatus
     })
@@ -220,7 +223,17 @@ export const FinancePaymentsPage: React.FC = () => {
       {/* 4 Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Pending Payments */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+        <div
+          onClick={() => setStatusFilter(statusFilter === 'Pending' ? 'ALL' : 'Pending')}
+          className={`p-5 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-md ${
+            statusFilter === 'Pending'
+              ? 'bg-amber-50/40 border-amber-400 ring-2 ring-amber-400/20 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-amber-300'
+          }`}
+          role="button"
+          tabIndex={0}
+          title="Click to filter Pending Payments"
+        >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider">Pending Payments</span>
             <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
@@ -237,7 +250,17 @@ export const FinancePaymentsPage: React.FC = () => {
         </div>
 
         {/* Processing Payments */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+        <div
+          onClick={() => setStatusFilter(statusFilter === 'Processing' ? 'ALL' : 'Processing')}
+          className={`p-5 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-md ${
+            statusFilter === 'Processing'
+              ? 'bg-blue-50/40 border-blue-400 ring-2 ring-blue-400/20 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-blue-300'
+          }`}
+          role="button"
+          tabIndex={0}
+          title="Click to filter Processing Payments"
+        >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider">Processing Payments</span>
             <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -254,7 +277,17 @@ export const FinancePaymentsPage: React.FC = () => {
         </div>
 
         {/* Completed Payments */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+        <div
+          onClick={() => setStatusFilter(statusFilter === 'Paid' ? 'ALL' : 'Paid')}
+          className={`p-5 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-md ${
+            statusFilter === 'Paid'
+              ? 'bg-emerald-50/40 border-emerald-400 ring-2 ring-emerald-400/20 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-emerald-300'
+          }`}
+          role="button"
+          tabIndex={0}
+          title="Click to filter Completed Payments"
+        >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider">Completed Payments</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -271,11 +304,21 @@ export const FinancePaymentsPage: React.FC = () => {
         </div>
 
         {/* Total Paid Amount */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+        <div
+          onClick={() => setStatusFilter('ALL')}
+          className={`p-5 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-md ${
+            statusFilter === 'ALL'
+              ? 'bg-indigo-50/40 border-indigo-400 ring-2 ring-indigo-400/20 shadow-xs'
+              : 'bg-white border-slate-200 hover:border-indigo-300'
+          }`}
+          role="button"
+          tabIndex={0}
+          title="Click to view All Payments"
+        >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider">Total Paid Amount</span>
             <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <DollarSign size={16} />
+              <IndianRupee size={16} />
             </div>
           </div>
           <p className="text-2xl font-extrabold text-indigo-950 tracking-tight">
@@ -366,33 +409,33 @@ export const FinancePaymentsPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="p-4 whitespace-nowrap">
-                        <span className="font-bold text-slate-900 block">{p.requestId}</span>
-                        <span className="text-[10px] text-slate-400 truncate max-w-[160px] block">
-                          {p.requestTitle}
+                        <span className="font-bold text-slate-900 block">{p.requestId || `REQ-${p.id}`}</span>
+                        <span className="text-[10px] text-slate-400 truncate max-w-[180px] block" title={p.requestTitle}>
+                          {p.requestTitle || 'Procurement Order'}
                         </span>
                       </td>
                       <td className="p-4 font-bold text-slate-900 whitespace-nowrap">
-                        {p.vendor}
+                        {p.vendor || 'Vendor Partner'}
                       </td>
                       <td className="p-4 whitespace-nowrap text-slate-700">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
-                          {p.invoiceId}
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-mono">
+                          {p.invoiceId || (p.requestId ? `INV-${p.requestId.replace(/^REQ-/, '')}` : 'INV-PENDING')}
                         </span>
                       </td>
                       <td className="p-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                        {fmt(p.amount)}
+                        {fmt(Number(p.amount) || 0)}
                       </td>
                       <td className="p-4 whitespace-nowrap text-slate-600">
                         {p.status === 'Paid' ? (
                           <span className="text-emerald-700 font-semibold">
-                            Paid: {p.paymentDate}
+                            Paid: {formatDate(p.paymentDate || p.dueDate || '')}
                           </span>
                         ) : (
-                          <span>Due: {p.dueDate}</span>
+                          <span>Due: {formatDate(p.dueDate || p.paymentDate || '')}</span>
                         )}
                       </td>
                       <td className="p-4 whitespace-nowrap text-slate-600">
-                        {p.paymentMethod}
+                        {p.paymentMethod || 'Bank Transfer'}
                       </td>
                       <td className="p-4 whitespace-nowrap">
                         <span
@@ -497,21 +540,21 @@ export const FinancePaymentsPage: React.FC = () => {
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                   <span className="text-slate-500 block text-[10px] uppercase font-bold">Taxable Base (Net)</span>
                   <span className="text-sm font-extrabold text-slate-900 mt-0.5 block">
-                    {fmt(activePayment.amount - activePayment.taxAmount)}
+                    {fmt(Math.max(0, (Number(activePayment.amount) || 0) - (Number(activePayment.taxAmount) || 0)))}
                   </span>
                   <span className="text-[9px] text-slate-400">Pre-Tax Subtotal</span>
                 </div>
                 <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100">
                   <span className="text-indigo-700 block text-[10px] uppercase font-bold">Statutory GST (18%)</span>
                   <span className="text-sm font-extrabold text-indigo-950 mt-0.5 block">
-                    {fmt(activePayment.taxAmount)}
+                    {fmt(Number(activePayment.taxAmount) || 0)}
                   </span>
                   <span className="text-[9px] text-indigo-500">CGST 9% + SGST 9%</span>
                 </div>
                 <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200">
                   <span className="text-emerald-800 block text-[10px] uppercase font-bold">Total Gross Amount</span>
                   <span className="text-sm font-extrabold text-emerald-950 mt-0.5 block">
-                    {fmt(activePayment.amount)}
+                    {fmt(Number(activePayment.amount) || 0)}
                   </span>
                   <span className="text-[9px] text-emerald-600 font-semibold">100% 3-Way Matched</span>
                 </div>
@@ -522,7 +565,7 @@ export const FinancePaymentsPage: React.FC = () => {
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
               <span className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5">Amount in Words</span>
               <p className="font-semibold text-slate-800 text-xs italic">
-                {numberToIndianWords(activePayment.amount)}
+                {numberToIndianWords(Number(activePayment.amount) || 0)}
               </p>
             </div>
 

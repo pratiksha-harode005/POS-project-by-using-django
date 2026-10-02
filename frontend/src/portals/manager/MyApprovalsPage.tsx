@@ -3,6 +3,7 @@ import { CheckCircle, XCircle, ArrowUpRight, Search, Filter } from 'lucide-react
 import { useManagerData } from '../../context/ManagerDataContext'
 import { ActionModal, ModalActionType } from '../../components/portal/ActionModal'
 import type { ProcurementRequest } from '../../context/ManagerDataContext'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -83,7 +84,7 @@ export const MyApprovalsPage: React.FC = () => {
                       {r.status === 'approved' ? '✓ Approved' : r.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-500">{r.approvedDate || r.date}</td>
+                  <td className="px-4 py-3 text-gray-500">{formatDate(r.approvedDate || r.date)}</td>
                   <td className="px-4 py-3 text-gray-600">{r.approvalLevel || '—'}</td>
                 </tr>
               ))}

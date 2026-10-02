@@ -3,6 +3,7 @@ import { CreditCard, CheckCircle, Clock, Upload, Download, AlertTriangle, FileTe
 import { jsPDF } from 'jspdf'
 import { useProcurement, PaymentRecord } from '../../context/ProcurementContext'
 import { TrackingStepper } from '../../components/portal/TrackingStepper'
+import { formatDate } from '../../utils/formatDate'
 
 export const PaymentStatusPage: React.FC = () => {
   const { payments, requests, uploadReceipt } = useProcurement()
@@ -335,7 +336,7 @@ export const PaymentStatusPage: React.FC = () => {
                   <p className="text-xs text-gray-500 mt-1">
                     Vendor: <span className="font-semibold text-gray-800">{p.vendor}</span> • Due Date:{' '}
                     <span className={`font-semibold ${overdue ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
-                      {p.dueDate}
+                      {formatDate(p.dueDate)}
                     </span>
                   </p>
                 </div>
@@ -440,7 +441,7 @@ export const PaymentStatusPage: React.FC = () => {
                       <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded border border-purple-200">
                         Flow B • {p.requestId}
                       </span>
-                      <span className="text-xs text-gray-400 font-medium">Release Date: {p.releaseDate || '2026-09-11'}</span>
+                      <span className="text-xs text-gray-400 font-medium">Release Date: {formatDate(p.releaseDate || '2026-09-11')}</span>
                       {overdue && (
                         <span className="text-[10px] font-extrabold text-white bg-red-600 px-2 py-0.5 rounded-full flex items-center gap-1">
                           OVERDUE
@@ -450,7 +451,7 @@ export const PaymentStatusPage: React.FC = () => {
                     <h3 className="text-sm font-bold text-gray-900">{p.title}</h3>
                     <p className="text-xs text-gray-500 mt-1">
                       Disbursement Type: <span className="font-semibold text-gray-800">Team Lead Account Advance</span> • Receipt Due:{' '}
-                      <span className="font-semibold text-gray-700">{p.dueDate}</span>
+                      <span className="font-semibold text-gray-700">{formatDate(p.dueDate)}</span>
                     </p>
                   </div>
 
@@ -522,7 +523,7 @@ export const PaymentStatusPage: React.FC = () => {
                         <span className="font-semibold">Actual Amount Spent:</span> ${p.receiptDetails.actualAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </div>
                       <div>
-                        <span className="font-semibold">Purchase Date:</span> {p.receiptDetails.purchaseDate}
+                        <span className="font-semibold">Purchase Date:</span> {formatDate(p.receiptDetails.purchaseDate)}
                       </div>
                     </div>
                     {p.receiptDetails.notes && (
@@ -617,7 +618,7 @@ export const PaymentStatusPage: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Purchase Date</p>
-                    <p className="font-bold text-gray-900">{rd.purchaseDate}</p>
+                    <p className="font-bold text-gray-900">{formatDate(rd.purchaseDate)}</p>
                   </div>
                   <div>
                     <p className="text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Bill / Invoice</p>
@@ -853,6 +854,14 @@ export const PaymentStatusPage: React.FC = () => {
               title={stepperModalRequest.title}
               flowType={stepperModalRequest.flowType}
               history={(stepperModalRequest as any).history}
+              approval_steps={(stepperModalRequest as any).approval_steps}
+              financeStatus={(stepperModalRequest as any).financeStatus}
+              paymentStatus={(stepperModalRequest as any).paymentStatus}
+              poNumber={(stepperModalRequest as any).poNumber || (stepperModalRequest as any).po_number}
+              grnNumber={(stepperModalRequest as any).grnNumber || (stepperModalRequest as any).grn_number}
+              invoiceNumber={(stepperModalRequest as any).invoiceNumber || (stepperModalRequest as any).invoice_number}
+              is_invoice_verified={(stepperModalRequest as any).is_invoice_verified || (stepperModalRequest as any).documentsVerified}
+              rfqId={(stepperModalRequest as any).rfqId || (stepperModalRequest as any).rfq_id}
             />
 
             <div className="flex justify-end pt-4 border-t">

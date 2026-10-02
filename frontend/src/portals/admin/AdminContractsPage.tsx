@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import {
-  FolderOpen, Search, Filter, Calendar, Building, DollarSign,
+  FolderOpen, Search, Filter, Calendar, Building, IndianRupee,
   AlertTriangle, CheckCircle, Clock, Eye, X, RefreshCw, FileText,
   Printer, ShieldCheck, Scale, Lock, CheckCircle2, Award, Briefcase, FileSpreadsheet
 } from 'lucide-react'
@@ -329,7 +329,7 @@ export const AdminContractsPage: React.FC = () => {
                 {/* 2. Financial Valuation & Commercial Spend Commitment */}
                 <div>
                   <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
-                    <DollarSign size={13} className="text-purple-600" /> Commercial Valuation &amp; Spend Utilization
+                    <IndianRupee size={13} className="text-purple-600" /> Commercial Valuation &amp; Spend Utilization
                   </h4>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

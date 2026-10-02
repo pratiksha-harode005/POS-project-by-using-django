@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useManagerData } from '../../context/ManagerDataContext'
 import type { RFQ, RFQItem, RFQVendor } from '../../context/ManagerDataContext'
+import { detectWorkflowType } from '../../utils/workflowUtils'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -15,14 +16,54 @@ export interface CreateRFQModalProps {
   initialPrId?: string
 }
 
+// Category normalization and matching helper
+export const isCategoryMatch = (vendorCat: string, targetCat: string): boolean => {
+  if (!targetCat || targetCat === 'ALL' || targetCat === 'All Categories') return true
+  if (!vendorCat) return false
+  const v = vendorCat.toLowerCase().trim()
+  const t = targetCat.toLowerCase().trim()
+  if (v === t || v.includes(t) || t.includes(v)) return true
+
+  // Hardware group
+  const isVHardware = v.includes('hardware') || v.includes('laptop') || v.includes('computer') || v.includes('compute') || v.includes('server')
+  const isTHardware = t.includes('hardware') || t.includes('laptop') || t.includes('computer') || t.includes('compute') || t.includes('server')
+  if (isVHardware && isTHardware) return true
+
+  // Cloud
+  const isVCloud = v.includes('cloud') || v.includes('hosting') || v.includes('infra')
+  const isTCloud = t.includes('cloud') || t.includes('hosting') || t.includes('infra')
+  if (isVCloud && isTCloud) return true
+
+  // Software & SaaS
+  const isVSoftware = v.includes('software') || v.includes('saas') || v.includes('license') || v.includes('app')
+  const isTSoftware = t.includes('software') || t.includes('saas') || t.includes('license') || t.includes('app')
+  if (isVSoftware && isTSoftware) return true
+
+  // Cybersecurity
+  const isVSec = v.includes('security') || v.includes('cyber')
+  const isTSec = t.includes('security') || t.includes('cyber')
+  if (isVSec && isTSec) return true
+
+  // Services
+  const isVServ = v.includes('service') || v.includes('consulting')
+  const isTServ = t.includes('service') || t.includes('consulting')
+  if (isVServ && isTServ) return true
+
+  // Furniture / Office
+  const isVOffice = v.includes('office') || v.includes('furniture') || v.includes('accessories') || v.includes('chair')
+  const isTOffice = t.includes('office') || t.includes('furniture') || t.includes('accessories') || t.includes('chair')
+  if (isVOffice && isTOffice) return true
+
+  return false
+}
+
 export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose, onSuccess, initialPrId }) => {
   const { allRequests, myApprovals, vendors, addRFQ, rfqs } = useManagerData()
 
-  // Generate next sequential RFQ ID
+  // Auto-assigned RFQ ID placeholder
   const defaultRfqId = useMemo(() => {
-    const count = (rfqs?.length || 0) + 31
-    return `RFQ-2026-${String(count).padStart(3, '0')}`
-  }, [rfqs])
+    return `RFQ-AUTO`
+  }, [])
 
   // Form State - Section A
   const [rfqNumber] = useState(defaultRfqId)
@@ -64,21 +105,75 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
     }
   ])
 
-  // Form State - Section C: Vendor Category
+  // Form State - Section C: Vendor Category & Active Vendors
   const availableCategories = useMemo(() => {
     const cats = new Set(vendors.map(v => v.category).filter(Boolean))
-    return Array.from(cats)
+    return Array.from(cats).sort((a, b) => a.localeCompare(b))
   }, [vendors])
 
   const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [errorMsg, setErrorMsg] = useState('')
 
-  // Candidate PRs to link
+  // Active vendors pool
+  const allActiveVendors = useMemo(() => {
+    return vendors.filter(v => v.status === 'Active' || (v.status as string) === 'APPROVED')
+  }, [vendors])
+
+  // Eligible vendors based on selected category or PR category
+  const eligibleVendors = useMemo(() => {
+    const targetCat = selectedCategory || category || 'IT Hardware'
+    if (targetCat === 'ALL' || targetCat === 'All Categories') {
+      return allActiveVendors
+    }
+    const matched = allActiveVendors.filter(v => isCategoryMatch(v.category, targetCat))
+    return matched.length > 0 ? matched : allActiveVendors
+  }, [allActiveVendors, selectedCategory, category])
+
+  // Multi-select state for invited vendors (defaults to ALL eligible vendors!)
+  const [selectedVendorIds, setSelectedVendorIds] = useState<string[]>([])
+
+  useEffect(() => {
+    if (eligibleVendors.length > 0) {
+      setSelectedVendorIds(eligibleVendors.map(v => (v as any).unique_vendor_id || String(v.id)))
+    } else {
+      setSelectedVendorIds([])
+    }
+  }, [eligibleVendors])
+
+  const handleToggleVendor = (vendorId: string) => {
+    setSelectedVendorIds(prev =>
+      prev.includes(vendorId) ? prev.filter(id => id !== vendorId) : [...prev, vendorId]
+    )
+  }
+
+  const handleSelectAllVendors = () => {
+    setSelectedVendorIds(eligibleVendors.map(v => (v as any).unique_vendor_id || String(v.id)))
+  }
+
+  const handleDeselectAllVendors = () => {
+    setSelectedVendorIds([])
+  }
+
+  // Candidate PRs to link - STRICTLY HARDWARE ONLY (Software PRs do not use RFQs)
   const availablePrs = useMemo(() => {
     const set = new Map<string, typeof allRequests[0]>()
-    myApprovals.forEach(r => set.set(r.id, r))
+    
+    const isHardwarePr = (r: any): boolean => {
+      if (!r) return false
+      if (r.workflowType === 'HARDWARE' || r.workflow_type === 'HARDWARE' || r.is_hardware === true || r.isHardware === true) return true
+      if (r.workflowType === 'SOFTWARE' || r.workflow_type === 'SOFTWARE' || r.is_software === true || r.isSoftware === true) return false
+      return detectWorkflowType(r.category, r.title) === 'HARDWARE'
+    }
+
+    myApprovals.forEach(r => {
+      if (isHardwarePr(r)) {
+        set.set(r.id, r)
+      }
+    })
     allRequests.forEach(r => {
-      if (!set.has(r.id)) set.set(r.id, r)
+      if (!set.has(r.id) && isHardwarePr(r)) {
+        set.set(r.id, r)
+      }
     })
     return Array.from(set.values())
   }, [myApprovals, allRequests])
@@ -90,10 +185,15 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
     if (found) {
       setTitle(`RFQ for ${found.title}`)
       setDepartment(found.department)
-      setCategory(found.category || 'Hardware')
+      setCategory(found.category || 'IT Hardware')
 
-      if (found.category && availableCategories.includes(found.category)) {
-        setSelectedCategory(found.category)
+      const prCat = (found.category || '').toLowerCase().trim()
+      const matchedCat = availableCategories.find(c => isCategoryMatch(c, prCat))
+
+      if (matchedCat) {
+        setSelectedCategory(matchedCat)
+      } else if (availableCategories.includes('IT Hardware')) {
+        setSelectedCategory('IT Hardware')
       } else {
         setSelectedCategory('')
       }
@@ -124,12 +224,16 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
   // Prepopulate PR on modal open
   useEffect(() => {
     if (isOpen && availablePrs.length > 0) {
-      const targetPrId = initialPrId || availablePrs[0].id
+      const targetPrId = (initialPrId && availablePrs.some(p => p.id === initialPrId))
+        ? initialPrId
+        : availablePrs[0].id
       if (targetPrId) {
         handlePrChange(targetPrId)
       }
+    } else if (isOpen && availablePrs.length === 0) {
+      setSelectedPrId('')
     }
-  }, [isOpen, initialPrId, availablePrs.length])
+  }, [isOpen, initialPrId, availablePrs])
 
   // Calculate total estimated amount
   const totalEstimatedAmount = useMemo(() => {
@@ -192,25 +296,25 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
       return
     }
 
-    if (!selectedCategory) {
-      setErrorMsg('Please select a vendor category to invite.')
-      return
-    }
+    const targetCategory = selectedCategory || category || 'IT Hardware'
 
-    const matchedVendors = vendors.filter(v => {
-      if (v.status !== 'Active') return false
-      if (!v.category) return false
-      const vCat = v.category.toLowerCase().trim()
-      const sCat = selectedCategory.toLowerCase().trim()
-      return vCat === sCat || vCat.includes(sCat) || sCat.includes(vCat)
+    // Final selected vendors
+    const finalVendors = allActiveVendors.filter(v => {
+      const vId = (v as any).unique_vendor_id || String(v.id)
+      return selectedVendorIds.includes(vId) || selectedVendorIds.includes(String(v.id)) || selectedVendorIds.includes(v.name)
     })
-    if (matchedVendors.length === 0) {
-      setErrorMsg(`No active vendors found in category "${selectedCategory}".`)
+
+    const effectiveVendors = finalVendors.length > 0 ? finalVendors : eligibleVendors
+
+    if (effectiveVendors.length === 0) {
+      setErrorMsg('Please select at least one eligible vendor to invite.')
       return
     }
 
-    const rfqVendors: RFQVendor[] = matchedVendors.map(v => ({
+    const rfqVendors: RFQVendor[] = effectiveVendors.map(v => ({
       name: v.name,
+      id: (v as any).unique_vendor_id || String(v.id),
+      unique_vendor_id: (v as any).unique_vendor_id || String(v.id),
       invitedOn: issueDate,
       response: 'Pending'
     }))
@@ -227,6 +331,8 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
       id: rfqNumber,
       title: title.trim(),
       department,
+      category: targetCategory,
+      subcategory: subCategory || 'Laptops & Compute',
       status: 'sent',
       estimatedAmount: totalEstimatedAmount,
       deadline: quotationDueDate,
@@ -575,32 +681,108 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
                 </div>
               ))}
             </div>
-          {/* Section C: Vendor Category Selection */}
-          <div className="space-y-3 pt-2">
+          </div>
+
+          {/* Section C: Target Vendors & Category Selection */}
+          <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <div>
                 <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <CheckSquare size={14} className="text-blue-600" /> Section C: Target Vendor Category
+                  <CheckSquare size={14} className="text-blue-600" /> Section C: Target Vendors ({selectedVendorIds.length} Invited)
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Select a category. This RFQ will be sent to all active vendors in that category.
+                  All eligible vendors in the category are selected by default to maximize quotation responses.
                 </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSelectAllVendors}
+                  className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                >
+                  Select All ({eligibleVendors.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeselectAllVendors}
+                  className="px-2.5 py-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                >
+                  Clear Selection
+                </button>
               </div>
             </div>
 
-            <div className="mt-2">
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Vendor Category *</label>
-              <select
-                value={selectedCategory}
-                onChange={e => setSelectedCategory(e.target.value)}
-                className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2.5 bg-slate-50/50 focus:bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium transition-all"
-                required
-              >
-                <option value="">Select a Category...</option>
-                {availableCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat} ({vendors.filter(v => v.category === cat && v.status === 'Active').length} Active Vendors)</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Filter by Vendor Category</label>
+                <select
+                  value={selectedCategory}
+                  onChange={e => setSelectedCategory(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 bg-slate-50/50 focus:bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium transition-all"
+                >
+                  <option value="">Auto: All Eligible Vendors for {category || 'Requisition'} ({eligibleVendors.length} Vendors)</option>
+                  <option value="ALL">All Active Vendors across All Categories ({allActiveVendors.length} Vendors)</option>
+                  {availableCategories.map(cat => {
+                    const count = allActiveVendors.filter(v => isCategoryMatch(v.category, cat)).length
+                    return (
+                      <option key={cat} value={cat}>
+                        {cat} ({count} Active Vendor{count === 1 ? '' : 's'})
+                      </option>
+                    )
+                  })}
+                </select>
+              </div>
+
+              <div className="flex items-end">
+                <div className="w-full bg-blue-50/60 border border-blue-200 rounded-xl px-3 py-2 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-blue-900">Total Registered Vendors:</span>
+                  <span className="font-extrabold text-blue-700 text-sm">{allActiveVendors.length} Active Vendors</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Vendor Cards Interactive List */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                <span>Eligible Vendors Receiving Invitation:</span>
+                <span className="text-blue-600 font-extrabold">{selectedVendorIds.length} of {eligibleVendors.length} Selected</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-2 bg-slate-50/80 border border-slate-200 rounded-xl">
+                {eligibleVendors.map(v => {
+                  const vId = (v as any).unique_vendor_id || String(v.id)
+                  const isChecked = selectedVendorIds.includes(vId) || selectedVendorIds.includes(String(v.id)) || selectedVendorIds.includes(v.name)
+                  return (
+                    <div
+                      key={vId}
+                      onClick={() => handleToggleVendor(vId)}
+                      className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                        isChecked
+                          ? 'bg-white border-blue-500 shadow-xs ring-1 ring-blue-500/20'
+                          : 'bg-white/60 border-slate-200 hover:border-slate-300 opacity-60'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {}}
+                        className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-bold text-slate-900 truncate">{v.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded font-mono font-semibold">
+                            {v.category || 'General'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+                          <span className="truncate">{v.email || 'N/A'}</span>
+                          <span className="text-emerald-700 font-bold ml-1 shrink-0">★ {v.performanceScore || 95}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
 
@@ -614,9 +796,9 @@ export const CreateRFQModal: React.FC<CreateRFQModalProps> = ({ isOpen, onClose,
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Vendors Invited</span>
                 <span className="text-base font-bold text-blue-300">
-                  {selectedCategory ? vendors.filter(v => v.category === selectedCategory && v.status === 'Active').length : 0} Qualified
+                  {selectedVendorIds.length} of {eligibleVendors.length} Invited
                 </span>
-              </div>              </div>
+              </div>
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Submission Deadline</span>
                 <span className="text-base font-bold text-amber-300">{quotationDueDate}</span>

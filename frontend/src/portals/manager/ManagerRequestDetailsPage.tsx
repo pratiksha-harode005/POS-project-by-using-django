@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useManagerData, ApprovalParameters } from '../../context/ManagerDataContext'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -100,11 +101,19 @@ export const ManagerRequestDetailsPage: React.FC = () => {
 
       {/* Dynamic Workflow Progress Stepper */}
       <TrackingStepper
+        currentStage={req.currentStage}
         category={req.category}
         title={req.title}
         status={req.status}
+        approval_steps={(req as any).approval_steps}
         financeStatus={req.financeStatus}
         paymentStatus={req.paymentStatus}
+        rfqId={(req as any).rfqId || (req as any).rfq_id}
+        poNumber={(req as any).poNumber || (req as any).po_number || (req as any).po_id}
+        grnNumber={(req as any).grnNumber || (req as any).grn_number || (req as any).receipt_id}
+        invoiceNumber={(req as any).invoiceNumber || (req as any).invoice_number || (req as any).invoice_id}
+        isVerified={(req as any).isVerified || (req as any).documentsVerified || (req.currentStage !== undefined && req.currentStage >= 8)}
+        documentsVerified={(req as any).documentsVerified || (req.currentStage !== undefined && req.currentStage >= 8)}
         lastUpdated={req.date}
         history={req.history}
       />
@@ -139,7 +148,7 @@ export const ManagerRequestDetailsPage: React.FC = () => {
             <h2 className="text-xl font-bold text-slate-900 mt-2">{req.title}</h2>
             <p className="text-xs text-slate-500 mt-1">
               Requester: <b className="text-slate-800 font-semibold">{req.requester}</b> • Department:{' '}
-              <b className="text-slate-800 font-semibold">{req.department}</b> • Created: {req.date}
+              <b className="text-slate-800 font-semibold">{req.department}</b> • Created: {formatDate(req.date)}
             </p>
           </div>
           <div className="text-right flex-shrink-0 bg-slate-50 border border-slate-200 p-3 sm:py-2.5 sm:px-4 rounded-xl">

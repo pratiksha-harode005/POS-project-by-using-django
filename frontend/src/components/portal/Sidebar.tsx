@@ -102,7 +102,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
         { label: 'RFQs', path: `${vPrefix}/rfqs`, icon: FileSpreadsheet },
         { label: 'Quotations', path: `${vPrefix}/quotations`, icon: Layers },
         { label: 'Purchase Orders', path: `${vPrefix}/purchase-orders`, icon: Package },
-        { label: 'Receipts', path: `${vPrefix}/receipts`, icon: FileCheck },
         { label: 'Invoices', path: `${vPrefix}/invoices`, icon: FileText },
         { label: 'Payment Status', path: `${vPrefix}/payment-status`, icon: CreditCard },
         { label: 'Notifications', path: `${vPrefix}/notifications`, icon: Bell },

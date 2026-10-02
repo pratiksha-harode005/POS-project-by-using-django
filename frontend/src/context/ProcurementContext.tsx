@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { getTeamLeadRequests, createTeamLeadRequest, resubmitTeamLeadRequest } from '../api/teamleadApi'
+import { getWorkflowProgression } from '../utils/workflowUtils'
 
 export interface ApprovalStep {
   date: string
@@ -173,51 +174,110 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // No longer syncing to localStorage
 
-  // Dynamic fetch from Django REST API backend
+  const normalizeStatus = (raw: string, stageNum: number): PurchaseRequest['status'] => {
+    const s = (raw || '').trim().toUpperCase()
+    if (s === 'COMPLETED' || s === 'REQUEST_COMPLETED' || s === 'PAYMENT_PROCESSED' || s === 'PAID' || stageNum >= 9) return 'Completed'
+    if (s === 'APPROVED' || s === 'MANAGER_APPROVED' || s === 'PAYMENT_APPROVED' || stageNum === 4) return 'Approved'
+    if (s === 'REJECTED' || s === 'FINANCE_REJECTED') return 'Rejected'
+    if (s === 'RETURNED' || s === 'CLARIFICATION_REQUESTED') return 'Returned'
+    if (s === 'IN PROCUREMENT' || s === 'IN_PROCUREMENT' || s === 'RFQ_SENT' || s === 'QUOTES_RECEIVED' || s === 'ASSIGNED_TO_VENDOR' || s === 'DELIVERED' || s === 'INVOICED' || (stageNum >= 4 && stageNum < 9)) return 'In Procurement'
+    if (s === 'DRAFT' || stageNum === 0) return 'Draft'
+    return 'Pending'
+  }
+
+  // Dynamic parallel fetch from Django REST API backend
   const refreshBackendRequests = async () => {
     try {
-      const data = await getTeamLeadRequests()
-      const list = Array.isArray(data) ? data : data?.results || []
-      const mapped: PurchaseRequest[] = list.map((item: any) => ({
-        id: item.request_id || item.id,
-        title: item.title,
-        category: item.category,
-        subcategory: item.subcategory || 'General',
-        description: item.description || '',
-        quantity: item.quantity || 1,
-        estimatedCost: Number(item.total_estimated_cost) || 0,
-        requiredBy: item.required_by || new Date().toISOString().split('T')[0],
-        department: item.department_detail?.name || 'IT & Infrastructure',
-        deliveryLocation: item.delivery_location || 'Pune HQ',
-        priority: item.priority || 'Medium',
-        preferredVendor: item.preferred_vendor || '',
-        justification: item.justification || '',
-        attachmentCount: item.attachments ? 1 : 0,
-        status: item.status || 'Pending',
-        currentStage: item.status === 'Approved' || item.status === 'In Procurement' ? Math.max(item.current_stage ?? 4, 4) : (item.current_stage ?? 1),
-        date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
-        currentlyWith: item.status === 'Pending' ? { role: 'Manager', name: 'Sarah Manager' } : item.status === 'Approved' || item.status === 'In Procurement' ? { role: 'Procurement Sourcing Desk', name: 'Sourcing Team (RFQ Sent)' } : { role: item.status, name: 'System' },
-        flowType: item.flow_type || 'A',
-        extraFields: item.extra_fields || {},
-        history: Array.isArray(item.approval_steps)
-          ? item.approval_steps.map((s: any) => ({
-              date: s.created_at || '',
-              actorRole: s.role || 'User',
-              actorName: s.actor_detail?.first_name ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : 'User',
-              action: s.decision || 'Updated',
-              remark: s.notes || '',
-            }))
-          : [],
-      }))
-      setRequests(mapped)
+      const { apiClient } = await import('../api/client')
+      const savedRole = (localStorage.getItem('user_role') || 'TEAM_LEAD').toUpperCase()
+      const savedProfile = localStorage.getItem('user_profile')
+      let notifParams: any = { role: savedRole, page_size: 100 }
+      if (savedProfile) {
+        try {
+          const parsed = JSON.parse(savedProfile)
+          if (parsed?.username) notifParams = { user: parsed.username, role: savedRole, page_size: 100 }
+          if (parsed?.role === 'VENDOR' && parsed?.vendor_id_code) {
+            notifParams = { vendor: parsed.vendor_id_code, page_size: 100 }
+          }
+        } catch {}
+      }
 
-      try {
-        const { apiClient } = await import('../api/client')
-        const payRes = await apiClient.get('/payments/')
-        setPayments(Array.isArray(payRes.data) ? payRes.data : payRes.data?.results || [])
-      } catch (payErr) {
-        console.warn('Failed to fetch payments in ProcurementContext', payErr)
+      const [reqRes, payRes, notifRes] = await Promise.allSettled([
+        apiClient.get('/requests/', { params: { page_size: 1000 } }),
+        apiClient.get('/payments/'),
+        apiClient.get('/notifications/', { params: notifParams })
+      ])
+
+      if (reqRes.status === 'fulfilled') {
+        const data = reqRes.value.data
+        const list = Array.isArray(data) ? data : data?.results || []
+        const mapped: PurchaseRequest[] = list.map((item: any) => {
+          const stageNum = item.current_stage !== undefined && item.current_stage !== null ? Number(item.current_stage) : 1
+          const rawStatus = item.status || 'Pending'
+          const normalized = normalizeStatus(rawStatus, stageNum)
+          const prog = getWorkflowProgression({
+            currentStage: stageNum,
+            status: normalized,
+            category: item.category,
+            title: item.title,
+            history: item.approval_steps,
+          })
+
+          const costVal = Number(item.total_estimated_cost ?? item.amount ?? item.estimated_cost ?? item.estimatedCost ?? 0) || 0
+
+          return {
+            id: item.request_id || (item.id ? `REQ-${item.id}` : `REQ-${Math.floor(1000 + Math.random() * 9000)}`),
+            title: item.title,
+            category: item.category,
+            subcategory: item.subcategory || '',
+            description: item.description || '',
+            quantity: item.quantity !== undefined && item.quantity !== null ? item.quantity : 1,
+            estimatedCost: costVal,
+            requiredBy: item.required_by || new Date().toISOString().split('T')[0],
+            department: item.department_detail?.name || 'IT & Infrastructure',
+            deliveryLocation: item.delivery_location || 'Pune HQ',
+            priority: item.priority || 'Medium',
+            preferredVendor: item.preferred_vendor || '',
+            justification: item.justification || '',
+            attachmentCount: item.attachments ? 1 : 0,
+            status: normalized,
+            currentStage: stageNum,
+            date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+            lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
+            currentlyWith: { role: prog.currentlyWith, name: prog.currentStageName },
+            flowType: item.flow_type || 'A',
+            extraFields: item.extra_fields || {},
+            history: Array.isArray(item.approval_steps)
+              ? item.approval_steps.map((s: any) => ({
+                  date: s.created_at || '',
+                  actorRole: s.role || 'User',
+                  actorName: s.actor_detail?.first_name ? `${s.actor_detail.first_name} ${s.actor_detail.last_name}` : (s.actor_detail?.username || 'User'),
+                  action: s.decision || 'Updated',
+                  remark: s.notes || s.reason_detail?.text || '',
+                }))
+              : [],
+          }
+        })
+        setRequests(mapped)
+      }
+
+      if (payRes.status === 'fulfilled') {
+        setPayments(Array.isArray(payRes.value.data) ? payRes.value.data : payRes.value.data?.results || [])
+      }
+
+      if (notifRes.status === 'fulfilled') {
+        const rawNotifs = Array.isArray(notifRes.value.data) ? notifRes.value.data : notifRes.value.data?.results || []
+        setNotifications(rawNotifs.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          timestamp: n.timestamp || 'Just now',
+          dateGroup: 'Today',
+          isRead: Boolean(n.is_read || n.isRead),
+          requestId: n.request_id || n.requestId,
+          type: (n.category || 'Approvals') as any,
+          targetRole: savedRole
+        })))
       }
     } catch (e) {
       console.warn('Backend requests fetch fallback:', e)
@@ -226,6 +286,29 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   useEffect(() => {
     refreshBackendRequests()
+    const handleUpdate = () => refreshBackendRequests()
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshBackendRequests()
+      }
+    }
+    window.addEventListener('kss_backend_updated', handleUpdate)
+    window.addEventListener('focus', handleUpdate)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return
+      }
+      refreshBackendRequests()
+    }, 3000)
+
+    return () => {
+      window.removeEventListener('kss_backend_updated', handleUpdate)
+      window.removeEventListener('focus', handleUpdate)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      clearInterval(interval)
+    }
   }, [])
 
   const addRequest = (
@@ -260,7 +343,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     createTeamLeadRequest({
       title: reqData.title,
       category: reqData.category,
-      subcategory: reqData.subcategory || 'General',
+      subcategory: reqData.subcategory || '',
       description: reqData.description,
       quantity: reqData.quantity,
       required_by: reqData.requiredBy || today,
@@ -268,30 +351,22 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       priority: reqData.priority || 'Medium',
       preferred_vendor: reqData.preferredVendor || '',
       justification: reqData.justification || '',
-      total_estimated_cost: reqData.estimatedCost || 0,
+      total_estimated_cost: Number(reqData.estimatedCost) || 0,
       flow_type: reqData.flowType || 'A',
       extra_fields: reqData.extraFields || {},
     })
-      .then(() => {
+      .then((res) => {
+        if (res && (res.request_id || res.id)) {
+          const realId = res.request_id || `REQ-${res.id}`
+          setRequests((prev) => prev.map(r => r.id === nextId ? { ...r, id: realId } : r))
+        }
         refreshBackendRequests()
         window.dispatchEvent(new Event('kss_backend_updated'))
       })
-      .catch((e) => console.warn('Backend persist warning:', e))
-
-    if (!isDraft) {
-      const newNotif: NotificationRecord = {
-        id: Date.now(),
-        title: `Approval Required for ${nextId}`,
-        message: `${newReq.title} awaits Manager Approval.`,
-        timestamp: 'Just now',
-        dateGroup: 'Today',
-        isRead: false,
-        requestId: nextId,
-        type: 'Approvals',
-        targetRole: 'MANAGER',
-      }
-      setNotifications((prev) => [newNotif, ...prev])
-    }
+      .catch((e) => {
+        console.warn('Backend persist warning:', e)
+        window.dispatchEvent(new Event('kss_backend_updated'))
+      })
 
     return newReq
   }
@@ -324,20 +399,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
     )
 
-    setNotifications((prev) => [
-      {
-        id: Date.now(),
-        title: `Approval Required for ${id}`,
-        message: `Resubmitted request ${id} is now awaiting Manager approval.`,
-        timestamp: 'Just now',
-        dateGroup: 'Today',
-        isRead: false,
-        requestId: id,
-        type: 'Approvals',
-        targetRole: 'MANAGER',
-      },
-      ...prev,
-    ])
+    refreshBackendRequests()
+    window.dispatchEvent(new Event('kss_backend_updated'))
   }
 
   const uploadReceipt = (paymentId: string, receiptData: ReceiptSubmissionPayload | File) => {
@@ -414,20 +477,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         })
       )
 
-      setNotifications((prev) => [
-        {
-          id: Date.now(),
-          title: `Receipt Submitted for ${linkedPayment.requestId}`,
-          message: `Team Lead submitted payment receipt (${file.name}) for ${linkedPayment.requestId}. Reconciled by ${releasingName}.`,
-          timestamp: 'Just now',
-          dateGroup: 'Today',
-          isRead: false,
-          requestId: linkedPayment.requestId,
-          type: 'Payments',
-          targetRole: releasingRole,
-        },
-        ...prev,
-      ])
+      refreshBackendRequests()
+      window.dispatchEvent(new Event('kss_backend_updated'))
     }
   }
 
@@ -461,20 +512,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
     )
 
-    setNotifications((prev) => [
-      {
-        id: Date.now(),
-        title: `Vendor Assigned for ${requestId}`,
-        message: `${vendorName} (${vendorId}) was assigned to ${requestId}. Purchase Order issued.`,
-        timestamp: 'Just now',
-        dateGroup: 'Today',
-        isRead: false,
-        requestId: requestId,
-        type: 'Vendor activity',
-        targetRole: 'VENDOR',
-      },
-      ...prev,
-    ])
+    refreshBackendRequests()
+    window.dispatchEvent(new Event('kss_backend_updated'))
   }
 
   const updateVendorPOStatus = (
@@ -498,7 +537,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
             ...r,
             currentStage: stageNum,
             lastUpdated: today,
-            deliveryRef: trackingRef || r.deliveryRef || `TRK-EXPRESS-${Date.now().toString().slice(-5)}`,
+            deliveryRef: trackingRef || r.deliveryRef || `GRN-2026-${r.id.replace(/^(PO-|RFQ-|REQ-)/, '')}`,
             expectedDelivery: r.expectedDelivery || '2026-09-26',
             history: [
               ...r.history,
@@ -516,19 +555,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
     )
 
-    setNotifications((prev) => [
-      {
-        id: Date.now(),
-        title: `PO Status Update: ${newStatus}`,
-        message: `Order status for ${poId} updated to ${newStatus}. Live tracking updated on requester dashboard.`,
-        timestamp: 'Just now',
-        dateGroup: 'Today',
-        isRead: false,
-        requestId: poId,
-        type: 'Status updates',
-      },
-      ...prev,
-    ])
+    refreshBackendRequests()
+    window.dispatchEvent(new Event('kss_backend_updated'))
   }
 
   const sendRFQToMultipleVendors = (requestId: string) => {
@@ -559,27 +587,28 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
     )
 
-    setNotifications((prev) => [
-      {
-        id: Date.now(),
-        title: `Multi-Vendor RFQ Issued for ${requestId}`,
-        message: `Competitive RFQ bidding opened for request ${requestId}. Registered vendors notified.`,
-        timestamp: 'Just now',
-        dateGroup: 'Today',
-        isRead: false,
-        requestId: requestId,
-        type: 'Vendor activity',
-      },
-      ...prev,
-    ])
+    refreshBackendRequests()
+    window.dispatchEvent(new Event('kss_backend_updated'))
   }
 
-  const markNotificationRead = (id: number) => {
+  const markNotificationRead = async (id: number) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))
+    try {
+      const { markNotificationRead: apiMarkRead } = await import('../api/notificationApi')
+      await apiMarkRead(id)
+    } catch (err) {
+      console.error('Failed to mark notification read in context:', err)
+    }
   }
 
-  const markAllNotificationsRead = () => {
+  const markAllNotificationsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    try {
+      const { markAllNotificationsRead: apiMarkAllRead } = await import('../api/notificationApi')
+      await apiMarkAllRead()
+    } catch (err) {
+      console.error('Failed to mark all notifications read in context:', err)
+    }
   }
 
   const updateNotificationPreferences = (prefs: Record<string, boolean>) => {
@@ -590,7 +619,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const today = new Date().toISOString().split('T')[0]
     setPayments((prev) =>
       prev.map((p) => {
-        if (p.id === paymentIdOrPoRef || p.requestId === paymentIdOrPoRef) {
+        if (p.id === paymentIdOrPoRef || p.requestId === paymentIdOrPoRef || (p.requestId && paymentIdOrPoRef.includes(p.requestId))) {
           return {
             ...p,
             status: 'Paid',
@@ -602,9 +631,11 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return p
       })
     )
-    const paidKeys = JSON.parse(localStorage.getItem('kss_paid_payments') || '[]')
+    const paidKeys = JSON.parse(localStorage.getItem('kss_manager_released_payments') || '[]')
     if (!paidKeys.includes(paymentIdOrPoRef)) {
-      localStorage.setItem('kss_paid_payments', JSON.stringify([...paidKeys, paymentIdOrPoRef]))
+      const updated = [...paidKeys, paymentIdOrPoRef]
+      localStorage.setItem('kss_manager_released_payments', JSON.stringify(updated))
+      localStorage.setItem('kss_paid_payments', JSON.stringify(updated))
     }
   }
 

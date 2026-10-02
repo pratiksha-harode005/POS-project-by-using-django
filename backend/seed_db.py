@@ -3,6 +3,7 @@ import sys
 import django
 from decimal import Decimal
 from django.utils import timezone
+from django.db.models import Q
 from datetime import timedelta
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.dev')
@@ -81,36 +82,61 @@ def seed():
         )
     print("Budgets ready.")
 
-    # 4. Vendors
-    cat_hardware, _ = VendorCategory.objects.get_or_create(name='Hardware & IT', defaults={'description': 'Computers and Servers'})
-    cat_cloud, _ = VendorCategory.objects.get_or_create(name='Cloud Services', defaults={'description': 'Hosting and Infrastructure'})
-    
-    vendor_dell, _ = Vendor.objects.get_or_create(
-        unique_vendor_id='V-DELL-001',
-        defaults={
-            'name': 'Dell Technologies Inc.',
-            'category': cat_hardware,
-            'email': 'contact@dell.com',
-            'phone': '+1-800-BUY-DELL',
-            'status': 'APPROVED'
-        }
-    )
-    users['vendor_dell'].vendor_id_code = 'V-DELL-001'
+    # 4. Vendors across all categories
+    MASTER_VENDORS = [
+        {'id': 'VND-HW-001', 'name': 'Dell Technologies Inc.', 'category': 'IT Hardware', 'email': 'contact@dell.com', 'phone': '+1 800-456-3355'},
+        {'id': 'VND-HW-002', 'name': 'HP Enterprise', 'category': 'IT Hardware', 'email': 'contact@hpe.com', 'phone': '+1 800-752-0900'},
+        {'id': 'VND-HW-003', 'name': 'Lenovo Group', 'category': 'IT Hardware', 'email': 'contact@lenovo.com', 'phone': '+1 800-426-7378'},
+        {'id': 'VND-HW-004', 'name': 'Apple Enterprise', 'category': 'IT Hardware', 'email': 'enterprise@apple.com', 'phone': '+1 800-692-7753'},
+        {'id': 'VND-SW-001', 'name': 'Microsoft Corporation', 'category': 'Software & SaaS', 'email': 'saas@microsoft.com', 'phone': '+1 800-642-7676'},
+        {'id': 'VND-SW-002', 'name': 'Adobe Systems', 'category': 'Software & SaaS', 'email': 'enterprise@adobe.com', 'phone': '+1 800-833-6687'},
+        {'id': 'VND-SW-003', 'name': 'Salesforce Inc.', 'category': 'Software & SaaS', 'email': 'sales@salesforce.com', 'phone': '+1 800-667-6389'},
+        {'id': 'VND-SW-004', 'name': 'Figma Inc.', 'category': 'Software & SaaS', 'email': 'enterprise@figma.com', 'phone': '+1 800-555-3446'},
+        {'id': 'VND-CLD-001', 'name': 'Amazon Web Services Inc.', 'category': 'Cloud & Infrastructure', 'email': 'billing@aws.com', 'phone': '+1 800-282-1770'},
+        {'id': 'VND-CLD-002', 'name': 'Microsoft Azure', 'category': 'Cloud & Infrastructure', 'email': 'azure@microsoft.com', 'phone': '+1 800-642-7676'},
+        {'id': 'VND-CLD-003', 'name': 'Google Cloud Platform', 'category': 'Cloud & Infrastructure', 'email': 'gcp@google.com', 'phone': '+1 800-358-8228'},
+        {'id': 'VND-SEC-001', 'name': 'Palo Alto Networks', 'category': 'Cybersecurity', 'email': 'sec@paloaltonetworks.com', 'phone': '+1 800-732-8246'},
+        {'id': 'VND-SEC-002', 'name': 'CrowdStrike', 'category': 'Cybersecurity', 'email': 'sales@crowdstrike.com', 'phone': '+1 800-276-9378'},
+        {'id': 'VND-IT-001', 'name': 'Accenture', 'category': 'IT Services', 'email': 'services@accenture.com', 'phone': '+1 800-541-2244'},
+        {'id': 'VND-IT-002', 'name': 'Infosys', 'category': 'IT Services', 'email': 'enterprise@infosys.com', 'phone': '+1 800-300-0100'},
+        {'id': 'VND-FUR-001', 'name': 'Herman Miller Inc.', 'category': 'Office Accessories', 'email': 'sales@hermanmiller.com', 'phone': '+1 800-646-4400'},
+        {'id': 'VND-FUR-002', 'name': 'Steelcase', 'category': 'Office Accessories', 'email': 'info@steelcase.com', 'phone': '+1 800-333-9939'},
+        {'id': 'VND-OFF-001', 'name': 'Samsung Display Systems', 'category': 'Office Technology', 'email': 'display@samsung.com', 'phone': '+1 800-726-7864'},
+        {'id': 'VND-OFF-002', 'name': 'Canon Inc.', 'category': 'Office Technology', 'email': 'office@canon.com', 'phone': '+1 800-652-2666'},
+        {'id': 'VND-NET-001', 'name': 'Cisco Systems', 'category': 'Networking & Telecom', 'email': 'telecom@cisco.com', 'phone': '+1 800-553-6387'},
+        {'id': 'VND-TRN-001', 'name': 'Coursera for Business', 'category': 'Training & Certifications', 'email': 'b2b@coursera.org', 'phone': '+1 800-555-0192'},
+        {'id': 'VND-PRN-001', 'name': 'HP Inc. Print', 'category': 'Print & Consumables', 'email': 'print@hp.com', 'phone': '+1 800-474-6836'}
+    ]
+
+    vendor_objs = {}
+    for mv in MASTER_VENDORS:
+        cat_obj, _ = VendorCategory.objects.get_or_create(name=mv['category'], defaults={'description': f"{mv['category']} Category"})
+        v = Vendor.objects.filter(Q(unique_vendor_id=mv['id']) | Q(name__iexact=mv['name'])).first()
+        if not v:
+            v = Vendor.objects.create(
+                unique_vendor_id=mv['id'],
+                name=mv['name'],
+                category=cat_obj,
+                email=mv['email'],
+                phone=mv['phone'],
+                status='Active'
+            )
+        else:
+            v.unique_vendor_id = mv['id']
+            v.name = mv['name']
+            v.category = cat_obj
+            v.status = 'Active'
+            v.save()
+        vendor_objs[mv['id']] = v
+
+    vendor_dell = vendor_objs['VND-HW-001']
+    users['vendor_dell'].vendor_id_code = vendor_dell.unique_vendor_id
     users['vendor_dell'].save()
-    
-    vendor_aws, _ = Vendor.objects.get_or_create(
-        unique_vendor_id='V-AWS-001',
-        defaults={
-            'name': 'Amazon Web Services Inc.',
-            'category': cat_cloud,
-            'email': 'billing@aws.com',
-            'phone': '+1-800-AWS-CLOUD',
-            'status': 'APPROVED'
-        }
-    )
-    users['vendor_aws'].vendor_id_code = 'V-AWS-001'
+
+    vendor_aws = vendor_objs['VND-CLD-001']
+    users['vendor_aws'].vendor_id_code = vendor_aws.unique_vendor_id
     users['vendor_aws'].save()
-    print("Vendors ready.")
+    print(f"Vendors ready ({len(vendor_objs)} vendors across categories).")
 
     # 5. Purchase Requests
     pr1, _ = PurchaseRequest.objects.get_or_create(

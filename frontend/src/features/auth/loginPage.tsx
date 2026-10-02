@@ -81,13 +81,9 @@ export default function LoginPage() {
     const successResult = await login(email, password, targetRole)
 
     if (successResult) {
-      setTimeout(() => {
-        setLoading(false)
-        setSuccess(true)
-        setTimeout(() => {
-          navigate(`/portal/${targetRole.toLowerCase()}/dashboard`)
-        }, 700)
-      }, 600)
+      setLoading(false)
+      setSuccess(true)
+      navigate(`/portal/${targetRole.toLowerCase()}/dashboard`)
     } else {
       setLoading(false)
       setErrors({ password: 'Login failed. Please check your credentials.' })

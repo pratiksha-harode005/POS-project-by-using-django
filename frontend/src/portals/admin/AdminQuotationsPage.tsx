@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from 'react'
 import {
-  Layers, Search, Filter, Calendar, Building, DollarSign,
+  Layers, Search, Filter, Calendar, Building, IndianRupee,
   Award, Eye, X, CheckCircle, Clock, ShieldCheck, Download,
   Printer, FileText, CheckCircle2, AlertTriangle, ArrowRight,
   Shield, Truck, HelpCircle, UserCheck, CreditCard, Sparkles,
   ChevronRight, Percent, Tag, ExternalLink
 } from 'lucide-react'
-import { useManagerData, QuotationItem } from '../../context/ManagerDataContext'
+import { useManagerData, QuotationItem, resolveVendorId } from '../../context/ManagerDataContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
+import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -169,8 +170,8 @@ export const AdminQuotationsPage: React.FC = () => {
                     </td>
                     <td className="p-3.5 font-bold text-slate-900">{q.vendor}</td>
                     <td className="p-3.5 whitespace-nowrap text-slate-600">
-                      <div>Dated: {q.quoteDate}</div>
-                      <div className="text-[10px] text-slate-400">Valid: {q.validUntil}</div>
+                      <div>Dated: {formatDate(q.quoteDate)}</div>
+                      <div className="text-[10px] text-slate-400">Valid: {formatDate(q.validUntil)}</div>
                     </td>
                     <td className="p-3.5 whitespace-nowrap font-black text-slate-900 text-sm">
                       {fmt(q.totalAmount)}
@@ -241,9 +242,9 @@ export const AdminQuotationsPage: React.FC = () => {
                 <p className="text-slate-300 text-xs flex items-center gap-2">
                   <span>{selectedQuote.rfqId}: <b>{selectedQuote.rfqTitle}</b></span>
                   <span>•</span>
-                  <span>Submitted: <b>{selectedQuote.quoteDate}</b></span>
+                  <span>Submitted: <b>{formatDate(selectedQuote.quoteDate)}</b></span>
                   <span>•</span>
-                  <span className="text-amber-300 font-semibold">Valid Until: {selectedQuote.validUntil}</span>
+                  <span className="text-amber-300 font-semibold">Valid Until: {formatDate(selectedQuote.validUntil)}</span>
                 </p>
               </div>
 
@@ -302,125 +303,141 @@ export const AdminQuotationsPage: React.FC = () => {
               {/* 2. Key Commercial Metrics (4 Financial Tiles) */}
               <div>
                 <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
-                  <DollarSign size={13} className="text-indigo-600" /> Commercial Financial Structure
+                  <IndianRupee size={13} className="text-indigo-600" /> Commercial Financial Structure
                 </h4>
                 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {/* Gross Base Rate */}
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Base Commercial Value</span>
-                    <span className="text-base font-black text-slate-900 mt-0.5 block">
-                      {fmt(selectedQuote.unitPrice * selectedQuote.quantity)}
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      {fmt(selectedQuote.unitPrice)} × {selectedQuote.quantity} units
-                    </span>
-                  </div>
+                {(() => {
+                  const qty = Math.max(selectedQuote.quantity || 1, 1)
+                  const baseVal = selectedQuote.baseAmount || selectedQuote.price || (selectedQuote.unitPrice * qty)
+                  const discVal = selectedQuote.discountAmount || 0
+                  const taxableVal = baseVal - discVal
+                  const gstPct = selectedQuote.gstPercent || selectedQuote.gstRate || 18
+                  const taxVal = selectedQuote.taxAmount || Math.round(taxableVal * (gstPct / 100))
+                  const totalVal = selectedQuote.totalAmount || (taxableVal + taxVal + (selectedQuote.shippingCost || 0))
+                  const unitRate = selectedQuote.unitPrice || Math.round(baseVal / qty)
+                  const unitLandedVal = Math.round(totalVal / qty)
 
-                  {/* Discount */}
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Trade / Volume Rebate</span>
-                    <span className="text-base font-black text-emerald-600 mt-0.5 block">
-                      -{fmt(selectedQuote.discountAmount || 0)}
-                    </span>
-                    <span className="text-[10px] text-emerald-700 font-medium">
-                      Special negotiated concession
-                    </span>
-                  </div>
-
-                  {/* GST & Levies */}
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">GST & Taxes (18%)</span>
-                    <span className="text-base font-black text-purple-700 mt-0.5 block">
-                      +{fmt(selectedQuote.taxAmount)}
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      CGST 9% + SGST 9% (or IGST)
-                    </span>
-                  </div>
-
-                  {/* Freight */}
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Freight & Insurance</span>
-                    <span className="text-base font-black text-slate-900 mt-0.5 block">
-                      {selectedQuote.shippingCost === 0 ? 'Free / Included' : fmt(selectedQuote.shippingCost)}
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      DDP Doorstep Delivery
-                    </span>
-                  </div>
-                </div>
-
-                {/* Total Grand Landed Card */}
-                <div className="mt-3 p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-2xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-800 block">
-                      Final Landed Proposal Value (All Inclusive)
-                    </span>
-                    <span className="text-2xl font-black text-emerald-900 tracking-tight">
-                      {fmt(selectedQuote.totalAmount)}
-                    </span>
-                    <p className="text-[11px] text-emerald-700 italic mt-0.5">
-                      Amount in words: <strong className="font-semibold">{numberToIndianWords(selectedQuote.totalAmount)}</strong>
-                    </p>
-                  </div>
-
-                  <div className="sm:text-right border-t sm:border-t-0 sm:border-l border-emerald-200 pt-2 sm:pt-0 sm:pl-4">
-                    <span className="text-[10px] font-bold uppercase text-emerald-800 block">Effective Landed Unit Rate</span>
-                    <span className="text-base font-extrabold text-emerald-950">
-                      {fmt(Math.round(selectedQuote.totalAmount / selectedQuote.quantity))} / unit
-                    </span>
-                    <span className="text-[10px] text-emerald-700 block font-medium">Inclusive of all duties &amp; logistics</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. Detailed Itemized Commercial Bill of Quantities (BOQ) */}
-              <div>
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
-                  <FileText size={13} className="text-indigo-600" /> Line Item Specification &amp; Pricing Breakdown
-                </h4>
-
-                <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-500 tracking-wider">
-                      <tr>
-                        <th className="p-3">#</th>
-                        <th className="p-3">Item Description &amp; Technical Specs</th>
-                        <th className="p-3 text-center">HSN/SAC</th>
-                        <th className="p-3 text-center">Qty</th>
-                        <th className="p-3 text-right">Unit List</th>
-                        <th className="p-3 text-right">Disc.</th>
-                        <th className="p-3 text-right">Taxable</th>
-                        <th className="p-3 text-right">GST (18%)</th>
-                        <th className="p-3 text-right">Net Landed</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-[11px]">
-                      <tr className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-slate-400">01</td>
-                        <td className="p-3">
-                          <strong className="text-slate-900 block text-xs">{selectedQuote.rfqTitle}</strong>
-                          <span className="text-slate-500 block text-[10px] mt-0.5">
-                            Standard Commercial Grade • Part SKU: {selectedQuote.vendor.slice(0, 3).toUpperCase()}-PRO-{selectedQuote.id.slice(-3)}
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {/* Gross Base Rate */}
+                        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block">Base Commercial Value</span>
+                          <span className="text-base font-black text-slate-900 mt-0.5 block">
+                            {fmt(baseVal)}
                           </span>
-                          <span className="text-indigo-600 font-medium text-[10px]">
-                            Spec Compliance: {selectedQuote.complianceRating}
+                          <span className="text-[10px] text-slate-500">
+                            {fmt(unitRate)} × {qty} units
                           </span>
-                        </td>
-                        <td className="p-3 text-center font-mono text-slate-600">84713010</td>
-                        <td className="p-3 text-center font-bold text-slate-800">{selectedQuote.quantity} Units</td>
-                        <td className="p-3 text-right font-medium text-slate-700">{fmt(selectedQuote.unitPrice)}</td>
-                        <td className="p-3 text-right text-emerald-600 font-medium">-{fmt(Math.round((selectedQuote.discountAmount || 0) / selectedQuote.quantity))}</td>
-                        <td className="p-3 text-right font-semibold text-slate-800">
-                          {fmt((selectedQuote.unitPrice * selectedQuote.quantity) - (selectedQuote.discountAmount || 0))}
-                        </td>
-                        <td className="p-3 text-right text-purple-700 font-medium">{fmt(selectedQuote.taxAmount)}</td>
-                        <td className="p-3 text-right font-black text-slate-900 text-xs">{fmt(selectedQuote.totalAmount)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                        </div>
+
+                        {/* Discount */}
+                        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block">Trade / Volume Rebate</span>
+                          <span className="text-base font-black text-emerald-600 mt-0.5 block">
+                            -{fmt(discVal)}
+                          </span>
+                          <span className="text-[10px] text-emerald-700 font-medium">
+                            Special negotiated concession
+                          </span>
+                        </div>
+
+                        {/* GST & Levies */}
+                        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block">GST & Taxes ({gstPct}%)</span>
+                          <span className="text-base font-black text-purple-700 mt-0.5 block">
+                            +{fmt(taxVal)}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {gstPct === 18 ? 'CGST 9% + SGST 9% (or IGST)' : `Standard GST ${gstPct}%`}
+                          </span>
+                        </div>
+
+                        {/* Freight */}
+                        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block">Freight & Insurance</span>
+                          <span className="text-base font-black text-slate-900 mt-0.5 block">
+                            {selectedQuote.shippingCost === 0 ? 'Free / Included' : fmt(selectedQuote.shippingCost || 0)}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            DDP Doorstep Delivery
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Total Grand Landed Card */}
+                      <div className="mt-3 p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-2xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                        <div>
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-800 block">
+                            Final Landed Proposal Value (All Inclusive)
+                          </span>
+                          <span className="text-2xl font-black text-emerald-900 tracking-tight">
+                            {fmt(totalVal)}
+                          </span>
+                          <p className="text-[11px] text-emerald-700 italic mt-0.5">
+                            Amount in words: <strong className="font-semibold">{numberToIndianWords(totalVal)}</strong>
+                          </p>
+                        </div>
+
+                        <div className="sm:text-right border-t sm:border-t-0 sm:border-l border-emerald-200 pt-2 sm:pt-0 sm:pl-4">
+                          <span className="text-[10px] font-bold uppercase text-emerald-800 block">Effective Landed Unit Rate</span>
+                          <span className="text-base font-extrabold text-emerald-950">
+                            {fmt(unitLandedVal)} / unit
+                          </span>
+                          <span className="text-[10px] text-emerald-700 block font-medium">Inclusive of all duties &amp; logistics</span>
+                        </div>
+                      </div>
+
+                      {/* 3. Detailed Itemized Commercial Bill of Quantities (BOQ) */}
+                      <div className="mt-6">
+                        <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
+                          <FileText size={13} className="text-indigo-600" /> Line Item Specification &amp; Pricing Breakdown
+                        </h4>
+
+                        <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+                          <table className="w-full text-left border-collapse">
+                            <thead className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-500 tracking-wider">
+                              <tr>
+                                <th className="p-3">#</th>
+                                <th className="p-3">Item Description &amp; Technical Specs</th>
+                                <th className="p-3 text-center">HSN/SAC</th>
+                                <th className="p-3 text-center">Qty</th>
+                                <th className="p-3 text-right">Unit List</th>
+                                <th className="p-3 text-right">Disc.</th>
+                                <th className="p-3 text-right">Taxable</th>
+                                <th className="p-3 text-right">GST (18%)</th>
+                                <th className="p-3 text-right">Net Landed</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-[11px]">
+                              <tr className="hover:bg-slate-50/50">
+                                <td className="p-3 font-bold text-slate-400">01</td>
+                                <td className="p-3">
+                                  <strong className="text-slate-900 block text-xs">{selectedQuote.rfqTitle}</strong>
+                                  <span className="text-slate-500 block text-[10px] mt-0.5">
+                                    Standard Commercial Grade • Part SKU: {selectedQuote.vendor.slice(0, 3).toUpperCase()}-PRO-{selectedQuote.id.slice(-3)}
+                                  </span>
+                                  <span className="text-indigo-600 font-medium text-[10px]">
+                                    Spec Compliance: {selectedQuote.complianceRating}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center font-mono text-slate-600">84713010</td>
+                                <td className="p-3 text-center font-bold text-slate-800">{qty} Units</td>
+                                <td className="p-3 text-right font-medium text-slate-700">{fmt(unitRate)}</td>
+                                <td className="p-3 text-right text-emerald-600 font-medium">-{fmt(Math.round(discVal / qty))}</td>
+                                <td className="p-3 text-right font-semibold text-slate-800">
+                                  {fmt(taxableVal)}
+                                </td>
+                                <td className="p-3 text-right text-purple-700 font-medium">{fmt(taxVal)}</td>
+                                <td className="p-3 text-right font-black text-slate-900 text-xs">{fmt(totalVal)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
 
               {/* 4. Commercial, Legal & Contractual Terms */}
@@ -551,7 +568,13 @@ export const AdminQuotationsPage: React.FC = () => {
                   <button
                     onClick={() => {
                       selectVendorQuotation(selectedQuote.id, selectedQuote.rfqId, selectedQuote.product || selectedQuote.rfqTitle, 'Awarded and Assigned by Admin Executive Authority')
-                      assignVendorToRequest(selectedQuote.rfqId, selectedQuote.vendor, 'VND-HW-001')
+                      assignVendorToRequest(
+                        selectedQuote.rfqId,
+                        selectedQuote.vendor,
+                        resolveVendorId(selectedQuote.vendor, selectedQuote.vendorId),
+                        selectedQuote.totalAmount || selectedQuote.unitPrice,
+                        selectedQuote.id
+                      )
                       setSelectedQuote(null)
                     }}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"

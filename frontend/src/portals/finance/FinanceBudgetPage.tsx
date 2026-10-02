@@ -34,21 +34,22 @@ export const FinanceBudgetPage: React.FC = () => {
 
   // Filtered budgets
   const filteredBudgets = useMemo(() => {
-    return budgets.filter((b) => {
+    return (budgets || []).filter((b) => {
       const matchSearch =
-        b.department.toLowerCase().includes(search.toLowerCase()) ||
-        b.category.toLowerCase().includes(search.toLowerCase())
+        !search ||
+        String(b.department || '').toLowerCase().includes(search.toLowerCase()) ||
+        String(b.category || '').toLowerCase().includes(search.toLowerCase())
       const matchDept = deptFilter === 'ALL' || b.department === deptFilter
       return matchSearch && matchDept
     })
   }, [budgets, search, deptFilter])
 
   const departments = useMemo(() => {
-    return Array.from(new Set(budgets.map((b) => b.department)))
+    return Array.from(new Set((budgets || []).map((b) => b.department).filter(Boolean)))
   }, [budgets])
 
   const utilizationRate = (
-    (financeKPIs.spentBudget / (financeKPIs.totalBudget || 1)) *
+    ((financeKPIs?.spentBudget || 0) / (financeKPIs?.totalBudget || 1)) *
     100
   ).toFixed(1)
 

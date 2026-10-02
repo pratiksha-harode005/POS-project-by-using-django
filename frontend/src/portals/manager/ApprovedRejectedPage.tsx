@@ -1,5 +1,6 @@
 import React from 'react'
 import { CheckCircle, XCircle } from 'lucide-react'
+import { formatDateTime } from '../../utils/formatDate'
 
 export const ApprovedRejectedPage: React.FC = () => {
   const history = [
@@ -40,7 +41,7 @@ export const ApprovedRejectedPage: React.FC = () => {
                     {h.decision}
                   </span>
                 </td>
-                <td className="p-4 text-gray-500">{h.date}</td>
+                <td className="p-4 text-gray-500">{formatDateTime(h.date)}</td>
                 <td className="p-4 text-gray-600">{h.reason}</td>
               </tr>
             ))}

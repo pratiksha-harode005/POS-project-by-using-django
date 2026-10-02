@@ -11,17 +11,20 @@ from apps.core.permissions import IsAdminUser
 
 
 class DepartmentViewSet(viewsets.ModelViewSet):
-    queryset = Department.objects.all()
+    queryset = Department.objects.all().order_by('id')
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated]
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all().order_by('-date_joined')
+    queryset = User.objects.select_related('department').all().order_by('-date_joined')
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['role', 'department', 'is_active']
     search_fields = ['username', 'email', 'first_name', 'last_name', 'vendor_id_code']
+
+    def get_queryset(self):
+        return User.objects.select_related('department').all().order_by('-date_joined')
 
     def get_permissions(self):
         if self.action in ['create', 'destroy']:

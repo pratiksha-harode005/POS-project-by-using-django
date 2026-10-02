@@ -126,6 +126,81 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
   },
 }
 
+const BENCHMARK_UNIT_COSTS: Record<string, number> = {
+  // IT Hardware
+  'Laptops': 75000,
+  'Desktops': 50000,
+  'Monitors': 15000,
+  'Servers': 250000,
+  'Tablets & Handhelds': 30000,
+  'Peripherals & Accessories': 5000,
+  'Storage & Backup': 80000,
+  // Software & SaaS
+  'Productivity & Collaboration': 15000,
+  'Developer Tools & IDEs': 25000,
+  'Design & Creative Suite': 35000,
+  'CRM & Sales Automation': 48500,
+  'ERP & Finance Software': 120000,
+  'HR & People Management': 30000,
+  'Marketing Automation': 40000,
+  'Analytics & BI Tools': 55000,
+  'Project Management': 20000,
+  'Security & Compliance Tools': 60000,
+  // Cloud & Infrastructure
+  'Compute Instances (VMs)': 45000,
+  'Cloud Storage (S3/Blob)': 25000,
+  'Managed Databases (RDS)': 65000,
+  'Kubernetes & Containers': 85000,
+  'Networking & CDN': 35000,
+  'AI & ML Platforms': 95000,
+  'Serverless & App Engines': 30000,
+  'Backup & Disaster Recovery': 50000,
+  // Cybersecurity
+  'Endpoint Protection (EDR)': 25000,
+  'Identity & Access (IAM/SSO)': 40000,
+  'SIEM & Log Management': 75000,
+  'Cloud Security Posture (CSPM)': 60000,
+  'Network Firewalls & VPN': 80000,
+  'Vulnerability Scanners': 50000,
+  'Email Security': 20000,
+  // IT Services
+  'Custom Software Development': 150000,
+  'IT Consulting & Architecture': 200000,
+  'Managed IT Operations': 100000,
+  'Cloud Migration Services': 180000,
+  'Security Audits & Pen Testing': 120000,
+  'System Integration': 140000,
+  // Office Accessories
+  'Ergonomic Chairs': 15000,
+  'Standing Desks': 25000,
+  'Monitor Arms & Risers': 4000,
+  'Docking Stations': 12000,
+  'Keyboards & Mice Bundles': 3500,
+  'Laptop Bags & Sleeves': 2500,
+  'Desk Power Hubs & Cables': 2000,
+  // Office Technology
+  'Conference Room Displays': 90000,
+  'Video Conferencing Bars': 65000,
+  'Printers & Scanners': 35000,
+  'Projectors & Screens': 45000,
+  'Smart Whiteboards': 85000,
+  'VoIP Phones & Headsets': 8000,
+  // Networking & Telecom
+  'Core & Edge Switches': 65000,
+  'Enterprise Wi-Fi APs': 25000,
+  'Routers & Gateways': 55000,
+  'Fiber & Patch Cabling': 15000,
+  'Server Racks & Enclosures': 45000,
+  'UPS & Power Distribution': 50000,
+  // Training & Certifications
+  'Cloud & DevOps Certifications': 30000,
+  'Software Engineering Bootcamps': 50000,
+  'Cybersecurity Certifications': 45000,
+  'Project Management (PMP/Agile)': 35000,
+  'Leadership & Soft Skills': 25000,
+  'Data Science & AI Training': 55000,
+}
+
 export const CreateRequestPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
@@ -140,19 +215,13 @@ export const CreateRequestPage: React.FC = () => {
   let initialSubcat = routeState?.subcategory !== undefined ? routeState.subcategory : (initialSubcatList?.[0] ?? '')
 
   const [formData, setFormData] = useState(() => {
-    const config = CATEGORY_CONFIGS[initialCat]
-    const initialExtra: Record<string, string> = {}
-    if (config?.extraFieldKey && config?.extraFieldOptions) {
-      initialExtra[config.extraFieldKey] = config.extraFieldOptions[0]
-    }
-
     return {
       title: '',
       category: initialCat,
       subcategory: initialSubcat,
       subscriptionServiceName: '', // Tool/service name for SaaS & Cloud
       description: '',
-      quantity: 1 as number | '',
+      quantity: '' as number | '',
       estimatedCost: '' as number | '',
       requiredBy: '',
       department: profile.department || 'IT & Infrastructure',
@@ -161,7 +230,7 @@ export const CreateRequestPage: React.FC = () => {
       preferredVendor: '',
       justification: '',
       attachment: null as File | null,
-      extraFields: initialExtra,
+      extraFields: {} as Record<string, string>,
     }
   })
 
@@ -176,11 +245,6 @@ export const CreateRequestPage: React.FC = () => {
   const categoryConfig = CATEGORY_CONFIGS[formData.category] || { quantityLabel: 'Quantity' }
 
   const handleCategoryChange = (newCat: string) => {
-    const newConfig = CATEGORY_CONFIGS[newCat]
-    const defaultExtra: Record<string, string> = {}
-    if (newConfig?.extraFieldKey && newConfig?.extraFieldOptions) {
-      defaultExtra[newConfig.extraFieldKey] = newConfig.extraFieldOptions[0]
-    }
     const subcatList = SUBCATEGORIES_BY_CATEGORY[newCat]
     const defaultSubcat = subcatList ? subcatList[0] : ''
     setFormData({
@@ -188,14 +252,20 @@ export const CreateRequestPage: React.FC = () => {
       category: newCat,
       subcategory: defaultSubcat,
       preferredVendor: '',
-      extraFields: defaultExtra,
+      extraFields: {},
     })
   }
 
   const handleExtraFieldChange = (key: string, val: string) => {
+    const updated = { ...formData.extraFields }
+    if (val) {
+      updated[key] = val
+    } else {
+      delete updated[key]
+    }
     setFormData({
       ...formData,
-      extraFields: { ...formData.extraFields, [key]: val },
+      extraFields: updated,
     })
   }
 
@@ -364,13 +434,14 @@ export const CreateRequestPage: React.FC = () => {
           {categoryConfig.extraFieldKey && categoryConfig.extraFieldOptions && (
             <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
               <label className="block font-bold text-blue-900 mb-1">
-                Category Detail: {categoryConfig.extraFieldLabel} *
+                Category Detail: {categoryConfig.extraFieldLabel} (Optional)
               </label>
               <select
-                value={formData.extraFields[categoryConfig.extraFieldKey] || categoryConfig.extraFieldOptions[0]}
+                value={formData.extraFields[categoryConfig.extraFieldKey] || ''}
                 onChange={(e) => handleExtraFieldChange(categoryConfig.extraFieldKey!, e.target.value)}
                 className="w-full p-2.5 border rounded-lg bg-white border-blue-200 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               >
+                <option value="">-- Select {categoryConfig.extraFieldLabel} (Optional) --</option>
                 {categoryConfig.extraFieldOptions.map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}
@@ -418,16 +489,20 @@ export const CreateRequestPage: React.FC = () => {
               />
             </div>
 
-            {/* Estimated Cost - Optional */}
+            {/* Estimated Cost */}
             <div>
               <label className="block font-bold text-gray-700 mb-1">
-                Estimated Cost (USD) (Optional)
+                Estimated Cost (₹)
               </label>
               <input
                 type="number"
                 min={0}
                 step="0.01"
-                placeholder="Optional estimate e.g. 5000.00"
+                placeholder={
+                  formData.subcategory && BENCHMARK_UNIT_COSTS[formData.subcategory]
+                    ? `e.g. ₹${((Number(formData.quantity) || 1) * BENCHMARK_UNIT_COSTS[formData.subcategory]).toLocaleString('en-IN')}`
+                    : "e.g. 50000.00"
+                }
                 value={formData.estimatedCost}
                 onChange={(e) =>
                   setFormData({
@@ -438,7 +513,9 @@ export const CreateRequestPage: React.FC = () => {
                 className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-semibold text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
               <p className="text-[10px] text-gray-400 mt-0.5">
-                Optional estimated budget/cost.
+                {formData.subcategory && BENCHMARK_UNIT_COSTS[formData.subcategory]
+                  ? `Standard catalog: ₹${BENCHMARK_UNIT_COSTS[formData.subcategory].toLocaleString('en-IN')} / unit`
+                  : 'Estimated purchase budget (INR).'}
               </p>
             </div>
 

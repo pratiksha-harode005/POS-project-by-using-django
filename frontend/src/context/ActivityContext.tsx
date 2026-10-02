@@ -239,7 +239,16 @@ export const ActivityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
 export const useActivity = () => {
   const ctx = useContext(ActivityContext)
-  if (!ctx) throw new Error('useActivity must be used within ActivityProvider')
+  if (!ctx) {
+    return {
+      readItemIds: new Set<string>(),
+      isUnread: () => false,
+      markAsRead: () => {},
+      markAllAsRead: () => {},
+      getUnreadCount: () => 0,
+      getRoleTotalUnread: () => 0,
+    }
+  }
   return ctx
 }
 

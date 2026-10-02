@@ -33,9 +33,9 @@ class Vendor(TimeStampedModel):
     address = models.TextField(blank=True)
     
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='vendor_profile')
-    risk_rating = models.CharField(max_length=20, choices=RISK_CHOICES, default='Low')
+    risk_rating = models.CharField(max_length=20, choices=RISK_CHOICES, default='Low', db_index=True)
     performance_score = models.DecimalField(max_digits=5, decimal_places=2, default=90.00) # 0 to 100
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Active')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Active', db_index=True)
     documents = models.FileField(upload_to='vendor_docs/', blank=True, null=True)
 
     def save(self, *args, **kwargs):
