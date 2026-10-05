@@ -1055,19 +1055,15 @@ class TeamLeadRequestViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = PurchaseRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsTeamLeadRole]
-    filterset_fields = ['status', 'priority']
+    filterset_fields = ['status', 'priority', 'department', 'flow_type']
     search_fields = ['request_id', 'title', 'category', 'description']
 
     def get_queryset(self):
         user = self.request.user
         qs = get_base_purchase_request_queryset()
-
-        # Department / assignment scoping
-        if user.role != 'ADMIN':
-            if user.department:
-                qs = qs.filter(models.Q(department=user.department) | models.Q(created_by=user) | models.Q(assigned_team_lead=user))
-            else:
-                qs = qs.filter(models.Q(created_by=user) | models.Q(assigned_team_lead=user))
+        scope = self.request.query_params.get('scope')
+        if scope == 'department' and user.department:
+            qs = qs.filter(models.Q(department=user.department) | models.Q(created_by=user) | models.Q(assigned_team_lead=user))
         return apply_request_type_filter(qs, self.request)
 
     def get_object(self):

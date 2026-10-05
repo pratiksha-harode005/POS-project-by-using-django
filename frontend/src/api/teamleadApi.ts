@@ -33,11 +33,11 @@ export const getTeamLeadRequests = async (params?: { status?: string; search?: s
   const role = (localStorage.getItem('user_role') || '').toUpperCase()
   const primaryEndpoint = (role === 'TEAM_LEAD' || role === 'ADMIN') ? '/team-lead/requests/' : '/requests/'
   try {
-    const response = await apiClient.get(primaryEndpoint, { params: { ...params, page_size: params?.page_size || 100 } })
+    const response = await apiClient.get(primaryEndpoint, { params: { ...params, page_size: params?.page_size || 500 } })
     return response.data
   } catch (err) {
     try {
-      const fallback = await apiClient.get('/requests/', { params: { ...params, page_size: 100 } })
+      const fallback = await apiClient.get('/requests/', { params: { ...params, page_size: 500 } })
       return fallback.data
     } catch {
       return []

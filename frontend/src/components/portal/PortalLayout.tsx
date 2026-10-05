@@ -152,7 +152,9 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
       } else if (matchedRequests.length > 0) {
         const req = matchedRequests[0]
         setSearchOpen(false)
-        if (currentRole === 'FINANCE') {
+        if (currentRole === 'TEAM_LEAD') {
+          navigate(`/portal/team_lead/request-details?id=${encodeURIComponent(req.id)}`)
+        } else if (currentRole === 'FINANCE') {
           navigate(`/portal/finance/purchase-requests?search=${encodeURIComponent(req.id)}`)
         } else {
           navigate(`/portal/manager/total-requests?search=${encodeURIComponent(req.id)}`)
@@ -352,7 +354,9 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
                             key={r.id}
                             onClick={() => {
                               setSearchOpen(false)
-                              if (currentRole === 'FINANCE') {
+                              if (currentRole === 'TEAM_LEAD') {
+                                navigate(`/portal/team_lead/request-details?id=${encodeURIComponent(r.id)}`)
+                              } else if (currentRole === 'FINANCE') {
                                 navigate(`/portal/finance/purchase-requests?search=${encodeURIComponent(r.id)}`)
                               } else {
                                 navigate(`/portal/manager/total-requests?search=${encodeURIComponent(r.id)}`)

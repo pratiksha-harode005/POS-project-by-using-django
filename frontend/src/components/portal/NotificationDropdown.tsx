@@ -5,7 +5,6 @@ import {
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { getNotifications, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
-import { apiClient } from '../../api/client'
 
 export interface NotificationItem {
   id: number
@@ -30,6 +29,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
   const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(false)
+  const fetchInFlight = useRef(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const getActiveVendorId = useCallback(() => {
@@ -53,6 +53,9 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
   }, [currentRole, role, location.pathname, user?.role, getActiveVendorId])
 
   const fetchRealNotifications = useCallback(async () => {
+    if (fetchInFlight.current) return
+    fetchInFlight.current = true
+    setLoading(true)
     try {
       const activeRole = (currentRole || role || 'MANAGER').toUpperCase()
       const isVendorPortal = location.pathname.includes('/portal/vendor') || activeRole === 'VENDOR' || user?.role === 'VENDOR'
@@ -87,6 +90,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       console.warn('Temporary issue loading notifications in dropdown:', err)
     } finally {
       setLoading(false)
+      fetchInFlight.current = false
     }
   }, [currentRole, role, user, location.pathname])
 
@@ -101,8 +105,8 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
     window.addEventListener('focus', handleBackendUpdate)
     window.addEventListener('storage', handleBackendUpdate)
 
-    // Periodic live sync every 3 seconds for immediate realtime feedback
-    const interval = setInterval(fetchRealNotifications, 3000)
+    // Short polling keeps updates visible across server-side workflow changes.
+    const interval = setInterval(fetchRealNotifications, 5000)
 
     return () => {
       window.removeEventListener('kss_backend_updated', handleBackendUpdate)
@@ -111,37 +115,6 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       clearInterval(interval)
     }
   }, [fetchRealNotifications])
-
-  // Fetch real-time notifications from PostgreSQL
-  useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (!token) return
-
-    const fetchNotifications = async () => {
-      try {
-        const res = await apiClient.get('/notifications/')
-        const data = Array.isArray(res.data) ? res.data : (res.data?.results || [])
-        const items: NotificationItem[] = data.map((n: any) => ({
-          id: n.id,
-          title: n.title,
-          message: n.message,
-          timestamp: n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-          date: n.created_at ? n.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-          isRead: Boolean(n.is_read),
-          category: 'Approval',
-          requestId: n.purchase_request ? `REQ-${n.purchase_request}` : undefined,
-          sender: 'System'
-        }))
-        setNotifications(items)
-      } catch (err) {
-        // silent fail if unauthenticated or network error
-      }
-    }
-
-    fetchNotifications()
-    const interval = setInterval(fetchNotifications, 30000)
-    return () => clearInterval(interval)
-  }, [])
 
   const unreadCount = notifications.filter((n) => !n.isRead).length
   const topNotifications = notifications.slice(0, 5)

@@ -250,8 +250,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       // Previously requests were awaited first, then payments — doubling round-trip time.
       // Now both kick off simultaneously and we process each result when both arrive.
       const [requestsResult, paymentsResult] = await Promise.allSettled([
-        getTeamLeadRequests(),
-        apiClient.get('/payments/', { params: { page_size: 100 } })
+        getTeamLeadRequests({ page_size: 500 }),
+        apiClient.get('/payments/', { params: { page_size: 500 } })
       ])
 
       const data = requestsResult.status === 'fulfilled' ? requestsResult.value : null

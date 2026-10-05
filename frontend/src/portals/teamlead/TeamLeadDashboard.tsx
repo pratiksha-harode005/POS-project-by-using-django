@@ -44,9 +44,9 @@ export const TeamLeadDashboard: React.FC = () => {
   const fetchLiveNotifications = useCallback(async () => {
     try {
       const activeRole = (role || 'TEAM_LEAD').toUpperCase()
-      let params: { role?: string; user?: string } = { role: activeRole }
+      let params: { role?: string; user?: string; page_size?: number } = { role: activeRole, page_size: 10 }
       if (user?.username) {
-        params = { user: user.username, role: activeRole }
+        params = { user: user.username, role: activeRole, page_size: 10 }
       }
       const data: BackendNotification[] = await getNotifications(params)
       if (Array.isArray(data) && data.length > 0) {
@@ -74,7 +74,7 @@ export const TeamLeadDashboard: React.FC = () => {
     window.addEventListener('kss_backend_updated', handleUpdate)
     window.addEventListener('focus', handleUpdate)
     window.addEventListener('storage', handleUpdate)
-    const interval = setInterval(fetchLiveNotifications, 30000)
+    const interval = setInterval(fetchLiveNotifications, 5000)
     return () => {
       window.removeEventListener('kss_backend_updated', handleUpdate)
       window.removeEventListener('focus', handleUpdate)
