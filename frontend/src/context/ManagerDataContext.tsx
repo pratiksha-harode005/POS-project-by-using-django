@@ -2469,17 +2469,18 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const unsubscribe = subscribeGlobalDataSync(() => {
       refreshManagerBackendData()
     })
-    const interval = setInterval(refreshManagerBackendData, 25000)
     
-    // Add 5-second polling to ensure updates even across different browsers/devices
+    // Poll every 30 seconds (relying on instant subscribeGlobalDataSync for real-time actions)
     const pollInterval = setInterval(() => {
-      refreshManagerBackendData()
-    }, 5000)
+      const activeRole = localStorage.getItem('user_role')
+      if (activeRole === 'MANAGER' || activeRole === 'ADMIN' || activeRole === 'FINANCE') {
+        refreshManagerBackendData()
+      }
+    }, 30000)
 
     return () => {
       unsubscribe()
       clearInterval(pollInterval)
-      clearInterval(interval)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // stable ref — refreshManagerBackendData is defined with useCallback([], []) so it never changes

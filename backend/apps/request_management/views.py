@@ -164,50 +164,31 @@ def apply_request_type_filter(queryset, request):
 
 def get_base_purchase_request_queryset():
     """
-    Standard pre-optimized QuerySet for PurchaseRequest.
-    Pre-selects all 1-to-1 and ForeignKey relations (including parent/original requests and justifications)
-    and prefetches approval history, steps, payments, purchase orders, RFQs, and descendants to ELIMINATE all N+1 queries.
+    Standard highly-optimized QuerySet for PurchaseRequest.
+    Pre-selects all ForeignKey relations and prefetches approval history, steps, payments,
+    and justifications required by PurchaseRequestSerializer while avoiding unused deep nested prefetches.
     """
-    from apps.procurement.models import PurchaseOrder
-    from apps.rfq_management.models import RFQ
-    from apps.invoice_management.models import Invoice
     return PurchaseRequest.objects.select_related(
         'created_by',
         'created_by__department',
         'department',
+        'assigned_team_lead',
         'assigned_team_lead__department',
+        'assigned_manager',
         'assigned_manager__department',
         'payment_justification',
-        'payment_justification__submitted_by__department',
-        'payment_justification__verified_by__department',
+        'payment_justification__submitted_by',
+        'payment_justification__verified_by',
         'research_estimation',
-        'research_estimation__researched_by__department',
+        'research_estimation__researched_by',
+        'original_request',
         'original_request__department',
-        'original_request__payment_justification__submitted_by__department',
-        'original_request__payment_justification__verified_by__department',
         'parent_request'
     ).prefetch_related(
-        'approval_steps__actor__department',
+        'approval_steps__actor',
         'approval_steps__reason',
-        'approval_history__performed_by__department',
-        'payments',
-        models.Prefetch(
-            'purchase_orders',
-            queryset=PurchaseOrder.objects.select_related('vendor').prefetch_related(
-                'goods_receipts',
-                models.Prefetch('invoices', queryset=Invoice.objects.prefetch_related('payments'))
-            )
-        ),
-        models.Prefetch(
-            'rfqs',
-            queryset=RFQ.objects.prefetch_related('quotations')
-        ),
-        models.Prefetch(
-            'all_descendants',
-            queryset=PurchaseRequest.objects.only(
-                'id', 'request_id', 'status', 'request_operation', 'renewal_sequence', 'original_request_id'
-            ).order_by('renewal_sequence')
-        )
+        'approval_history__performed_by',
+        'payments'
     ).all().order_by('-created_at', '-id')
 
 

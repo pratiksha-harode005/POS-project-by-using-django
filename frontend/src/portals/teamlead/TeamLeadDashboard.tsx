@@ -74,7 +74,7 @@ export const TeamLeadDashboard: React.FC = () => {
     window.addEventListener('kss_backend_updated', handleUpdate)
     window.addEventListener('focus', handleUpdate)
     window.addEventListener('storage', handleUpdate)
-    const interval = setInterval(fetchLiveNotifications, 3000)
+    const interval = setInterval(fetchLiveNotifications, 30000)
     return () => {
       window.removeEventListener('kss_backend_updated', handleUpdate)
       window.removeEventListener('focus', handleUpdate)

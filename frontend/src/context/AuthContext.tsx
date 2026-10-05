@@ -71,7 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(userObj)
       setRole(userObj.role)
       setLoading(false)
-      triggerGlobalDataSync('login')
+      setTimeout(() => triggerGlobalDataSync('login'), 10)
       return { success: true }
     } catch (err: any) {
       console.error('Login failed', err)

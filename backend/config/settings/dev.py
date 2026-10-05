@@ -19,3 +19,10 @@ if db_url:
     }
 else:
     raise ValueError("Database_URL environment variable is missing. Failing loudly as requested.")
+
+# Fast password verification for local dev authentication
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.MD5PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+]
