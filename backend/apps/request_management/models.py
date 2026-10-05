@@ -21,6 +21,7 @@ class RejectionReason(TimeStampedModel):
 
 class PurchaseRequest(TimeStampedModel):
     # Standard Workflow Statuses
+    STATUS_DRAFT = 'DRAFT'
     STATUS_CREATED = 'CREATED'
     STATUS_TEAM_LEAD_SUBMITTED = 'TEAM_LEAD_SUBMITTED'
     STATUS_TEAM_LEAD_REVIEW = 'TEAM_LEAD_REVIEW'
@@ -65,6 +66,7 @@ class PurchaseRequest(TimeStampedModel):
     STATUS_IN_PROCUREMENT = 'In Procurement'
 
     STATUS_CHOICES = (
+        (STATUS_DRAFT, 'Draft'),
         (STATUS_CREATED, 'Created'),
         (STATUS_TEAM_LEAD_SUBMITTED, 'Team Lead Submitted'),
         (STATUS_TEAM_LEAD_REVIEW, 'Team Lead Review'),

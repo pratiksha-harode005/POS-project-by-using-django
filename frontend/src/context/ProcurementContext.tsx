@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { getTeamLeadRequests, createTeamLeadRequest, resubmitTeamLeadRequest } from '../api/teamleadApi'
+import { getTeamLeadRequests, createTeamLeadRequest, saveDraftRequest, resubmitTeamLeadRequest, submitDraftRequest, deleteDraftRequest } from '../api/teamleadApi'
 import { getWorkflowProgression, sortRequestsNewestFirst } from '../utils/workflowUtils'
 import { apiClient } from '../api/client'
 import { triggerGlobalDataSync, subscribeGlobalDataSync } from '../utils/syncUtils'
@@ -154,6 +154,8 @@ interface ProcurementContextType {
   notifications: NotificationRecord[]
   profile: ExtendedProfile
   addRequest: (req: Omit<PurchaseRequest, 'id' | 'date' | 'lastUpdated' | 'currentlyWith' | 'history'> & { id?: string }) => Promise<PurchaseRequest>
+  submitDraft: (id: string, updatedData?: Partial<PurchaseRequest>) => Promise<void>
+  deleteDraft: (id: string) => Promise<void>
   refreshBackendRequests: () => Promise<void>
   resubmitRequest: (id: string, updatedData?: Partial<PurchaseRequest>) => void
   uploadReceipt: (paymentId: string, receiptData: ReceiptSubmissionPayload | File) => void
@@ -640,7 +642,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const today = new Date().toISOString().split('T')[0]
     const isDraft = reqData.status === 'Draft'
 
-    const createdData = await createTeamLeadRequest({
+    const reqPayload = {
       title: reqData.title,
       category: reqData.category,
       subcategory: reqData.subcategory || 'General',
@@ -656,13 +658,20 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       total_estimated_cost: reqData.estimatedCost || reqData.existing_cost || 0,
       flow_type: reqData.flowType || 'A',
       request_type: reqData.request_type,
-      software_name: reqData.software_name,
+      software_name: reqData.flowType === 'B' ? reqData.software_name : undefined,
       current_plan: reqData.current_plan,
       required_plan: reqData.required_plan,
       existing_cost: reqData.existing_cost,
       business_requirement: reqData.business_requirement,
       extra_fields: reqData.extraFields || {},
-    })
+      is_draft: isDraft,
+      status: isDraft ? 'DRAFT' : 'PENDING',
+      id: reqData.id,
+    }
+
+    const createdData = isDraft
+      ? await saveDraftRequest(reqPayload)
+      : await createTeamLeadRequest(reqPayload)
 
     const actualId = createdData?.request_id || createdData?.id || reqData.id || `REQ-${Date.now()}`
 
@@ -712,6 +721,32 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     return newReq
+  }
+
+  const submitDraft = async (id: string, updatedData?: Partial<PurchaseRequest>) => {
+    try {
+      const matched = requests.find((r) => r.id === id || String(r.dbId) === id)
+      const targetId = matched?.dbId || id
+      await submitDraftRequest(targetId, updatedData || {})
+      triggerGlobalDataSync('draft_submitted')
+      await refreshBackendRequests()
+    } catch (err) {
+      console.error('Failed to submit draft:', err)
+      throw err
+    }
+  }
+
+  const deleteDraft = async (id: string) => {
+    try {
+      const matched = requests.find((r) => r.id === id || String(r.dbId) === id)
+      const targetId = matched?.dbId || id
+      await deleteDraftRequest(targetId)
+      setRequests((prev) => prev.filter((r) => r.id !== id && String(r.dbId) !== String(id)))
+      triggerGlobalDataSync('draft_deleted')
+    } catch (err) {
+      console.error('Failed to delete draft:', err)
+      throw err
+    }
   }
 
   const resubmitRequest = (id: string, updatedData?: Partial<PurchaseRequest>) => {
@@ -1013,6 +1048,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         notifications,
         profile,
         addRequest,
+        submitDraft,
+        deleteDraft,
         refreshBackendRequests,
         resubmitRequest,
         uploadReceipt,

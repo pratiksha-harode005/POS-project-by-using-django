@@ -50,7 +50,7 @@ export const getTeamLeadRequestById = async (id: string | number) => {
   return response.data
 }
 
-export const createTeamLeadRequest = async (payload: CreateRequestPayload) => {
+export const createTeamLeadRequest = async (payload: CreateRequestPayload & { is_draft?: boolean; status?: string; id?: string | number }) => {
   const body = {
     ...payload,
     requested_amount: payload.requested_amount ?? payload.total_estimated_cost ?? payload.existing_cost ?? 0,
@@ -60,6 +60,36 @@ export const createTeamLeadRequest = async (payload: CreateRequestPayload) => {
     preferred_vendor: payload.preferred_vendor || payload.vendor || '',
   }
   const response = await apiClient.post('/requests/', body)
+  return response.data
+}
+
+export const saveDraftRequest = async (payload: CreateRequestPayload & { id?: string | number }) => {
+  const body = {
+    ...payload,
+    is_draft: true,
+    status: 'DRAFT',
+    requested_amount: payload.requested_amount ?? payload.total_estimated_cost ?? payload.existing_cost ?? 0,
+    total_estimated_cost: payload.total_estimated_cost ?? payload.requested_amount ?? payload.existing_cost ?? 0,
+    department: payload.department ?? payload.department_id ?? 1,
+    vendor: payload.vendor || payload.preferred_vendor || '',
+    preferred_vendor: payload.preferred_vendor || payload.vendor || '',
+  }
+  const response = await apiClient.post('/requests/', body)
+  return response.data
+}
+
+export const submitDraftRequest = async (id: string | number, payload?: any) => {
+  try {
+    const response = await apiClient.post(`/team-lead/requests/${id}/submit_draft/`, payload || {})
+    return response.data
+  } catch {
+    const fallback = await apiClient.post(`/requests/${id}/submit_draft/`, payload || {})
+    return fallback.data
+  }
+}
+
+export const deleteDraftRequest = async (id: string | number) => {
+  const response = await apiClient.delete(`/requests/${id}/`)
   return response.data
 }
 

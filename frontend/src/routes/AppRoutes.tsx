@@ -19,6 +19,7 @@ import { RoleGuard } from '../components/common/RoleGuard'
 import { TeamLeadDashboard } from '../portals/teamlead/TeamLeadDashboard'
 import { MyRequestsPage } from '../portals/teamlead/MyRequestsPage'
 import { CreateRequestPage } from '../portals/teamlead/CreateRequestPage'
+import { SavedDraftsPage } from '../portals/teamlead/SavedDraftsPage'
 import { RequestHistoryPage } from '../portals/teamlead/RequestHistoryPage'
 import { PaymentStatusPage } from '../portals/teamlead/PaymentStatusPage'
 import { RenewalsPage } from '../portals/teamlead/RenewalsPage'
@@ -136,6 +137,8 @@ function TeamLeadRoutes() {
       <Route path="my-requests" element={<MyRequestsPage />} />
       <Route path="request-details" element={<TeamLeadRequestDetailsPage />} />
       <Route path="create-request" element={<CreateRequestPage />} />
+      <Route path="drafts" element={<SavedDraftsPage />} />
+      <Route path="saved-drafts" element={<Navigate to="/portal/team_lead/drafts" replace />} />
       <Route path="request-history" element={<RequestHistoryPage />} />
       <Route path="payment-status" element={<PaymentStatusPage />} />
       <Route path="renewals" element={<RenewalsPage />} />

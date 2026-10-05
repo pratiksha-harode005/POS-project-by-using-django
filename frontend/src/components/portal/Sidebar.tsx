@@ -6,9 +6,10 @@ import {
   ShieldAlert, Building, Sliders, Truck, FileSpreadsheet, Package,
   FolderOpen, ShoppingCart, LucideIcon, XCircle, Inbox, Ticket, ArrowUpRight,
   BarChart2, GitCompare, ShoppingBag, AlertTriangle, HelpCircle, Tag, Scale,
-  LogOut, Grid, RefreshCw
+  LogOut, Grid, RefreshCw, FileEdit
 } from 'lucide-react'
 import { UserRole, useAuth } from '../../context/AuthContext'
+import { useProcurement } from '../../context/ProcurementContext'
 
 interface SidebarProps {
   role: UserRole
@@ -29,6 +30,7 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
         { label: 'Dashboard', path: `${basePath}/dashboard`, icon: LayoutDashboard },
         { label: 'My Requests', path: `${basePath}/my-requests`, icon: FileText },
         { label: 'Create Request', path: `${basePath}/create-request`, icon: PlusCircle },
+        { label: 'Saved Drafts', path: `${basePath}/drafts`, icon: FileEdit },
         { label: 'Renewals & Upgrades', path: `${basePath}/renewals`, icon: RefreshCw },
         { label: 'Request History', path: `${basePath}/request-history`, icon: History },
         { label: 'Notifications', path: `${basePath}/notifications`, icon: Bell },
@@ -111,6 +113,7 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
 
 export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
   const { logout } = useAuth()
+  const { requests } = useProcurement()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -118,6 +121,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
   const activeVendorId = vendorMatch ? vendorMatch[1] : undefined
 
   const menuItems = getSidebarItems(role, activeVendorId)
+
+  const draftCount = React.useMemo(() => {
+    if (role !== 'TEAM_LEAD') return 0
+    return requests.filter((r) => r.status === 'Draft' || r.currentStage === 0 || r.raw_status === 'DRAFT').length
+  }, [requests, role])
 
   return (
     <aside className="w-64 bg-[#0A1128] text-slate-300 h-full flex flex-col flex-shrink-0 shadow-lg border-r border-slate-900 z-30 select-none">
@@ -151,6 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto min-h-0 [scrollbar-width:thin] [scrollbar-color:#334155_transparent]">
         {menuItems.map((item) => {
           const Icon = item.icon
+          const isDraftItem = item.path.includes('/drafts')
 
           return (
             <NavLink
@@ -164,10 +173,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
                 }`
               }
             >
-              <div className="flex items-center gap-3 min-w-0">
-                <Icon size={16} className="flex-shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </div>
+              {({ isActive }) => (
+                <>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Icon size={16} className="flex-shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </div>
+                  {isDraftItem && draftCount > 0 && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      isActive ? 'bg-white text-blue-700' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    }`}>
+                      {draftCount}
+                    </span>
+                  )}
+                </>
+              )}
             </NavLink>
           )
         })}

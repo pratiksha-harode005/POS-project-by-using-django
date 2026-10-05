@@ -205,17 +205,61 @@ const BENCHMARK_UNIT_COSTS: Record<string, number> = {
 export const CreateRequestPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const routeState = location.state as { category?: string; subcategory?: string } | null
+  const routeState = location.state as {
+    category?: string
+    subcategory?: string
+    editDraft?: any
+    draftId?: string
+  } | null
 
-  const { addRequest, profile } = useProcurement()
+  const { addRequest, submitDraft, requests, profile } = useProcurement()
   const [submitted, setSubmitted] = useState(false)
   const [submittedStatus, setSubmittedStatus] = useState<'Pending' | 'Draft'>('Pending')
 
-  const initialCat = routeState?.category || 'IT Hardware'
-  const initialSubcatList = SUBCATEGORIES_BY_CATEGORY[routeState?.category || 'IT Hardware']
-  let initialSubcat = routeState?.subcategory !== undefined ? routeState.subcategory : (initialSubcatList?.[0] ?? '')
+  const searchParams = new URLSearchParams(location.search)
+  const queryDraftId = searchParams.get('draftId')
+
+  const draftToEdit = routeState?.editDraft || (
+    (routeState?.draftId || queryDraftId)
+      ? requests.find((r) => r.id === (routeState?.draftId || queryDraftId) || String(r.dbId) === (routeState?.draftId || queryDraftId))
+      : null
+  )
+
+  const isEditMode = Boolean(draftToEdit)
+  const editingDraftId = draftToEdit ? (draftToEdit.id || draftToEdit.dbId) : null
+
+  const initialCat = draftToEdit?.category || routeState?.category || 'IT Hardware'
+  const initialSubcatList = SUBCATEGORIES_BY_CATEGORY[initialCat]
+  let initialSubcat = draftToEdit?.subcategory !== undefined
+    ? draftToEdit.subcategory
+    : (routeState?.subcategory !== undefined ? routeState.subcategory : (initialSubcatList?.[0] ?? ''))
 
   const [formData, setFormData] = useState(() => {
+    if (draftToEdit) {
+      const isSaaS = draftToEdit.category === 'Software & SaaS' || draftToEdit.category === 'Cloud & Infrastructure' || draftToEdit.category === 'SaaS & Cloud'
+      return {
+        title: draftToEdit.title || '',
+        category: draftToEdit.category || initialCat,
+        subcategory: draftToEdit.subcategory || initialSubcat,
+        subscriptionServiceName: draftToEdit.software_name || (isSaaS ? draftToEdit.subcategory : '') || '',
+        description: draftToEdit.description || '',
+        quantity: draftToEdit.quantity || ('' as number | ''),
+        estimatedCost: draftToEdit.estimatedCost || ('' as number | ''),
+        requiredBy: draftToEdit.requiredBy || '',
+        department: draftToEdit.department || profile.department || 'IT & Infrastructure',
+        deliveryLocation: draftToEdit.deliveryLocation || profile.workLocation || 'Pune HQ, 4th Floor',
+        priority: (draftToEdit.priority || 'Medium') as 'Low' | 'Medium' | 'High' | 'Urgent',
+        preferredVendor: draftToEdit.preferredVendor || '',
+        justification: draftToEdit.justification || '',
+        attachment: null as File | null,
+        extraFields: draftToEdit.extraFields || draftToEdit.extra_fields || {},
+        requestType: (draftToEdit.request_type || 'Renewal') as 'Renewal' | 'Upgrade' | 'New Purchase',
+        currentPlan: draftToEdit.current_plan || '',
+        requiredPlan: draftToEdit.required_plan || '',
+        existingCost: draftToEdit.existing_cost || ('' as number | ''),
+        businessRequirement: draftToEdit.business_requirement || draftToEdit.justification || '',
+      }
+    }
     return {
       title: '',
       category: initialCat,
@@ -312,56 +356,98 @@ export const CreateRequestPage: React.FC = () => {
     const existingCostNum = Number(formData.existingCost) || 0
     const effectiveCost = costNumber > 0 ? costNumber : (existingCostNum > 0 ? existingCostNum : 0)
     try {
-      await addRequest({
-        title: formData.title,
-        category: formData.category,
-        subcategory: isSaaSOrCloud
-          ? formData.subscriptionServiceName
-          : formData.subcategory,
-        description: formData.description,
-        quantity: showQuantity ? quantityNumber : 1,
-        estimatedCost: effectiveCost,
-        requiredBy: formData.requiredBy,
-        department: formData.department,
-        deliveryLocation: formData.deliveryLocation,
-        priority: formData.priority,
-        preferredVendor: formData.preferredVendor,
-        justification: formData.justification,
-        attachmentName: formData.attachment?.name,
-        attachmentCount: formData.attachment ? 1 : 0,
-        status: isDraft ? 'Draft' : 'Pending',
-        currentStage: isDraft ? 0 : 2,
-        flowType: isSaaSOrCloud ? 'B' : 'A',
-        request_type: formData.requestType,
-        software_name: isSaaSOrCloud ? formData.subscriptionServiceName : formData.title,
-        current_plan: formData.currentPlan,
-        required_plan: formData.requiredPlan,
-        existing_cost: Number(formData.existingCost) || 0,
-        business_requirement: formData.businessRequirement || formData.justification || formData.description,
-        subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
-        extraFields: {
-          ...formData.extraFields,
-          ...(formData.subscriptionServiceName
-            ? { subscriptionServiceName: formData.subscriptionServiceName }
-            : {}),
-          renewalCycle: formData.extraFields?.renewalCycle || (formData.category === 'Software & SaaS' ? 'Monthly' : undefined),
+      if (!isDraft && isEditMode && editingDraftId) {
+        // Submitting an existing draft directly to approval workflow
+        await submitDraft(String(editingDraftId), {
+          title: formData.title,
+          category: formData.category,
+          subcategory: isSaaSOrCloud ? formData.subscriptionServiceName : formData.subcategory,
+          description: formData.description,
+          quantity: showQuantity ? quantityNumber : 1,
+          estimatedCost: effectiveCost,
+          requiredBy: formData.requiredBy,
+          department: formData.department,
+          deliveryLocation: formData.deliveryLocation,
+          priority: formData.priority,
+          preferredVendor: formData.preferredVendor,
+          justification: formData.justification,
+          flowType: isSaaSOrCloud ? 'B' : 'A',
+          request_type: formData.requestType,
+          software_name: isSaaSOrCloud ? formData.subscriptionServiceName : undefined,
+          current_plan: formData.currentPlan,
+          required_plan: formData.requiredPlan,
+          existing_cost: Number(formData.existingCost) || 0,
+          business_requirement: formData.businessRequirement || formData.justification || formData.description,
+          extraFields: {
+            ...formData.extraFields,
+            ...(formData.subscriptionServiceName ? { subscriptionServiceName: formData.subscriptionServiceName } : {}),
+            renewalCycle: formData.extraFields?.renewalCycle || (formData.category === 'Software & SaaS' ? 'Monthly' : undefined),
+            subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
+            requestType: formData.requestType,
+            purchase_type: formData.requestType,
+            currentPlan: formData.currentPlan,
+            requiredPlan: formData.requiredPlan,
+            existingCost: formData.existingCost,
+            businessRequirement: formData.businessRequirement,
+          },
+        })
+      } else {
+        await addRequest({
+          id: isDraft && editingDraftId ? String(editingDraftId) : undefined,
+          title: formData.title,
+          category: formData.category,
+          subcategory: isSaaSOrCloud
+            ? formData.subscriptionServiceName
+            : formData.subcategory,
+          description: formData.description,
+          quantity: showQuantity ? quantityNumber : 1,
+          estimatedCost: effectiveCost,
+          requiredBy: formData.requiredBy,
+          department: formData.department,
+          deliveryLocation: formData.deliveryLocation,
+          priority: formData.priority,
+          preferredVendor: formData.preferredVendor,
+          justification: formData.justification,
+          attachmentName: formData.attachment?.name,
+          attachmentCount: formData.attachment ? 1 : 0,
+          status: isDraft ? 'Draft' : 'Pending',
+          currentStage: isDraft ? 0 : 2,
+          flowType: isSaaSOrCloud ? 'B' : 'A',
+          request_type: formData.requestType,
+          software_name: isSaaSOrCloud ? formData.subscriptionServiceName : undefined,
+          current_plan: formData.currentPlan,
+          required_plan: formData.requiredPlan,
+          existing_cost: Number(formData.existingCost) || 0,
+          business_requirement: formData.businessRequirement || formData.justification || formData.description,
           subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
-          requestType: formData.requestType,
-          purchase_type: formData.requestType,
-          currentPlan: formData.currentPlan,
-          requiredPlan: formData.requiredPlan,
-          existingCost: formData.existingCost,
-          businessRequirement: formData.businessRequirement,
-        },
-      })
+          extraFields: {
+            ...formData.extraFields,
+            ...(formData.subscriptionServiceName
+              ? { subscriptionServiceName: formData.subscriptionServiceName }
+              : {}),
+            renewalCycle: formData.extraFields?.renewalCycle || (formData.category === 'Software & SaaS' ? 'Monthly' : undefined),
+            subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
+            requestType: formData.requestType,
+            purchase_type: formData.requestType,
+            currentPlan: formData.currentPlan,
+            requiredPlan: formData.requiredPlan,
+            existingCost: formData.existingCost,
+            businessRequirement: formData.businessRequirement,
+          },
+        })
+      }
 
       setSubmittedStatus(isDraft ? 'Draft' : 'Pending')
       setSubmitted(true)
       setTimeout(() => {
-        navigate('/portal/team_lead/my-requests')
+        if (isDraft) {
+          navigate('/portal/team_lead/drafts')
+        } else {
+          navigate('/portal/team_lead/my-requests')
+        }
       }, 1000)
     } catch (err: any) {
-      alert(`Failed to save request to server: ${err?.response?.data?.detail || err?.message || 'Server error'}`)
+      alert(`Failed to save request to server: ${err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Server error'}`)
     } finally {
       setSubmitting(false)
       isSubmittingRef.current = false
@@ -373,8 +459,14 @@ export const CreateRequestPage: React.FC = () => {
       <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200">
         <PlusCircle className="text-blue-600" size={28} />
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Create Purchase Request</h1>
-          <p className="text-xs text-gray-500">Fill in request details for approval & procurement workflow.</p>
+          <h1 className="text-xl font-bold text-gray-900">
+            {isEditMode ? `Edit Draft Request (${editingDraftId})` : 'Create Purchase Request'}
+          </h1>
+          <p className="text-xs text-gray-500">
+            {isEditMode
+              ? 'Make changes to your draft and save or submit for manager approval.'
+              : 'Fill in request details for approval & procurement workflow.'}
+          </p>
         </div>
       </div>
 

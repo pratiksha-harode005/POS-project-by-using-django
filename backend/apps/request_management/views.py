@@ -319,6 +319,15 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             elif isinstance(dept_val, int) or (isinstance(dept_val, str) and dept_val.isdigit()):
                 data['department'] = int(dept_val)
 
+        existing_id = data.get('id') or data.get('draft_id')
+        if existing_id:
+            pr_obj = get_purchase_request_by_pk_or_request_id(existing_id)
+            if pr_obj and (str(pr_obj.status).upper() == 'DRAFT' or pr_obj.current_stage == 0):
+                serializer = self.get_serializer(pr_obj, data=data, partial=True)
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
@@ -337,23 +346,30 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             else:
                 dept = Department.objects.first()
 
+        is_draft = bool(
+            self.request.data.get('is_draft') or
+            str(self.request.data.get('status', '')).strip().upper() == 'DRAFT' or
+            self.request.data.get('save_as_draft')
+        )
+
         # Idempotency / Duplicate request protection (within 5 seconds for same user, title, requested_amount)
-        title_val = serializer.validated_data.get('title')
-        amt_val = serializer.validated_data.get('requested_amount', 0)
-        recent_duplicate = PurchaseRequest.objects.filter(
-            created_by=user,
-            title=title_val,
-            requested_amount=amt_val,
-            created_at__gte=timezone.now() - datetime.timedelta(seconds=5)
-        ).first()
-        if recent_duplicate:
-            serializer.instance = recent_duplicate
-            return
+        if not is_draft:
+            title_val = serializer.validated_data.get('title')
+            amt_val = serializer.validated_data.get('requested_amount', 0)
+            recent_duplicate = PurchaseRequest.objects.filter(
+                created_by=user,
+                title=title_val,
+                requested_amount=amt_val,
+                created_at__gte=timezone.now() - datetime.timedelta(seconds=5)
+            ).first()
+            if recent_duplicate:
+                serializer.instance = recent_duplicate
+                return
 
         is_employee = bool(user and getattr(user, 'role', '') == 'EMPLOYEE')
-        initial_status = PurchaseRequest.STATUS_TEAM_LEAD_REVIEW if is_employee else PurchaseRequest.STATUS_MANAGER_REVIEW
-        initial_level = PurchaseRequest.LEVEL_TEAM_LEAD if is_employee else PurchaseRequest.LEVEL_MANAGER
-        initial_stage = 1 if is_employee else 2
+        initial_status = PurchaseRequest.STATUS_DRAFT if is_draft else (PurchaseRequest.STATUS_TEAM_LEAD_REVIEW if is_employee else PurchaseRequest.STATUS_MANAGER_REVIEW)
+        initial_level = PurchaseRequest.LEVEL_NONE if is_draft else (PurchaseRequest.LEVEL_TEAM_LEAD if is_employee else PurchaseRequest.LEVEL_MANAGER)
+        initial_stage = 0 if is_draft else (1 if is_employee else 2)
 
         with transaction.atomic():
             req = serializer.save(
@@ -379,107 +395,121 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 }
             )
 
-            comments = 'Procurement request created and submitted for Team Lead review.' if is_employee else 'Procurement request created by Team Lead with requirements and submitted for Manager review.'
+            if is_draft:
+                comments = 'Procurement request saved as draft.'
+                ApprovalHistory.objects.create(
+                    request=req,
+                    action='DRAFT_SAVED',
+                    performed_by=user,
+                    user_role=getattr(user, 'role', 'TEAM_LEAD') if user else 'TEAM_LEAD',
+                    previous_status='DRAFT',
+                    new_status='DRAFT',
+                    comments=comments,
+                    approved_amount=req.requested_amount or req.existing_cost or 0,
+                    cost_center=getattr(req, 'cost_center', ''),
+                    budget_available=getattr(req, 'budget_available', True),
+                    vendor=getattr(req, 'vendor', '')
+                )
+            else:
+                comments = 'Procurement request created and submitted for Team Lead review.' if is_employee else 'Procurement request created by Team Lead with requirements and submitted for Manager review.'
+                ApprovalHistory.objects.create(
+                    request=req,
+                    action='CREATE',
+                    performed_by=user,
+                    user_role=getattr(user, 'role', 'TEAM_LEAD') if user else 'TEAM_LEAD',
+                    previous_status='DRAFT',
+                    new_status=initial_status,
+                    comments=comments,
+                    approved_amount=req.requested_amount or req.existing_cost or 0,
+                    cost_center=getattr(req, 'cost_center', ''),
+                    budget_available=getattr(req, 'budget_available', True),
+                    vendor=getattr(req, 'vendor', '')
+                )
+                from apps.notification_management.services import notify_stage_event
+                notify_stage_event('REQUEST_CREATED', purchase_request=req, actor=user)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.AllowAny])
+    def submit_draft(self, request, pk=None):
+        """
+        Transition a DRAFT request to active review workflow:
+        DRAFT -> MANAGER_REVIEW (or TEAM_LEAD_REVIEW for employee)
+        """
+        pr = self.get_object()
+        if not pr:
+            return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if str(pr.status).upper() != 'DRAFT' and pr.current_stage != 0:
+            return Response(
+                {'error': f"Only requests in 'DRAFT' status can be submitted. Current status is '{pr.status}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = request.user if (request.user and request.user.is_authenticated) else pr.created_by
+        data = request.data or {}
+
+        with transaction.atomic():
+            if 'title' in data and data['title']:
+                pr.title = data['title']
+            if 'category' in data and data['category']:
+                pr.category = data['category']
+            if 'subcategory' in data:
+                pr.subcategory = data['subcategory']
+            if 'description' in data and data['description']:
+                pr.description = data['description']
+            if 'quantity' in data and data['quantity']:
+                try:
+                    pr.quantity = int(data['quantity'])
+                except (ValueError, TypeError):
+                    pass
+            if 'total_estimated_cost' in data or 'requested_amount' in data or 'estimatedCost' in data:
+                cost_val = data.get('total_estimated_cost') or data.get('requested_amount') or data.get('estimatedCost') or 0
+                try:
+                    pr.total_estimated_cost = float(cost_val)
+                    pr.requested_amount = float(cost_val)
+                except (ValueError, TypeError):
+                    pass
+            if 'required_by' in data or 'requiredBy' in data:
+                pr.required_by = data.get('required_by') or data.get('requiredBy')
+            if 'priority' in data:
+                pr.priority = data['priority']
+            if 'preferred_vendor' in data or 'preferredVendor' in data:
+                pr.preferred_vendor = data.get('preferred_vendor') or data.get('preferredVendor') or ''
+                pr.vendor = pr.preferred_vendor
+            if 'justification' in data:
+                pr.justification = data['justification']
+            if 'delivery_location' in data or 'deliveryLocation' in data:
+                pr.delivery_location = data.get('delivery_location') or data.get('deliveryLocation') or ''
+            if 'extra_fields' in data or 'extraFields' in data:
+                pr.extra_fields = data.get('extra_fields') or data.get('extraFields') or {}
+
+            is_employee = bool(pr.created_by and getattr(pr.created_by, 'role', '') == 'EMPLOYEE')
+            pr.status = PurchaseRequest.STATUS_TEAM_LEAD_REVIEW if is_employee else PurchaseRequest.STATUS_MANAGER_REVIEW
+            pr.current_approval_level = PurchaseRequest.LEVEL_TEAM_LEAD if is_employee else PurchaseRequest.LEVEL_MANAGER
+            pr.current_stage = 1
+
+            if not pr.extra_fields or not isinstance(pr.extra_fields, dict):
+                pr.extra_fields = {}
+            pr.extra_fields['original_requested_amount'] = float(pr.total_estimated_cost or 0.0)
+            pr.save()
+
             ApprovalHistory.objects.create(
-                request=req,
-                action='CREATE',
+                request=pr,
+                action='SUBMIT',
                 performed_by=user,
                 user_role=getattr(user, 'role', 'TEAM_LEAD') if user else 'TEAM_LEAD',
                 previous_status='DRAFT',
-                new_status=initial_status,
-                comments=comments,
-                approved_amount=req.requested_amount or req.existing_cost or 0,
-                cost_center=getattr(req, 'cost_center', ''),
-                budget_available=getattr(req, 'budget_available', True),
-                vendor=getattr(req, 'vendor', '')
-            )
-
-    @action(detail=True, methods=['post'], permission_classes=[])
-    def resubmit(self, request, pk=None):
-        """
-        Employee or Team Lead modifies and resubmits a SENT_BACK request:
-        SENT_BACK -> MANAGER_REVIEW (or TEAM_LEAD_REVIEW for employee)
-        """
-        user = request.user
-        serializer = ResubmitRequestSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        with transaction.atomic():
-            pr = self.get_object()
-            if not pr:
-                return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-            if user and user.is_authenticated and user.role != 'ADMIN' and pr.created_by and pr.created_by != user:
-                raise PermissionDenied("Only the original requester or an Administrator can resubmit this request.")
-
-            if pr.status not in [PurchaseRequest.STATUS_SENT_BACK, PurchaseRequest.STATUS_RETURNED]:
-                return Response(
-                    {'error': f"Only requests in 'SENT_BACK' status can be resubmitted. Current status is '{pr.status}'."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            prev_status = pr.status
-            data = serializer.validated_data
-            if 'title' in data:
-                pr.title = data['title']
-            if 'description' in data:
-                pr.description = data['description']
-            if 'quantity' in data:
-                pr.quantity = data['quantity']
-            if 'requested_amount' in data:
-                pr.requested_amount = data['requested_amount']
-                pr.total_estimated_cost = data['requested_amount']
-            if 'delivery_location' in data:
-                pr.delivery_location = data['delivery_location']
-            if 'justification' in data:
-                pr.justification = data['justification']
-
-            is_employee = bool(pr.created_by and getattr(pr.created_by, 'role', '') == 'EMPLOYEE')
-            new_status = PurchaseRequest.STATUS_TEAM_LEAD_REVIEW if is_employee else PurchaseRequest.STATUS_MANAGER_REVIEW
-            new_level = PurchaseRequest.LEVEL_TEAM_LEAD if is_employee else PurchaseRequest.LEVEL_MANAGER
-
-            pr.status = new_status
-            pr.current_approval_level = new_level
-            pr.current_stage = 1
-            pr.save()
-
-            actor = user if (user and user.is_authenticated) else pr.created_by
-            comments = data.get('comments') or ('Request revised and resubmitted for Team Lead review.' if is_employee else 'Request revised and resubmitted for Manager review.')
-            ApprovalHistory.objects.create(
-                request=pr,
-                action='RESUBMIT',
-                performed_by=actor,
-                user_role=getattr(actor, 'role', 'TEAM_LEAD') if actor else 'TEAM_LEAD',
-                previous_status=prev_status,
-                new_status=new_status,
-                comments=comments,
+                new_status=pr.status,
+                comments='Draft submitted for Manager approval.',
                 approved_amount=pr.requested_amount,
                 cost_center=getattr(pr, 'cost_center', ''),
                 budget_available=getattr(pr, 'budget_available', True),
                 vendor=getattr(pr, 'vendor', '')
             )
 
-            if pr.created_by:
-                try:
-                    Notification.objects.create(
-                        user=pr.created_by,
-                        purchase_request=pr,
-                        title=f"Request {pr.request_id} Resubmitted",
-                        message=f"Request {pr.request_id} has been resubmitted and is now pending Team Lead review."
-                    )
-                except Exception:
-                    pass
+            from apps.notification_management.services import notify_stage_event
+            notify_stage_event('REQUEST_CREATED', purchase_request=pr, actor=user)
 
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
-
-
-        if not pr.extra_fields or not isinstance(pr.extra_fields, dict):
-            pr.extra_fields = {}
-        pr.extra_fields['original_requested_amount'] = float(pr.total_estimated_cost or 0.0)
-        pr.save(update_fields=['extra_fields'])
-
-        from apps.notification_management.services import notify_stage_event
-        notify_stage_event('REQUEST_CREATED', purchase_request=pr, actor=user)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def process_approval(self, request, pk=None):
@@ -1074,6 +1104,85 @@ class TeamLeadRequestViewSet(viewsets.ReadOnlyModelViewSet):
             self.check_object_permissions(self.request, pr)
             return pr
         return super().get_object()
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.AllowAny])
+    def submit_draft(self, request, pk=None):
+        pr = self.get_object()
+        if not pr:
+            return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if str(pr.status).upper() != 'DRAFT' and pr.current_stage != 0:
+            return Response(
+                {'error': f"Only requests in 'DRAFT' status can be submitted. Current status is '{pr.status}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = request.user if (request.user and request.user.is_authenticated) else pr.created_by
+        data = request.data or {}
+
+        with transaction.atomic():
+            if 'title' in data and data['title']:
+                pr.title = data['title']
+            if 'category' in data and data['category']:
+                pr.category = data['category']
+            if 'subcategory' in data:
+                pr.subcategory = data['subcategory']
+            if 'description' in data and data['description']:
+                pr.description = data['description']
+            if 'quantity' in data and data['quantity']:
+                try:
+                    pr.quantity = int(data['quantity'])
+                except (ValueError, TypeError):
+                    pass
+            if 'total_estimated_cost' in data or 'requested_amount' in data or 'estimatedCost' in data:
+                cost_val = data.get('total_estimated_cost') or data.get('requested_amount') or data.get('estimatedCost') or 0
+                try:
+                    pr.total_estimated_cost = float(cost_val)
+                    pr.requested_amount = float(cost_val)
+                except (ValueError, TypeError):
+                    pass
+            if 'required_by' in data or 'requiredBy' in data:
+                pr.required_by = data.get('required_by') or data.get('requiredBy')
+            if 'priority' in data:
+                pr.priority = data['priority']
+            if 'preferred_vendor' in data or 'preferredVendor' in data:
+                pr.preferred_vendor = data.get('preferred_vendor') or data.get('preferredVendor') or ''
+                pr.vendor = pr.preferred_vendor
+            if 'justification' in data:
+                pr.justification = data['justification']
+            if 'delivery_location' in data or 'deliveryLocation' in data:
+                pr.delivery_location = data.get('delivery_location') or data.get('deliveryLocation') or ''
+            if 'extra_fields' in data or 'extraFields' in data:
+                pr.extra_fields = data.get('extra_fields') or data.get('extraFields') or {}
+
+            is_employee = bool(pr.created_by and getattr(pr.created_by, 'role', '') == 'EMPLOYEE')
+            pr.status = PurchaseRequest.STATUS_TEAM_LEAD_REVIEW if is_employee else PurchaseRequest.STATUS_MANAGER_REVIEW
+            pr.current_approval_level = PurchaseRequest.LEVEL_TEAM_LEAD if is_employee else PurchaseRequest.LEVEL_MANAGER
+            pr.current_stage = 1
+
+            if not pr.extra_fields or not isinstance(pr.extra_fields, dict):
+                pr.extra_fields = {}
+            pr.extra_fields['original_requested_amount'] = float(pr.total_estimated_cost or 0.0)
+            pr.save()
+
+            ApprovalHistory.objects.create(
+                request=pr,
+                action='SUBMIT',
+                performed_by=user,
+                user_role=getattr(user, 'role', 'TEAM_LEAD') if user else 'TEAM_LEAD',
+                previous_status='DRAFT',
+                new_status=pr.status,
+                comments='Draft submitted for Manager approval.',
+                approved_amount=pr.requested_amount,
+                cost_center=getattr(pr, 'cost_center', ''),
+                budget_available=getattr(pr, 'budget_available', True),
+                vendor=getattr(pr, 'vendor', '')
+            )
+
+            from apps.notification_management.services import notify_stage_event
+            notify_stage_event('REQUEST_CREATED', purchase_request=pr, actor=user)
+
+        return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsTeamLeadRole])
     def approve(self, request, pk=None):
@@ -2342,6 +2451,8 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
                     models.Q(department__isnull=True) |
                     models.Q(created_by__department=user.department)
                 )
+        # Ensure Draft requests never enter Manager review queues
+        qs = qs.exclude(status='DRAFT').exclude(current_stage=0)
         return apply_request_type_filter(qs, self.request)
 
     def get_object(self):
@@ -2986,6 +3097,8 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         qs = get_base_purchase_request_queryset()
+        # Drafts must not enter finance approval workflows
+        qs = qs.exclude(status='DRAFT').exclude(current_stage=0)
 
         status_param = self.request.query_params.get('status')
         if status_param:
