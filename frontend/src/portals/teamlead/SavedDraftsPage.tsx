@@ -123,15 +123,8 @@ export const SavedDraftsPage: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => refreshBackendRequests()}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-all shadow-xs"
-            title="Refresh drafts from server"
-          >
-            <RefreshCw size={14} /> Refresh
-          </button>
-          <button
             onClick={() => navigate('/portal/team_lead/create-request')}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow transition-all"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow transition-all cursor-pointer"
           >
             <PlusCircle size={15} /> Create New Request
           </button>
@@ -147,27 +140,6 @@ export const SavedDraftsPage: React.FC = () => {
           </div>
           <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
             <FileEdit size={20} />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">Estimated Total Value</span>
-            <span className="text-2xl font-extrabold text-emerald-700">₹{totalDraftsCost.toLocaleString('en-IN')}</span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-            <DollarSign size={20} />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">Approval Status</span>
-            <span className="text-sm font-bold text-amber-700 block mt-1">Not in Approval Queue</span>
-            <span className="text-[10px] text-gray-400">Ready for editing anytime</span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-            <Clock size={20} />
           </div>
         </div>
       </div>
