@@ -60,8 +60,18 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
 
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
 
-  const currentRole = role || 'MANAGER'
+  const derivedRoleFromPath = useMemo(() => {
+    if (location.pathname.includes('/team_lead')) return 'TEAM_LEAD'
+    if (location.pathname.includes('/manager')) return 'MANAGER'
+    if (location.pathname.includes('/finance')) return 'FINANCE'
+    if (location.pathname.includes('/admin')) return 'ADMIN'
+    if (location.pathname.includes('/vendor')) return 'VENDOR'
+    return null
+  }, [location.pathname])
+
+  const currentRole = role || derivedRoleFromPath || 'MANAGER'
 
   const roleColors: Record<UserRole, { bg: string; text: string; border: string }> = {
     TEAM_LEAD: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
@@ -141,7 +151,19 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      if (matchedDepartments.length > 0) {
+      if (cleanQuery.startsWith('req-') || cleanQuery.startsWith('req')) {
+        const targetId = matchedRequests.length > 0 ? matchedRequests[0].id : searchQuery.trim()
+        setSearchOpen(false)
+        if (currentRole === 'TEAM_LEAD') {
+          navigate(`/portal/team_lead/my-requests?search=${encodeURIComponent(targetId)}&id=${encodeURIComponent(targetId)}`, {
+            state: { requestId: targetId, search: targetId }
+          })
+        } else if (currentRole === 'FINANCE') {
+          navigate(`/portal/finance/purchase-requests?search=${encodeURIComponent(targetId)}`)
+        } else {
+          navigate(`/portal/manager/total-requests?search=${encodeURIComponent(targetId)}`)
+        }
+      } else if (matchedDepartments.length > 0) {
         const dept = matchedDepartments[0]
         setSearchOpen(false)
         if (currentRole === 'FINANCE') {
@@ -153,11 +175,24 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
         const req = matchedRequests[0]
         setSearchOpen(false)
         if (currentRole === 'TEAM_LEAD') {
-          navigate(`/portal/team_lead/request-details?id=${encodeURIComponent(req.id)}`)
+          navigate(`/portal/team_lead/my-requests?search=${encodeURIComponent(req.id)}&id=${encodeURIComponent(req.id)}`, {
+            state: { requestId: req.id, search: req.id }
+          })
         } else if (currentRole === 'FINANCE') {
           navigate(`/portal/finance/purchase-requests?search=${encodeURIComponent(req.id)}`)
         } else {
           navigate(`/portal/manager/total-requests?search=${encodeURIComponent(req.id)}`)
+        }
+      } else if (cleanQuery) {
+        setSearchOpen(false)
+        if (currentRole === 'TEAM_LEAD') {
+          navigate(`/portal/team_lead/my-requests?search=${encodeURIComponent(searchQuery.trim())}`, {
+            state: { search: searchQuery.trim() }
+          })
+        } else if (currentRole === 'FINANCE') {
+          navigate(`/portal/finance/purchase-requests?search=${encodeURIComponent(searchQuery.trim())}`)
+        } else {
+          navigate(`/portal/manager/total-requests?search=${encodeURIComponent(searchQuery.trim())}`)
         }
       }
     } else if (e.key === 'Escape') {
@@ -184,8 +219,6 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
       }
     }
   }
-
-  const location = useLocation()
 
   const activeVendorId = useMemo(() => {
     const vndMatch = location.pathname.match(/(VND-[A-Z0-9-]+)/i)
@@ -355,7 +388,9 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
                             onClick={() => {
                               setSearchOpen(false)
                               if (currentRole === 'TEAM_LEAD') {
-                                navigate(`/portal/team_lead/request-details?id=${encodeURIComponent(r.id)}`)
+                                navigate(`/portal/team_lead/my-requests?search=${encodeURIComponent(r.id)}&id=${encodeURIComponent(r.id)}`, {
+                                  state: { requestId: r.id, search: r.id }
+                                })
                               } else if (currentRole === 'FINANCE') {
                                 navigate(`/portal/finance/purchase-requests?search=${encodeURIComponent(r.id)}`)
                               } else {

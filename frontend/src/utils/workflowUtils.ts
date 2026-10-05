@@ -80,7 +80,7 @@ const SOFTWARE_KEYWORDS = [
 const HARDWARE_CATEGORIES = new Set([
   'IT Hardware', 'Office Accessories', 'Office Technology',
   'Networking & Telecom', 'Hardware', 'Equipment', 'Furniture',
-])
+].map(category => category.toLowerCase()))
 
 const HARDWARE_KEYWORDS = [
   'server',
@@ -122,10 +122,11 @@ export function detectWorkflowType(
   const cat = (category || '').trim().toLowerCase()
   const tit = (title || '').toLowerCase()
   const flow = extra?.flowType || extra?.flow_type
-  const swName = (extra?.software_name || '').trim()
+  const swName = (extra?.software_name || '').trim().toLowerCase()
 
   // 1. Explicit Hardware Check First (physical hardware should never be misclassified as software)
   const isHardwareCategory = (
+    HARDWARE_CATEGORIES.has(cat) ||
     cat.includes('hardware') ||
     cat.includes('equipment') ||
     cat.includes('accessories') ||
@@ -140,7 +141,7 @@ export function detectWorkflowType(
 
   // 2. Explicit Software Indicators
   if (flow === 'B') return 'SOFTWARE'
-  if (swName && swName !== 'None' && swName !== 'Not available' && swName !== tit) {
+  if (swName && swName !== 'none' && swName !== 'not available' && swName !== tit) {
     return 'SOFTWARE'
   }
 
@@ -168,6 +169,7 @@ export function isSoftwareRequest(req: { category?: string; title?: string; flow
   const tit = (req.title || '').toLowerCase().trim()
 
   if (
+    HARDWARE_CATEGORIES.has(cat) ||
     cat.includes('hardware') ||
     cat.includes('equipment') ||
     cat.includes('furniture') ||

@@ -36,7 +36,7 @@ import {
   Coins,
 } from 'lucide-react'
 import { UnifiedReceiptModal } from '../../components/portal/UnifiedReceiptModal'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { isFlowBCategory } from '../../components/portal/TrackingStepper'
 import { getStoredDeliveryDocs } from '../vendor/VendorPortalPages'
 import { confirmTeamLeadRequest, mockPaymentApi, submitPaymentJustificationApi, acknowledgeRequestApi, renewRequestApi, upgradeRequestApi } from '../../api/teamleadApi'
@@ -1487,7 +1487,10 @@ const SoftwareJustificationForm: React.FC<{ req: PurchaseRequest }> = ({ req }) 
 export const MyRequestsPage: React.FC = () => {
 
   const location = useLocation()
-  const routeState = location.state as { filterStatus?: string } | null
+  const [searchParams] = useSearchParams()
+  const routeState = location.state as { filterStatus?: string; search?: string; requestId?: string } | null
+
+  const incomingSearch = searchParams.get('search') || searchParams.get('id') || searchParams.get('requestId') || routeState?.search || routeState?.requestId || ''
 
   const { requests, resubmitRequest, refreshBackendRequests } = useProcurement()
 
@@ -1498,11 +1501,31 @@ export const MyRequestsPage: React.FC = () => {
   }, [refreshBackendRequests])
 
   const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => incomingSearch)
   const [filterStatus, setFilterStatus] = useState(() => routeState?.filterStatus || 'All')
   const [filterCategory, setFilterCategory] = useState('All')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+
+  useEffect(() => {
+    if (incomingSearch) {
+      setSearch(incomingSearch)
+      setFilterStatus('All')
+      setFilterCategory('All')
+      setRequestType('all')
+      setStartDate('')
+      setEndDate('')
+
+      const timer = setTimeout(() => {
+        const cleanId = incomingSearch.trim()
+        const el = document.getElementById(`request-${cleanId}`) || document.getElementById(cleanId)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 250)
+      return () => clearTimeout(timer)
+    }
+  }, [incomingSearch, location.search, location.state])
 
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
   const [editingRequest, setEditingRequest] = useState<PurchaseRequest | null>(null)
@@ -1636,15 +1659,6 @@ export const MyRequestsPage: React.FC = () => {
           softwareCount={softwareCount}
           hardwareCount={hardwareCount}
         />
-        <button
-          type="button"
-          onClick={() => refreshBackendRequests && refreshBackendRequests()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 rounded-xl transition-all shadow-sm"
-          title="Refresh requests from server"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          Refresh
-        </button>
       </div>
 
       {/* Filter & Search Bar */}
@@ -1717,7 +1731,7 @@ export const MyRequestsPage: React.FC = () => {
             const recInfo = getRecommendationStatus(req)
             const isHistoryOpen = expandedHistory[req.id] || false
             return (
-              <div key={req.id} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+              <div id={`request-${req.id}`} key={req.id} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm scroll-mt-20">
                 {/* Request Header */}
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-gray-100">
                   <div>
@@ -1750,7 +1764,7 @@ export const MyRequestsPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {(req.status === 'Returned' || req.status === 'Pending' || req.status === 'Draft') && (
+                    {isHardwareRequest(req) && (req.status === 'Returned' || req.status === 'Pending' || req.status === 'Draft') && (
                       <button
                         onClick={() => handleOpenEdit(req)}
                         className={`flex items-center gap-1.5 font-bold text-xs px-4 py-2 rounded-xl shadow transition-all ${

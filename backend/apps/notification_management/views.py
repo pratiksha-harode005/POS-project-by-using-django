@@ -32,11 +32,12 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
             if user_param and role_param:
                 if str(user_param).isdigit():
-                    return qs.filter(user_id=int(user_param), user__role__iexact=str(role_param).strip())
+                    return qs.filter(Q(user_id=int(user_param)) | Q(user__role__iexact=str(role_param).strip())).distinct()
                 return qs.filter(
-                    Q(user__username__iexact=str(user_param)) | Q(user__email__iexact=str(user_param)),
-                    user__role__iexact=str(role_param).strip(),
-                )
+                    Q(user__username__iexact=str(user_param)) |
+                    Q(user__email__iexact=str(user_param)) |
+                    Q(user__role__iexact=str(role_param).strip())
+                ).distinct()
 
             if user_param:
                 if str(user_param).isdigit():

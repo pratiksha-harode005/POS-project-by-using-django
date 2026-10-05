@@ -7,7 +7,6 @@
  */
 
 const SYNC_EVENT_NAME = 'kss_backend_updated'
-const STORAGE_KEY = 'kss_last_sync_timestamp'
 
 // Use standard BroadcastChannel for instant cross-tab sync when available
 const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
@@ -40,12 +39,6 @@ export const triggerGlobalDataSync = (reason?: string) => {
       console.warn('BroadcastChannel error:', err)
     }
 
-    // 3. Update localStorage timestamp as secondary cross-tab fallback
-    try {
-      localStorage.setItem(STORAGE_KEY, String(payload.timestamp))
-    } catch {
-      // ignore storage quota / sandbox errors
-    }
   }
 }
 
@@ -53,7 +46,6 @@ export const triggerGlobalDataSync = (reason?: string) => {
  * Subscribes a callback to receive instant synchronization triggers:
  * - Local window events
  * - Other tab BroadcastChannel messages
- * - Storage event fallback
  * - Window focus (when user switches back to tab)
  * - Page visibility changes (when tab becomes visible)
  */
@@ -81,19 +73,11 @@ export const subscribeGlobalDataSync = (callback: () => void): (() => void) => {
   }
   syncChannel?.addEventListener('message', onChannelMessage)
 
-  // 3. Listen to storage event (cross-tab fallback)
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) {
-      throttledCallback()
-    }
-  }
-  window.addEventListener('storage', onStorage)
-
-  // 4. Listen to window focus (refetch when tab is brought to front)
+  // 3. Listen to window focus (refetch when tab is brought to front)
   const onFocus = () => throttledCallback()
   window.addEventListener('focus', onFocus)
 
-  // 5. Listen to document visibility change
+  // 4. Listen to document visibility change
   const onVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
       throttledCallback()
@@ -105,7 +89,6 @@ export const subscribeGlobalDataSync = (callback: () => void): (() => void) => {
   return () => {
     window.removeEventListener(SYNC_EVENT_NAME, throttledCallback)
     syncChannel?.removeEventListener('message', onChannelMessage)
-    window.removeEventListener('storage', onStorage)
     window.removeEventListener('focus', onFocus)
     document.removeEventListener('visibilitychange', onVisibilityChange)
   }

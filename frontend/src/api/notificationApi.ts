@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { triggerGlobalDataSync } from '../utils/syncUtils'
 
 export interface BackendNotification {
   id: number
@@ -47,6 +48,7 @@ export const markNotificationRead = async (id: number | string): Promise<boolean
   try {
     await apiClient.post(`/notifications/${id}/mark_read/`)
     window.dispatchEvent(new Event('kss_backend_updated'))
+    triggerGlobalDataSync('notification_read')
     return true
   } catch (err) {
     console.error(`Failed to mark notification ${id} as read:`, err)
@@ -58,6 +60,7 @@ export const markAllNotificationsRead = async (params?: { role?: string; user?: 
   try {
     await apiClient.post('/notifications/mark_all_read/', params || {})
     window.dispatchEvent(new Event('kss_backend_updated'))
+    triggerGlobalDataSync('notification_all_read')
     return true
   } catch (err) {
     console.error('Failed to mark all notifications as read:', err)

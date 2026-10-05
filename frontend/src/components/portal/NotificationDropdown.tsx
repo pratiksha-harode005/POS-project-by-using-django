@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   Bell, CheckCheck, X, CheckCircle, ArrowRight
 } from 'lucide-react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { getNotifications, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
+import { subscribeGlobalDataSync, triggerGlobalDataSync } from '../../utils/syncUtils'
 
 export interface NotificationItem {
   id: number
@@ -32,6 +33,17 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
   const fetchInFlight = useRef(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
+  const derivedRoleFromPath = useMemo(() => {
+    if (location.pathname.includes('/team_lead')) return 'TEAM_LEAD'
+    if (location.pathname.includes('/manager')) return 'MANAGER'
+    if (location.pathname.includes('/finance')) return 'FINANCE'
+    if (location.pathname.includes('/admin')) return 'ADMIN'
+    if (location.pathname.includes('/vendor')) return 'VENDOR'
+    return null
+  }, [location.pathname])
+
+  const activeRole = (currentRole || role || derivedRoleFromPath || 'MANAGER').toUpperCase()
+
   const getActiveVendorId = useCallback(() => {
     const match = location.pathname.match(/\/portal\/vendor\/vendor\/([^/]+)/)
     const vndMatch = location.pathname.match(/(VND-[A-Z0-9-]+|V-[A-Z0-9-]+)/i)
@@ -39,7 +51,6 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
   }, [location.pathname, user?.vendor_id_code, user?.username, user?.role])
 
   const getNotificationPageRoute = useCallback(() => {
-    const activeRole = (currentRole || role || 'MANAGER').toUpperCase()
     const isVendorPortal = location.pathname.includes('/portal/vendor') || activeRole === 'VENDOR' || user?.role === 'VENDOR'
     if (isVendorPortal) {
       const vId = getActiveVendorId()
@@ -50,14 +61,13 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
     if (activeRole === 'FINANCE') return '/portal/finance/notifications'
     if (activeRole === 'ADMIN') return '/portal/admin/notifications'
     return `/portal/${currentRole.toLowerCase()}/notifications`
-  }, [currentRole, role, location.pathname, user?.role, getActiveVendorId])
+  }, [currentRole, activeRole, location.pathname, user?.role, getActiveVendorId])
 
   const fetchRealNotifications = useCallback(async () => {
     if (fetchInFlight.current) return
     fetchInFlight.current = true
     setLoading(true)
     try {
-      const activeRole = (currentRole || role || 'MANAGER').toUpperCase()
       const isVendorPortal = location.pathname.includes('/portal/vendor') || activeRole === 'VENDOR' || user?.role === 'VENDOR'
       let params: { role?: string; user?: string; vendor?: string } = { role: activeRole }
 
@@ -92,26 +102,21 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       setLoading(false)
       fetchInFlight.current = false
     }
-  }, [currentRole, role, user, location.pathname])
+  }, [activeRole, user?.username, getActiveVendorId, location.pathname])
 
   useEffect(() => {
     fetchRealNotifications()
 
-    const handleBackendUpdate = () => {
+    // 1. Subscribe to real-time cross-tab and in-memory synchronization events
+    const unsubscribeSync = subscribeGlobalDataSync(() => {
       fetchRealNotifications()
-    }
+    })
 
-    window.addEventListener('kss_backend_updated', handleBackendUpdate)
-    window.addEventListener('focus', handleBackendUpdate)
-    window.addEventListener('storage', handleBackendUpdate)
-
-    // Short polling keeps updates visible across server-side workflow changes.
-    const interval = setInterval(fetchRealNotifications, 5000)
+    // 2. Heartbeat interval to ensure background real-time updates
+    const interval = setInterval(fetchRealNotifications, 3000)
 
     return () => {
-      window.removeEventListener('kss_backend_updated', handleBackendUpdate)
-      window.removeEventListener('focus', handleBackendUpdate)
-      window.removeEventListener('storage', handleBackendUpdate)
+      unsubscribeSync()
       clearInterval(interval)
     }
   }, [fetchRealNotifications])
@@ -122,7 +127,6 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
   // Mark all as read
   const handleMarkAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
-    const activeRole = (currentRole || role || 'MANAGER').toUpperCase()
     const isVendorPortal = location.pathname.includes('/portal/vendor') || activeRole === 'VENDOR' || user?.role === 'VENDOR'
     
     try {
@@ -137,11 +141,11 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       console.warn('Failed to mark all notifications read:', err)
     } finally {
       window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+      triggerGlobalDataSync('notifications_cleared')
     }
   }
 
   const resolveTargetRoute = (item: NotificationItem) => {
-    const activeRole = (currentRole || role || 'MANAGER').toUpperCase()
     const isVendorPortal = location.pathname.includes('/portal/vendor') || activeRole === 'VENDOR' || user?.role === 'VENDOR'
     
     if (isVendorPortal) {
@@ -222,8 +226,11 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
     }
 
     if (activeRole === 'TEAM_LEAD') {
-      if (titleMsg.includes('payment')) {
+      if (titleMsg.includes('payment') && !item.requestId) {
         return '/portal/team_lead/payment-status'
+      }
+      if (item.requestId) {
+        return `/portal/team_lead/my-requests?search=${encodeURIComponent(item.requestId)}&id=${encodeURIComponent(item.requestId)}`
       }
       return '/portal/team_lead/my-requests'
     }
@@ -240,6 +247,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       try {
         await markNotificationRead(item.id)
         window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+        triggerGlobalDataSync('notification_read')
       } catch (err) {
         console.warn('Failed to mark notification read:', err)
       }
@@ -250,6 +258,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       state: {
         selectedNotificationId: item.id,
         requestId: item.requestId,
+        search: item.requestId,
       },
     })
   }
