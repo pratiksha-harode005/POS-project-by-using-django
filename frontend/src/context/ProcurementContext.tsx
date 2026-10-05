@@ -337,9 +337,12 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
             currentlyWithRole = 'Procurement Sourcing Desk'
             currentlyWithName = 'Sourcing Team (RFQ Sent)'
           }
+        } else if (bs === 'DRAFT') {
+          currentlyWithRole = 'Team Lead'
+          currentlyWithName = 'Saved in Drafts'
         }
 
-        if (item.currently_with) {
+        if (item.currently_with && bs !== 'DRAFT') {
           const parts = item.currently_with.split('—').map((s: string) => s.trim())
           if (parts.length >= 2) {
             currentlyWithRole = parts[0]
@@ -359,7 +362,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           item.flow_type === 'B'
         )
 
-        let effectiveCurrentStage = item.current_stage || 1
+        let effectiveCurrentStage = bs === 'DRAFT' ? 0 : (item.current_stage || 1)
         if (isSoftReq) {
           if (item.current_stage) {
             effectiveCurrentStage = item.current_stage
