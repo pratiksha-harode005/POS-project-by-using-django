@@ -6,6 +6,36 @@ from apps.vendor_management.models import Vendor
 from apps.rfq_management.models import Quotation
 
 
+class ProcurementSafeQuerySet(models.QuerySet):
+    def _get_missing_columns(self):
+        try:
+            from django.db import connection
+            if connection.vendor == 'sqlite':
+                with connection.cursor() as cursor:
+                    cursor.execute(f"PRAGMA table_info({self.model._meta.db_table})")
+                    cols = {row[1] for row in cursor.fetchall()}
+                    if cols:
+                        return [f.name for f in self.model._meta.concrete_fields if f.column and f.column not in cols]
+        except Exception:
+            pass
+        return []
+
+    def iterator(self, *args, **kwargs):
+        missing = self._get_missing_columns()
+        if missing:
+            return super().defer(*missing).iterator(*args, **kwargs)
+        return super().iterator(*args, **kwargs)
+
+
+class ProcurementSafeManager(models.Manager):
+    def get_queryset(self):
+        qs = ProcurementSafeQuerySet(self.model, using=self._db)
+        missing = qs._get_missing_columns()
+        if missing:
+            return qs.defer(*missing)
+        return qs
+
+
 class PurchaseOrder(TimeStampedModel):
     STATUS_CHOICES = (
         ('Draft', 'Draft'),
@@ -16,6 +46,8 @@ class PurchaseOrder(TimeStampedModel):
         ('Delivered', 'Delivered'),
         ('Cancelled', 'Cancelled'),
     )
+
+    objects = ProcurementSafeManager()
 
     po_id = models.CharField(max_length=50, unique=True, editable=False)
     purchase_request = models.ForeignKey(PurchaseRequest, on_delete=models.CASCADE, related_name='purchase_orders')
@@ -53,8 +85,11 @@ class GoodsReceipt(TimeStampedModel):
         ('Received', 'Received'),
         ('Partial', 'Partial'),
         ('Verified', 'Verified'),
+        ('Rejected', 'Rejected'),
         ('Damaged', 'Damaged'),
     )
+
+    objects = ProcurementSafeManager()
 
     receipt_id = models.CharField(max_length=50, unique=True, editable=False)
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='goods_receipts')
@@ -69,6 +104,7 @@ class GoodsReceipt(TimeStampedModel):
     notes = models.TextField(blank=True, default='')
     verified_by_name = models.CharField(max_length=255, blank=True, default='')
     verified_at = models.DateTimeField(null=True, blank=True)
+    reject_reason = models.TextField(blank=True, default='')
 
     def save(self, *args, **kwargs):
         if not self.receipt_id:

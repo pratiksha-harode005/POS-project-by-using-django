@@ -170,13 +170,14 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             else:
                 data['total_amount'] = '50000.00'
 
-        # Check if an existing PurchaseOrder already exists for this purchase_request and vendor
+        # Check if an existing PurchaseOrder already exists for this purchase_request
         existing_po = PurchaseOrder.objects.filter(
-            purchase_request=pr_obj,
-            vendor=vendor_obj
+            purchase_request=pr_obj
         ).first()
 
         if existing_po:
+            if vendor_obj:
+                existing_po.vendor = vendor_obj
             if q_obj:
                 existing_po.quotation = q_obj
             if data.get('total_amount'):
@@ -214,6 +215,18 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 Q(purchase_request__request_id__iexact=lookup_val) |
                 Q(purchase_request__request_id__icontains=clean_ref)
             ).first()
+        if not obj:
+            base_qs = PurchaseOrder.objects.all()
+            if str(lookup_val).isdigit():
+                obj = base_qs.filter(id=int(lookup_val)).first()
+            else:
+                clean_ref = str(lookup_val).replace('PO-', '').strip()
+                obj = base_qs.filter(
+                    Q(po_id__iexact=lookup_val) |
+                    Q(po_id__icontains=clean_ref) |
+                    Q(purchase_request__request_id__iexact=lookup_val) |
+                    Q(purchase_request__request_id__icontains=clean_ref)
+                ).first()
         if not obj:
             from django.http import Http404
             raise Http404("Purchase order not found")
@@ -515,8 +528,8 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
                 has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
                 is_gr_verified = existing_gr.status in ['Verified', 'Confirmed', 'Approved']
                 if has_verified_inv and is_gr_verified:
-                    if pr.current_stage < 9:
-                        pr.current_stage = 9
+                    if pr.current_stage < 8:
+                        pr.current_stage = 8
                 elif pr.current_stage < 8:
                     pr.current_stage = 8
                 PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
@@ -540,16 +553,9 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
 
         pr = po_obj.purchase_request
         if pr:
-            invs = list(po_obj.invoices.all())
-            has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
-            is_gr_verified = receipt.status in ['Verified', 'Confirmed', 'Approved']
-            if has_verified_inv and is_gr_verified:
-                if pr.current_stage < 9:
-                    pr.current_stage = 9
-            elif pr.current_stage < 8:
-                pr.current_stage = 8
             PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
-            pr.save(update_fields=['current_stage', 'updated_at'])
+            # NOTE: Do NOT auto-advance to stage 8!
+            # Documents must be verified by a Manager first.
 
         # Sync ThreeWayMatch
         try:
@@ -600,6 +606,20 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
                 Q(purchase_order__purchase_request__request_id__icontains=clean_ref)
             ).first()
         if not obj:
+            base_qs = GoodsReceipt.objects.all()
+            if str(lookup_val).isdigit():
+                obj = base_qs.filter(id=int(lookup_val)).first()
+            else:
+                clean_ref = str(lookup_val).replace('REC-', '').replace('GRN-', '').replace('PO-', '').replace('DOC-', '').strip()
+                obj = base_qs.filter(
+                    Q(receipt_id__iexact=lookup_val) |
+                    Q(receipt_id__icontains=clean_ref) |
+                    Q(purchase_order__po_id__iexact=lookup_val) |
+                    Q(purchase_order__po_id__icontains=clean_ref) |
+                    Q(purchase_order__purchase_request__request_id__iexact=lookup_val) |
+                    Q(purchase_order__purchase_request__request_id__icontains=clean_ref)
+                ).first()
+        if not obj:
             from django.http import Http404
             raise Http404("Goods receipt not found")
         self.check_object_permissions(self.request, obj)
@@ -633,8 +653,8 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
                 has_verified_inv = any(i.is_manager_verified or i.status in ['Approved', 'Matched', 'Paid', 'Verified'] for i in invs)
                 is_gr_verified = instance.status in ['Verified', 'Confirmed', 'Approved']
                 if has_verified_inv and is_gr_verified:
-                    if pr.current_stage < 9:
-                        pr.current_stage = 9
+                    if pr.current_stage < 8:
+                        pr.current_stage = 8
                 elif pr.current_stage < 8:
                     pr.current_stage = 8
                 PurchaseOrder.objects.filter(purchase_request=pr, vendor=po_obj.vendor).update(status='Delivered')
@@ -656,12 +676,23 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch', 'post'], permission_classes=[AllowAny], url_path='verify')
     def verify(self, request, pk=None):
         """
-        Explicitly marks a GoodsReceipt as Verified by the manager.
+        Explicitly marks a GoodsReceipt as Verified or Rejected by the manager.
         PATCH /api/procurement/goods-receipts/{id}/verify/
-        Body: { "verified_by": "Sarah Manager" }
+        Body: { "verified_by": "Sarah Manager", "action": "verify"|"reject", "reject_reason": "..." }
         """
         from django.utils import timezone as tz
         from apps.notification_management.services import notify_roles, create_notification
+
+        # 1. Server-side role check: Vendors CANNOT verify documents!
+        user = request.user
+        role = getattr(user, 'role', '') or ''
+        if getattr(user, 'is_authenticated', False):
+            if role == 'VENDOR' or getattr(user, 'is_vendor', False):
+                return Response(
+                    {'error': 'Permission denied: Vendors are not permitted to verify documents.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
         try:
             instance = self.get_object()
         except Exception:
@@ -670,29 +701,55 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
         verifier_name = request.data.get('verified_by', '') or request.data.get('verifiedBy', '')
         if not verifier_name and getattr(request.user, 'is_authenticated', False):
             verifier_name = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
+        if not verifier_name:
+            verifier_name = 'Manager'
 
         now = tz.now()
-        instance.status = 'Verified'
-        instance.verified_by_name = verifier_name
-        instance.verified_at = now
-        instance.notes = f"Verified by {verifier_name} on {now.strftime('%Y-%m-%d %H:%M')}"
-        instance.save(update_fields=['status', 'verified_by_name', 'verified_at', 'notes', 'updated_at'])
+        is_reject = (
+            request.data.get('action') == 'reject' or
+            request.data.get('status') in ['Rejected', 'REJECTED'] or
+            bool(request.data.get('reject_reason')) or
+            bool(request.data.get('reason'))
+        )
 
-        # Advance PO and PR stage
+        if is_reject:
+            reason = request.data.get('reject_reason') or request.data.get('reason') or request.data.get('notes') or 'Document verification rejected by manager.'
+            instance.status = 'Rejected'
+            if hasattr(instance, 'reject_reason'):
+                instance.reject_reason = reason
+            instance.verified_by_name = verifier_name
+            instance.verified_at = now
+            instance.notes = f"Rejected by {verifier_name} on {now.strftime('%Y-%m-%d %H:%M')}: {reason}"
+            update_fields = ['status', 'verified_by_name', 'verified_at', 'notes', 'updated_at']
+            if hasattr(instance, 'reject_reason'):
+                update_fields.append('reject_reason')
+            instance.save(update_fields=update_fields)
+        else:
+            instance.status = 'Verified'
+            if hasattr(instance, 'reject_reason'):
+                instance.reject_reason = ''
+            instance.verified_by_name = verifier_name
+            instance.verified_at = now
+            instance.notes = f"Verified by {verifier_name} on {now.strftime('%Y-%m-%d %H:%M')}"
+            update_fields = ['status', 'verified_by_name', 'verified_at', 'notes', 'updated_at']
+            if hasattr(instance, 'reject_reason'):
+                update_fields.append('reject_reason')
+            instance.save(update_fields=update_fields)
+
+        # Advance PO and PR stage only if BOTH invoice and goods receipt are verified
         po_obj = instance.purchase_order
         if po_obj:
             po_obj.status = 'Delivered'
-            po_obj.save(update_fields=['status', 'updated_at'])
+            po_update_fields = ['status', 'updated_at']
+            po_obj.save(update_fields=po_update_fields)
             pr = po_obj.purchase_request
             if pr:
                 invs = list(po_obj.invoices.all())
-                has_verified_inv = any(i.is_manager_verified or i.status in ['Matched', 'Paid', 'Verified'] for i in invs)
-                if has_verified_inv:
-                    if pr.current_stage < 9:
-                        pr.current_stage = 9
-                elif pr.current_stage < 8:
-                    pr.current_stage = 8
-                pr.save(update_fields=['current_stage', 'updated_at'])
+                has_verified_inv = any(i.is_manager_verified is True and bool(getattr(i, 'verified_by_name', '')) for i in invs)
+                if not is_reject and has_verified_inv and instance.status == 'Verified':
+                    if pr.current_stage < 8:
+                        pr.current_stage = 8
+                        pr.save(update_fields=['current_stage', 'updated_at'])
 
             # Sync ThreeWayMatch
             try:

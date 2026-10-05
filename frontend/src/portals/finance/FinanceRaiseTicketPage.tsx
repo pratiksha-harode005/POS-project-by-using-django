@@ -6,7 +6,7 @@ import {
   ArrowRight, Smartphone, Banknote, X, Building2
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useFinanceData, TicketProduct, isFinanceRelevantRequest } from '../../context/ManagerDataContext'
+import { useFinanceData, TicketProduct } from '../../context/ManagerDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentPdfViewerModal } from '../../components/portal/DocumentPdfViewerModal'
 import { markVendorInvoiceVerified, markVendorDeliveryVerified } from '../vendor/VendorPortalPages'
@@ -24,14 +24,22 @@ export const CASH_MAX_LIMIT = 200000
 const STEPS = ['View Receipts', 'Verify Documents', 'Review Summary', 'Submit Ticket']
 
 export const FinanceRaiseTicketPage: React.FC = () => {
-  const { tickets, verifyDocument, submitTicket, submitProductTicket, makePayment, financeRequests } = useFinanceData()
+  const { tickets, verifyDocument, submitTicket, submitProductTicket, makePayment, financeRequests, apiError } = useFinanceData()
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Strictly filter tickets so only Finance-eligible, manager-forwarded, non-rejected requests appear
+  // Show requisitions with an issued real PO; reject cancelled/rejected requests.
   const financeTickets = useMemo(() => {
     const list = tickets.filter(t => {
       if (!t.requestId && !t.id) return false
+      // buildDynamicTickets only creates entries after finding a real backend PO.
+      // Use that PO-backed ticket as the gate here: requiring Finance escalation
+      // as well hides hardware orders that are waiting for Finance document review.
+      const orderIds = [t.productOrder?.id, ...(t.products || []).map(p => p.productOrder?.id)]
+        .filter((id): id is string => Boolean(id))
+      const hasRealPurchaseOrder = orderIds.some(id => /^PO[-_]/i.test(id) && !/(mock|demo|fake)/i.test(id))
+      if (!hasRealPurchaseOrder) return false
+
       const normTicketReq = (t.requestId || t.id || '').replace(/^(REQ-|PO-|TCK-|TKT-|RFQ-)/i, '').trim().toUpperCase()
       const req = financeRequests.find(r => {
         if (!r.id) return false
@@ -40,11 +48,22 @@ export const FinanceRaiseTicketPage: React.FC = () => {
         return normReq === normTicketReq
       })
       if (req) {
-        return isFinanceRelevantRequest(req) && req.status !== 'rejected'
+        const reqStatus = String((req as any).raw_status || req.status || '').toUpperCase()
+        return reqStatus !== 'REJECTED' && reqStatus !== 'FINANCE_REJECTED'
       }
-      return false
+      // Finance's request feed intentionally omits some hardware workflow states.
+      // A real PO is still sufficient to show its document-verification ticket.
+      return true
     })
-    return [...list].sort((a, b) => {
+    const seen = new Set<string>()
+    const dedupedList = list.filter(t => {
+      const k = (t.requestId || t.id || '').toUpperCase()
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+
+    return [...dedupedList].sort((a, b) => {
       const timeA = new Date(a.createdAt || a.createdDate || (a as any).created_at || 0).getTime()
       const timeB = new Date(b.createdAt || b.createdDate || (b as any).created_at || 0).getTime()
       if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) return timeB - timeA
@@ -199,7 +218,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
 
   // Form validation memos
   const isUtrValid = useMemo(() => {
-    return /^[A-Z0-9]{12}$/i.test(paymentForm.utrNumber.trim())
+    return /^[A-Z0-9]{1,15}$/i.test(paymentForm.utrNumber.trim())
   }, [paymentForm.utrNumber])
 
   const isUpiValid = useMemo(() => {
@@ -208,7 +227,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
   }, [paymentForm.upiId])
 
   const isUpiTxnValid = useMemo(() => {
-    return /^\d{12}$/.test(paymentForm.upiTxnId.trim())
+    return /^\d{1,15}$/.test(paymentForm.upiTxnId.trim())
   }, [paymentForm.upiTxnId])
 
   const isCardLast4Valid = useMemo(() => {
@@ -324,13 +343,13 @@ export const FinanceRaiseTicketPage: React.FC = () => {
   // Validate UTR / reference and dispatch payment
   const handleConfirmAndPay = () => {
     if (payMethod === 'bank') {
-      if (!utrRef.trim() || utrRef.trim().length < 6 || utrRef.trim().length > 22) {
-        setUtrError('Enter a valid 6–22 character UTR / NEFT / RTGS reference.')
+      if (!utrRef.trim() || utrRef.trim().length > 15) {
+        setUtrError('Enter a valid UTR / NEFT / RTGS reference (max 15 characters).')
         return
       }
     } else if (payMethod === 'upi') {
-      if (!utrRef.trim() || utrRef.trim().length < 6) {
-        setUtrError('Enter a valid UPI Transaction / Reference ID (min 6 chars).')
+      if (!utrRef.trim() || utrRef.trim().length > 15) {
+        setUtrError('Enter a valid UPI Reference ID (max 15 characters).')
         return
       }
     }
@@ -338,16 +357,22 @@ export const FinanceRaiseTicketPage: React.FC = () => {
     const product = confirmPaymentProduct || undefined
     const amount = product ? product.totalAmount : ticket.requestAmount
     const vendor = product?.vendor || ticket.products?.[0]?.vendor || 'Vendor Partner'
-    const methodLabel = payMethod === 'bank' ? 'NEFT / RTGS / IMPS' : payMethod === 'upi' ? 'UPI Instant Transfer' : payMethod === 'cash' ? 'Cash / Petty Cash' : 'Corporate Card'
-    const res = makePayment(ticket.requestId, ticket.id, {
+    const methodLabel = payMethod === 'bank' ? 'Online Bank Transfer' : payMethod === 'upi' ? 'UPI' : payMethod === 'cash' ? 'Cash on Hand' : 'Card'
+    const cleanUtr = utrRef.trim()
+    const res = makePayment(ticket.requestId || ticket.id, ticket.id, {
       amount,
       paymentMethod: methodLabel,
-      productId: product?.id
+      referenceNumber: cleanUtr,
+      transactionRef: cleanUtr,
+      productId: product?.id,
+      notes: settlementNote.trim() || undefined
     })
 
     setPaymentResult({
       ...res,
-      utrRef: utrRef.trim() || res.utrRef,
+      utrRef: cleanUtr || res.utrRef,
+      referenceNumber: cleanUtr || res.referenceNumber,
+      paymentMethod: methodLabel,
       vendor: res.vendor || vendor,
       reqTitle: product ? `${ticket.requestTitle} — ${product.name}` : ticket.requestTitle,
       notes: settlementNote.trim() || undefined,
@@ -355,7 +380,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
       date: res.date
     })
     setConfirmPaymentProduct(null)
-    showToast(`💳 Payment Disbursed: ₹${amount.toLocaleString('en-IN')}! UTR: ${utrRef.trim() || res.utrRef}`, 'success')
+    showToast(`💳 Payment Disbursed: ₹${amount.toLocaleString('en-IN')}! UTR: ${cleanUtr || res.utrRef}`, 'success')
   }
 
   return (
@@ -372,6 +397,12 @@ export const FinanceRaiseTicketPage: React.FC = () => {
       )}
 
       {/* ── SELECT REQUISITION / TICKET SELECTOR ── */}
+      {apiError && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-2.5 rounded-xl flex items-center gap-2">
+          <AlertCircle size={15} className="text-amber-600 shrink-0" />
+          <span>{apiError} Displaying cached procurement records.</span>
+        </div>
+      )}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden transition-all">
         {/* Header & Search Bar */}
         <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50">
@@ -443,9 +474,10 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                   const isPaid = t.products?.every(p => p.paymentSettled)
                   const allVerified = t.products && t.products.length > 0 && t.products.every(p => p.goodsReceipt?.verified && p.invoice?.verified)
                   const anyVerified = t.products && t.products.some(p => p.goodsReceipt?.verified || p.invoice?.verified)
+                  const hasReceipt = Boolean(t.goodsReceipt && (t.goodsReceipt.id || t.goodsReceipt.verified))
 
-                  let statusText = 'Pending Verification'
-                  let statusBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200'
+                  let statusText = 'Vendor Selected – Awaiting Delivery'
+                  let statusBadgeClass = 'bg-sky-50 text-sky-700 border-sky-200'
                   if (isPaid) {
                     statusText = 'Settled & Paid'
                     statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -458,6 +490,9 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                   } else if (anyVerified) {
                     statusText = 'In Verification'
                     statusBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200'
+                  } else if (hasReceipt) {
+                    statusText = 'Delivered – Pending Verification'
+                    statusBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200'
                   }
 
                   return (
@@ -925,7 +960,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                       </div>
 
                       {/* Product Actions: Once both documents verified, show Make Payment */}
-                      {product.submitted || product.paymentSettled ? (
+                      {product.paymentSettled ? (
                         <div className="flex items-center gap-2 bg-emerald-100 text-emerald-800 border border-emerald-200 px-4 py-2 rounded-xl text-xs font-bold">
                           <CheckCircle2 size={14} /> Payment Settled (Paid)
                         </div>
@@ -1050,13 +1085,13 @@ export const FinanceRaiseTicketPage: React.FC = () => {
           const needsRef = payMethod === 'bank' || payMethod === 'upi'
           const refLabel = payMethod === 'bank' ? 'UTR / Bank Reference Number' : 'UPI Transaction Reference'
           const refPlaceholder = payMethod === 'bank'
-            ? 'e.g., UTR202610010091 (16 or 22 chars)'
-            : 'e.g., UPI12345678901234'
+            ? 'e.g., UTR20261001009 (Max 15 chars)'
+            : 'e.g., UPI1234567890 (Max 15 chars)'
           const refHint = payMethod === 'bank'
-            ? 'Enter the 6–22 character alphanumeric reference provided by NEFT/RTGS/IMPS gateway (Max 22).'
-            : 'Enter the UPI Transaction ID / Reference from your payment app.'
+            ? 'Enter the alphanumeric reference provided by NEFT/RTGS/IMPS gateway (Max 15 chars).'
+            : 'Enter the UPI Transaction ID / Reference (Max 15 chars).'
 
-          const canPay = !needsRef || (utrRef.trim().length >= 6 && utrRef.trim().length <= 22)
+          const canPay = !needsRef || (utrRef.trim().length >= 4 && utrRef.trim().length <= 15)
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -1142,13 +1177,13 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                         <label className="text-xs font-bold text-slate-800">
                           {refLabel} <span className="text-red-500">*</span>
                         </label>
-                        <span className="text-[10px] text-slate-400 font-mono">{utrRef.length}/22 Characters</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{utrRef.length}/15 Characters</span>
                       </div>
                       <input
                         type="text"
-                        maxLength={22}
+                        maxLength={15}
                         value={utrRef}
-                        onChange={(e) => { setUtrRef(e.target.value.replace(/[^A-Za-z0-9]/g, '')); setUtrError('') }}
+                        onChange={(e) => { const clean = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 15); setUtrRef(clean); setUtrError('') }}
                         placeholder={refPlaceholder}
                         className={`w-full px-4 py-2.5 rounded-xl border text-xs font-mono focus:outline-none focus:ring-2 transition-all ${
                           utrError

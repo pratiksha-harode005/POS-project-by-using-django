@@ -27,7 +27,8 @@ class PurchaseRequestSummarySerializer(serializers.ModelSerializer):
             'id', 'request_id', 'title', 'category', 'subcategory', 'quantity', 'description',
             'required_by', 'delivery_location', 'total_estimated_cost', 'amount', 'estimated_cost',
             'status', 'current_stage', 'stage_display', 'preferred_vendor', 'created_by_detail',
-            'department_detail', 'created_at', 'updated_at'
+            'department_detail', 'created_at', 'updated_at', 'flow_type', 'request_operation',
+            'software_name'
         ]
 
 
@@ -78,11 +79,17 @@ def compute_document_verification(purchase_request, quotation=None):
 
     has_verified_invoice = False
     has_verified_gr = False
+    has_rejected_invoice = False
+    has_rejected_gr = False
+    invoice_reject_reason = ''
+    gr_reject_reason = ''
     latest_po_id = None
     latest_inv_status = None
     latest_gr_status = None
     total_inv_count = 0
     total_gr_count = 0
+    verified_by = ''
+    verified_at = None
 
     for po in pos:
         latest_po_id = po.po_id
@@ -93,8 +100,15 @@ def compute_document_verification(purchase_request, quotation=None):
         total_inv_count += len(invoices)
         for inv in invoices:
             latest_inv_status = inv.status
-            if inv.is_manager_verified or inv.status in ['Matched', 'Paid', 'Verified']:
+            if inv.status in ['Rejected', 'Exception'] and getattr(inv, 'reject_reason', ''):
+                has_rejected_invoice = True
+                invoice_reject_reason = getattr(inv, 'reject_reason', '')
+            if inv.is_manager_verified is True and bool(getattr(inv, 'verified_by_name', '')):
                 has_verified_invoice = True
+                if not verified_by:
+                    verified_by = inv.verified_by_name
+                if not verified_at:
+                    verified_at = inv.verified_at
 
         if hasattr(po, '_prefetched_objects_cache') and 'goods_receipts' in po._prefetched_objects_cache:
             receipts = po._prefetched_objects_cache['goods_receipts']
@@ -103,21 +117,44 @@ def compute_document_verification(purchase_request, quotation=None):
         total_gr_count += len(receipts)
         for gr in receipts:
             latest_gr_status = gr.status
-            if gr.status in ['Verified', 'Confirmed', 'Approved']:
+            if gr.status == 'Rejected' or gr.status == 'Damaged':
+                has_rejected_gr = True
+                gr_reject_reason = getattr(gr, 'reject_reason', '') or getattr(gr, 'notes', '')
+            if gr.status == 'Verified' and bool(getattr(gr, 'verified_by_name', '')):
                 has_verified_gr = True
+                if not verified_by:
+                    verified_by = gr.verified_by_name
+                if not verified_at:
+                    verified_at = gr.verified_at
 
-    is_delivered = any(po.status in ['Delivered', 'Fulfilled', 'Completed'] for po in pos) or has_verified_gr
-    is_both = is_delivered and has_verified_invoice and has_verified_gr
+    is_delivered = any(po.status in ['Delivered', 'Fulfilled', 'Completed'] for po in pos)
+
+    if has_rejected_invoice or has_rejected_gr:
+        final_status = 'Verification Rejected'
+        v_status = 'REJECTED'
+        reject_reason = invoice_reject_reason or gr_reject_reason or 'Document verification rejected by manager.'
+    elif has_verified_invoice and has_verified_gr:
+        final_status = 'Documents Verified'
+        v_status = 'VERIFIED'
+        reject_reason = ''
+    else:
+        final_status = 'Verification Pending'
+        v_status = 'PENDING'
+        reject_reason = ''
 
     res = {
-        'status': 'Documents Verified' if is_both else 'Verification Pending',
-        'is_both_verified': is_both,
+        'status': final_status,
+        'verification_status': v_status,
+        'is_both_verified': (v_status == 'VERIFIED'),
         'is_invoice_verified': has_verified_invoice,
         'is_goods_receipt_verified': has_verified_gr if is_delivered else False,
+        'verified_by': verified_by,
+        'verified_at': verified_at.isoformat() if verified_at else None,
+        'reject_reason': reject_reason,
         'is_delivered': is_delivered,
         'po_id': latest_po_id,
-        'invoice_status': latest_inv_status,
-        'goods_receipt_status': latest_gr_status if is_delivered else 'Pending Delivery',
+        'invoice_status': latest_inv_status or ('Approved' if has_verified_invoice else 'Pending Review'),
+        'goods_receipt_status': ('Verified' if has_verified_gr else latest_gr_status) if is_delivered else 'Pending Delivery',
         'invoice_count': total_inv_count,
         'goods_receipt_count': total_gr_count,
     }
@@ -302,11 +339,20 @@ class RFQSerializer(serializers.ModelSerializer):
     quotations = serializers.SerializerMethodField()
     document_verification = serializers.SerializerMethodField()
     document_verification_status = serializers.SerializerMethodField()
+    effective_category = serializers.SerializerMethodField()
 
     class Meta:
         model = RFQ
         fields = '__all__'
         read_only_fields = ['rfq_id', 'created_at', 'updated_at']
+
+    def get_effective_category(self, obj):
+        """Return the category from the RFQ itself, or from the linked purchase request."""
+        if obj.category:
+            return obj.category
+        if obj.purchase_request and obj.purchase_request.category:
+            return obj.purchase_request.category
+        return None
 
     def get_document_verification(self, obj):
         return compute_document_verification(obj.purchase_request)

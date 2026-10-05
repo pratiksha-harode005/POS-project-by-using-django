@@ -25,7 +25,7 @@ import {
 import { useManagerData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
 import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
-import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
+import { getFinanceAdminRecommendationStep, isSoftwareRequest, isHardwareRequest, normalizeWorkflowStatus, sortRequestsNewestFirst } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
@@ -35,6 +35,30 @@ const priorityColors: Record<string, string> = {
   High: 'bg-orange-50 text-orange-700 border-orange-200',
   Medium: 'bg-amber-50 text-amber-700 border-amber-200',
   Low: 'bg-slate-50 text-slate-700 border-slate-200',
+}
+
+type AdminOutcome = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RETURNED'
+
+const getAdminOutcome = (request: ProcurementRequest): AdminOutcome => {
+  const rawRequest = (request as any).rawRequest || request
+  const status = normalizeWorkflowStatus((request as any).raw_status || rawRequest.status || request.status)
+  const actions = Array.isArray(rawRequest.approval_history)
+    ? rawRequest.approval_history.map((entry: any) => normalizeWorkflowStatus(entry.action))
+    : []
+
+  if (status === 'ADMIN_APPROVED' || request.financeStatus === 'Admin Approved' || actions.includes('ADMIN_APPROVE')) return 'APPROVED'
+  if (status === 'ADMIN_REJECTED' || actions.includes('ADMIN_REJECT')) return 'REJECTED'
+  if (status === 'ADMIN_RETURNED' || actions.includes('ADMIN_RETURN')) return 'RETURNED'
+  return 'PENDING'
+}
+
+const getAdminOutcomeLabel = (request: ProcurementRequest): string => {
+  switch (getAdminOutcome(request)) {
+    case 'APPROVED': return 'Admin Approved'
+    case 'REJECTED': return 'Admin Rejected'
+    case 'RETURNED': return 'Returned by Admin'
+    default: return 'Awaiting Admin Sign-off'
+  }
 }
 
 export const RecommendedToAdminPage: React.FC = () => {
@@ -82,12 +106,8 @@ export const RecommendedToAdminPage: React.FC = () => {
   const kpis = useMemo(() => {
     const total = recommendedToAdmin.length
     const totalAmount = recommendedToAdmin.reduce((sum, r) => sum + (r.amount || 0), 0)
-    const pending = recommendedToAdmin.filter(
-      r => r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin'
-    ).length
-    const approved = recommendedToAdmin.filter(
-      r => r.status === 'finance_approved' || r.financeStatus === 'Admin Approved'
-    ).length
+    const pending = recommendedToAdmin.filter(r => getAdminOutcome(r) === 'PENDING').length
+    const approved = recommendedToAdmin.filter(r => getAdminOutcome(r) === 'APPROVED').length
 
     return { total, totalAmount, pending, approved }
   }, [recommendedToAdmin])
@@ -107,15 +127,9 @@ export const RecommendedToAdminPage: React.FC = () => {
       const matchesDept = selectedDept === 'ALL' || r.department === selectedDept
       const matchesPriority = selectedPriority === 'ALL' || r.priority === selectedPriority
 
-      const isApproved = Boolean(
-        r.status === 'finance_approved' ||
-        r.status === 'approved' ||
-        r.financeStatus === 'Admin Approved' ||
-        r.financeStatus === 'Approved' ||
-        (r.currentStage !== undefined && r.currentStage >= 4) ||
-        r.approvedBy
-      )
-      const isPending = (r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin') && !isApproved
+      const outcome = getAdminOutcome(r)
+      const isApproved = outcome === 'APPROVED'
+      const isPending = outcome === 'PENDING'
 
       let matchesTab = true
       if (statusTab === 'PENDING') matchesTab = isPending
@@ -133,13 +147,18 @@ export const RecommendedToAdminPage: React.FC = () => {
   }, [recommendedToAdmin, search, selectedDept, selectedPriority, statusTab, requestType])
 
   // Admin Approval Handler
-  const handleConfirmFinancialDossier = (params: ApprovalParameters) => {
+  const handleConfirmFinancialDossier = async (params: ApprovalParameters) => {
     if (!approveModalReq) return
-    adminApproveRequest(
-      approveModalReq.id,
-      params.approvalComments || 'Ratified and approved by Executive Admin Committee.',
-      actorName
-    )
+    try {
+      await adminApproveRequest(
+        approveModalReq.id,
+        params.approvalComments || 'Ratified and approved by Executive Admin Committee.',
+        actorName
+      )
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || 'Admin approval could not be saved.', 'info')
+      return
+    }
     showToast(`✓ Request ${approveModalReq.id} has been formally approved by Admin.`, 'success')
     if (selectedReq?.id === approveModalReq.id) {
       setSelectedReq({
@@ -154,8 +173,13 @@ export const RecommendedToAdminPage: React.FC = () => {
     setApprovalNote('')
   }
 
-  const handleAdminApprove = (req: ProcurementRequest, note?: string) => {
-    adminApproveRequest(req.id, note || 'Ratified and approved by Executive Admin Committee.', actorName)
+  const handleAdminApprove = async (req: ProcurementRequest, note?: string) => {
+    try {
+      await adminApproveRequest(req.id, note || 'Ratified and approved by Executive Admin Committee.', actorName)
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || 'Admin approval could not be saved.', 'info')
+      return
+    }
     showToast(`✓ Request ${req.id} has been formally approved by Admin.`, 'success')
     if (selectedReq?.id === req.id) {
       setSelectedReq({
@@ -179,10 +203,10 @@ export const RecommendedToAdminPage: React.FC = () => {
       `"${r.title.replace(/"/g, '""')}"`,
       `"${r.department}"`,
       r.amount,
-      `"${(r.recommendationReason || '').replace(/"/g, '""')}"`,
-      `"${r.recommendedBy || actorName}"`,
-      `"${r.recommendedDate || r.date}"`,
-      `"${r.financeStatus || 'Recommended to Admin'}"`
+      `"${(r.recommendationReason || 'No reason recorded').replace(/"/g, '""')}"`,
+      `"${r.recommendedBy || 'Finance Officer not recorded'}"`,
+      `"${r.recommendedDate || '—'}"`,
+      `"${getAdminOutcomeLabel(r)}"`
     ])
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n')
     const encodedUri = encodeURI(csvContent)
@@ -447,15 +471,9 @@ export const RecommendedToAdminPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
                 {filteredList.map(req => {
-                  const isApproved = Boolean(
-                    req.status === 'finance_approved' ||
-                    req.status === 'approved' ||
-                    req.financeStatus === 'Admin Approved' ||
-                    req.financeStatus === 'Approved' ||
-                    (req.currentStage !== undefined && req.currentStage >= 4) ||
-                    req.approvedBy
-                  )
-                  const isPending = (req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin') && !isApproved
+                  const outcome = getAdminOutcome(req)
+                  const isApproved = outcome === 'APPROVED'
+                  const isPending = outcome === 'PENDING'
 
                   return (
                     <tr key={req.id} className="hover:bg-slate-50/70 transition-colors">
@@ -506,7 +524,7 @@ export const RecommendedToAdminPage: React.FC = () => {
                         <div className="space-y-1">
                           <span className="inline-flex items-center gap-1 font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-1 rounded-md text-[10px] leading-tight">
                             <AlertCircle size={11} className="flex-shrink-0" />
-                            {req.recommendationReason || 'Exceeds standard finance limit'}
+                            {req.recommendationReason || 'No reason recorded'}
                           </span>
                           {req.financeComment && (
                             <p className="text-[11px] text-slate-500 italic line-clamp-2 pl-0.5">
@@ -519,11 +537,11 @@ export const RecommendedToAdminPage: React.FC = () => {
                       {/* Column 5: Recommended By & Date */}
                       <td className="p-4 align-top whitespace-nowrap">
                         <p className="font-semibold text-slate-700">
-                          {req.recommendedBy || actorName}
+                          {req.recommendedBy || 'Finance Officer not recorded'}
                         </p>
                         <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
                           <Calendar size={11} />
-                          <span>{req.recommendedDate || req.date}</span>
+                          <span>{req.recommendedDate || '—'}</span>
                         </div>
                       </td>
 
@@ -539,7 +557,7 @@ export const RecommendedToAdminPage: React.FC = () => {
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold">
-                            {req.financeStatus || 'Under Review'}
+                            {getAdminOutcomeLabel(req)}
                           </span>
                         )}
                         {req.approvedBy && (
@@ -694,13 +712,17 @@ export const RecommendedToAdminPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="text-[10px] font-bold uppercase text-slate-400 block">Current Admin State</span>
-                    {selectedReq.status === 'finance_approved' || selectedReq.financeStatus === 'Admin Approved' ? (
+                    {getAdminOutcome(selectedReq) === 'APPROVED' ? (
                       <span className="text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
                         <CheckCircle size={14} /> Approved by Admin ({selectedReq.approvedBy || 'Executive Committee'}) on {selectedReq.approvedDate || 'Today'}
                       </span>
-                    ) : (
+                    ) : getAdminOutcome(selectedReq) === 'PENDING' ? (
                       <span className="text-purple-700 font-bold flex items-center gap-1 mt-0.5">
                         <Clock size={14} className="animate-pulse" /> Pending Executive Administrative Ratification
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 font-bold flex items-center gap-1 mt-0.5">
+                        <AlertCircle size={14} /> {getAdminOutcomeLabel(selectedReq)}
                       </span>
                     )}
                   </div>
@@ -734,13 +756,8 @@ export const RecommendedToAdminPage: React.FC = () => {
                 </button>
 
                 {Boolean(
-                  (selectedReq.status === 'recommended_to_admin' || selectedReq.financeStatus === 'Recommended to Admin') &&
-                  selectedReq.status !== 'finance_approved' &&
-                  selectedReq.status !== 'approved' &&
-                  selectedReq.financeStatus !== 'Admin Approved' &&
-                  selectedReq.financeStatus !== 'Approved' &&
-                  (selectedReq.currentStage === undefined || selectedReq.currentStage < 4) &&
-                  !selectedReq.approvedBy
+                  getAdminOutcome(selectedReq) === 'PENDING' &&
+                  Boolean(getFinanceAdminRecommendationStep(selectedReq as any))
                 ) && (
                   <button
                     onClick={() => {

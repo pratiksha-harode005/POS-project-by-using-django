@@ -247,6 +247,13 @@ export const CreateRequestPage: React.FC = () => {
     formData.category === 'Cloud & Infrastructure' ||
     formData.category === 'SaaS & Cloud'
 
+  const isHardware =
+    formData.category === 'IT Hardware' ||
+    formData.category.toLowerCase().includes('hardware') ||
+    isPhysicalCategory(formData.category)
+
+  const showAddress = isHardware
+
   const availableVendors = VENDORS_BY_CATEGORY[formData.category] || []
 
   const categoryConfig = CATEGORY_CONFIGS[formData.category] || { quantityLabel: 'Quantity' }
@@ -256,12 +263,12 @@ export const CreateRequestPage: React.FC = () => {
   const numDepartment = showQuantity ? 7 : 6
   const numVendor = showQuantity ? 8 : 7
   const numDelivery = showQuantity ? 9 : 8
-  const numPriority = categoryConfig.hideDeliveryLocation
-    ? (showQuantity ? 9 : 8)
-    : (showQuantity ? 10 : 9)
-  const numJustification = categoryConfig.hideDeliveryLocation
+  const numPriority = showAddress
     ? (showQuantity ? 10 : 9)
-    : (showQuantity ? 11 : 10)
+    : (showQuantity ? 9 : 8)
+  const numJustification = showAddress
+    ? (showQuantity ? 11 : 10)
+    : (showQuantity ? 10 : 9)
 
   const handleCategoryChange = (newCat: string) => {
     const subcatList = SUBCATEGORIES_BY_CATEGORY[newCat]
@@ -323,7 +330,7 @@ export const CreateRequestPage: React.FC = () => {
         estimatedCost: effectiveCost,
         requiredBy: formData.requiredBy,
         department: formData.department,
-        deliveryLocation: formData.deliveryLocation,
+        deliveryLocation: showAddress ? (formData.deliveryLocation || 'Pune HQ, 4th Floor') : '',
         priority: formData.priority,
         preferredVendor: formData.preferredVendor,
         justification: formData.justification,
@@ -341,6 +348,11 @@ export const CreateRequestPage: React.FC = () => {
         subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
         extraFields: {
           ...formData.extraFields,
+          ...(showAddress ? {
+            address: formData.deliveryLocation || 'Pune HQ, 4th Floor',
+            delivery_location: formData.deliveryLocation || 'Pune HQ, 4th Floor',
+            deliveryLocation: formData.deliveryLocation || 'Pune HQ, 4th Floor',
+          } : {}),
           ...(formData.subscriptionServiceName
             ? { subscriptionServiceName: formData.subscriptionServiceName }
             : {}),
@@ -357,9 +369,7 @@ export const CreateRequestPage: React.FC = () => {
 
       setSubmittedStatus(isDraft ? 'Draft' : 'Pending')
       setSubmitted(true)
-      setTimeout(() => {
-        navigate('/portal/team_lead/my-requests')
-      }, 1000)
+      navigate('/portal/team_lead/my-requests')
     } catch (err: any) {
       alert(`Failed to save request to server: ${err?.response?.data?.detail || err?.message || 'Server error'}`)
     } finally {
@@ -700,27 +710,68 @@ export const CreateRequestPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Delivery Location & Priority (driven by categoryConfig.hideDeliveryLocation) */}
-          <div className={categoryConfig.hideDeliveryLocation ? 'block' : 'grid grid-cols-2 gap-4'}>
-
-
+          {/* 9. Delivery Address / Location — ONLY displayed for Hardware requests */}
+          {showAddress && (
             <div>
-              <label className="block font-bold text-gray-700 mb-1">
-                {numPriority}. Priority *
-              </label>
-              <select
-                value={formData.priority}
-                onChange={(e) =>
-                  setFormData({ ...formData, priority: e.target.value as 'Low' | 'Medium' | 'High' | 'Urgent' })
-                }
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-gray-700">
+                  {numDelivery}. Delivery Address / Location *
+                </label>
+                <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                  Hardware Delivery
+                </span>
+              </div>
+              <input
+                type="text"
+                required={showAddress}
+                placeholder="e.g. Pune HQ, 4th Floor, Tech Park, Phase 1, Hinjawadi, Pune - 411057"
+                value={formData.deliveryLocation}
+                onChange={(e) => setFormData({ ...formData, deliveryLocation: e.target.value })}
                 className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              >
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
-                <option value="Urgent">Urgent</option>
-              </select>
+              />
+              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                <span className="text-[10px] text-gray-400 font-semibold">Quick Select:</span>
+                {[
+                  'Pune HQ, 4th Floor, Tech Park, Hinjawadi',
+                  'Bengaluru Tech Hub, Whitefield',
+                  'Mumbai Regional Office, BKC',
+                  'Hyderabad Datacenter, HITEC City',
+                  'Delhi NCR Hub, Cyber City'
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, deliveryLocation: preset })}
+                    className={`text-[10px] px-2 py-0.5 rounded-md border transition-all ${
+                      formData.deliveryLocation === preset
+                        ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100 font-medium'
+                    }`}
+                  >
+                    {preset.split(',')[0]}
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
+
+          {/* Priority */}
+          <div>
+            <label className="block font-bold text-gray-700 mb-1">
+              {numPriority}. Priority *
+            </label>
+            <select
+              value={formData.priority}
+              onChange={(e) =>
+                setFormData({ ...formData, priority: e.target.value as 'Low' | 'Medium' | 'High' | 'Urgent' })
+              }
+              className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+              <option value="Urgent">Urgent</option>
+            </select>
           </div>
 
           {/* Business Justification */}

@@ -3,7 +3,7 @@ import { TrackingStepper } from '../../components/portal/TrackingStepper'
 import { useProcurement, PurchaseRequest } from '../../context/ProcurementContext'
 import { useAuth } from '../../context/AuthContext'
 import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
-import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst, getRecommendationStatus } from '../../utils/workflowUtils'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst, getRecommendationStatus, getWorkflowProgression } from '../../utils/workflowUtils'
 import {
   Search,
   Filter,
@@ -817,13 +817,15 @@ const SoftwareJustificationForm: React.FC<{ req: PurchaseRequest }> = ({ req }) 
   const financeApprovedAmount = (req as any).finance_approved_amount || (req as any).approved_amount || requestedAmount
 
   const [actualPurchaseAmount, setActualPurchaseAmount] = useState<number | string>(
-    origPj.actual_purchase_amount ||
-    origPj.final_payable_amount ||
-    origPj.requested_amount ||
-    financeApprovedAmount ||
-    managerApprovedAmount ||
-    requestedAmount ||
-    2000
+    isRenewalOrUpgrade
+      ? financeApprovedAmount || managerApprovedAmount || requestedAmount || 2000
+      : origPj.actual_purchase_amount ||
+        origPj.final_payable_amount ||
+        origPj.requested_amount ||
+        financeApprovedAmount ||
+        managerApprovedAmount ||
+        requestedAmount ||
+        2000
   )
   const [gstTax, setGstTax] = useState<number | string>(origPj.gst_tax !== undefined ? origPj.gst_tax : 0)
   const [discount, setDiscount] = useState<number | string>(origPj.discount !== undefined ? origPj.discount : 0)
@@ -877,7 +879,11 @@ const SoftwareJustificationForm: React.FC<{ req: PurchaseRequest }> = ({ req }) 
     origPj.quote_number || (isRenewalOrUpgrade ? `QUOTE-RNW-${(req.request_id || req.id).toString().slice(-4)}` : '')
   )
   const [purchaseDate, setPurchaseDate] = useState(
-    origPj.purchase_date ? normalizeDateToYMD(origPj.purchase_date) : new Date().toISOString().split('T')[0]
+    isRenewalOrUpgrade && (req as any).payment_date
+      ? normalizeDateToYMD((req as any).payment_date)
+      : origPj.purchase_date
+        ? normalizeDateToYMD(origPj.purchase_date)
+        : new Date().toISOString().split('T')[0]
   )
   const [poNumber, setPoNumber] = useState(
     origPj.po_number || (parentReq as any)?.poRef || req.poRef || (isRenewalOrUpgrade ? `PO-${new Date().getFullYear()}-${(req.request_id || req.id).toString().slice(-4)}` : '')
@@ -894,13 +900,17 @@ const SoftwareJustificationForm: React.FC<{ req: PurchaseRequest }> = ({ req }) 
 
   // 6. Payment & Documents
   const [paymentMethod, setPaymentMethod] = useState(
-    origPj.payment_method || (req as any).payment_method || 'Corporate Card'
+    (req as any).payment_method || origPj.payment_method || 'Corporate Card'
   )
   const [paymentReference, setPaymentReference] = useState(
-    origPj.payment_reference || (req as any).payment_reference || (isRenewalOrUpgrade ? `TXN-RNW-${Date.now().toString().slice(-6)}` : '')
+    (req as any).payment_reference || (isRenewalOrUpgrade ? '' : origPj.payment_reference || '')
   )
   const [paymentDate, setPaymentDate] = useState(
-    origPj.payment_date ? normalizeDateToYMD(origPj.payment_date) : ((req as any).payment_date ? normalizeDateToYMD((req as any).payment_date) : new Date().toISOString().split('T')[0])
+    (req as any).payment_date
+      ? normalizeDateToYMD((req as any).payment_date)
+      : origPj.payment_date
+        ? normalizeDateToYMD(origPj.payment_date)
+        : new Date().toISOString().split('T')[0]
   )
   const [paymentStatus] = useState('Paid')
 
@@ -1509,6 +1519,10 @@ export const MyRequestsPage: React.FC = () => {
   const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [resubmitSuccess, setResubmitSuccess] = useState(false)
   const [mockPaymentMethods, setMockPaymentMethods] = useState<Record<string, string>>({})
+  const [processingMockPaymentId, setProcessingMockPaymentId] = useState<string | null>(null)
+  const [mockPaymentErrors, setMockPaymentErrors] = useState<Record<string, string>>({})
+  const [acknowledgingRequestId, setAcknowledgingRequestId] = useState<string | null>(null)
+  const [acknowledgementErrors, setAcknowledgementErrors] = useState<Record<string, string>>({})
   const [receiptModalPayment, setReceiptModalPayment] = useState<any | null>(null)
   const [expandedJustificationId, setExpandedJustificationId] = useState<string | number | null>(null)
 
@@ -1517,9 +1531,44 @@ export const MyRequestsPage: React.FC = () => {
   }
 
   const handleOpenEdit = (req: PurchaseRequest) => {
+    if (!isSoftwareRequest(req)) return
     setEditingRequest(req)
     setEditForm(buildEditForm(req))
     setResubmitSuccess(false)
+  }
+
+  const handleMockPayment = async (req: PurchaseRequest) => {
+    const paymentMethod = mockPaymentMethods[req.id] || 'Corporate Card'
+
+    // Optimistic: show processing immediately, no blocking confirm dialog
+    setProcessingMockPaymentId(req.id)
+    setMockPaymentErrors((previous) => ({ ...previous, [req.id]: '' }))
+
+    try {
+      await mockPaymentApi(req.id, { payment_method: paymentMethod })
+      triggerGlobalDataSync('mock_payment_processed')
+    } catch (error: any) {
+      const message = error?.response?.data?.error || error?.message || 'Mock payment could not be completed.'
+      setMockPaymentErrors((previous) => ({ ...previous, [req.id]: message }))
+    } finally {
+      setProcessingMockPaymentId(null)
+    }
+  }
+
+  const handleAcknowledgeSoftwareRequest = async (req: PurchaseRequest) => {
+    if (!window.confirm(`Confirm the verified software purchase for "${req.title}" and complete this request?`)) return
+
+    setAcknowledgingRequestId(req.id)
+    setAcknowledgementErrors((previous) => ({ ...previous, [req.id]: '' }))
+    try {
+      await acknowledgeRequestApi(req.id, 'Software purchase verified and acknowledged by Team Lead.')
+      triggerGlobalDataSync('team_lead_acknowledged')
+    } catch (error: any) {
+      const message = error?.response?.data?.error || error?.message || 'Could not acknowledge the software request.'
+      setAcknowledgementErrors((previous) => ({ ...previous, [req.id]: message }))
+    } finally {
+      setAcknowledgingRequestId(null)
+    }
   }
 
   const handleCategoryChange = (newCat: string) => {
@@ -1538,7 +1587,7 @@ export const MyRequestsPage: React.FC = () => {
 
   const handleSaveResubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editingRequest || !editForm) return
+    if (!editingRequest || !editForm || !isSoftwareRequest(editingRequest)) return
 
     resubmitRequest(editingRequest.id, {
       title: editForm.title,
@@ -1716,10 +1765,31 @@ export const MyRequestsPage: React.FC = () => {
           filtered.map((req) => {
             const recInfo = getRecommendationStatus(req)
             const isHistoryOpen = expandedHistory[req.id] || false
+
+            const cardProg = getWorkflowProgression({
+              status: req.status,
+              financeStatus: (req as any).financeStatus,
+              category: req.category,
+              title: req.title,
+              paymentStatus: (req as any).paymentStatus,
+              currentStage: req.currentStage,
+              approval_steps: (req as any).approval_steps,
+              history: req.history as any,
+              workflowTypeOverride: (req as any).workflow_type || (req as any).workflowType,
+              timeline: (req as any).timeline,
+              finalApprovalBy: (req as any).final_approval_by || (req as any).approval_path,
+              approvalPath: (req as any).approval_path || (req as any).final_approval_by,
+              requestOperation: (req as any).request_operation,
+            })
+            const totalStages = cardProg.totalStages || (cardProg.stages?.length || 8)
+            const currentIdx = cardProg.currentStageIndex ?? 0
+            const isCompleted = cardProg.isCompleted
+            const progressPct = isCompleted ? 100 : Math.min(100, Math.max(10, Math.round(((currentIdx + 1) / totalStages) * 100)))
+
             return (
               <div key={req.id} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
                 {/* Request Header */}
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-gray-100">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-3 pb-3 border-b border-gray-100">
                   <div>
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded border border-blue-200">{req.id}</span>
@@ -1750,7 +1820,7 @@ export const MyRequestsPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {(req.status === 'Returned' || req.status === 'Pending' || req.status === 'Draft') && (
+                    {isSoftwareRequest(req) && (req.status === 'Returned' || req.status === 'Pending' || req.status === 'Draft') && (
                       <button
                         onClick={() => handleOpenEdit(req)}
                         className={`flex items-center gap-1.5 font-bold text-xs px-4 py-2 rounded-xl shadow transition-all ${
@@ -1765,6 +1835,56 @@ export const MyRequestsPage: React.FC = () => {
                         {req.status === 'Returned' ? 'Edit & Resubmit' : req.status === 'Draft' ? 'Edit & Submit' : 'Edit & Resubmit'}
                       </button>
                     )}
+                  </div>
+                </div>
+
+                {/* Overall Request Progress Summary Bar */}
+                <div className="mb-4 p-3 bg-gradient-to-r from-purple-50/70 via-indigo-50/50 to-blue-50/40 border border-purple-100 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex flex-col items-center justify-center font-extrabold text-xs shadow-xs">
+                      <span>{isCompleted ? '100%' : `${progressPct}%`}</span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-900">
+                          Current Progress: <span className="text-purple-700 font-extrabold">{cardProg.statusBadge}</span>
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          isCompleted ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                          cardProg.isRejected ? 'bg-red-100 text-red-800 border border-red-300' :
+                          cardProg.isReturned ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                          'bg-purple-100 text-purple-700 border border-purple-200'
+                        }`}>
+                          {isCompleted ? 'Completed' : `Stage ${currentIdx + 1} of ${totalStages}`}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Workflow: <span className="font-semibold text-gray-700">{cardProg.workflowType === 'SOFTWARE' ? 'Software / License Workflow' : 'Hardware & Procurement Workflow'}</span>
+                        {cardProg.currentlyWith && (
+                          <span className="ml-2 text-slate-600 font-medium">
+                            • Currently with: <strong className="text-slate-900">{cardProg.currentlyWith}</strong>
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="w-full sm:w-56 flex items-center gap-2.5">
+                    <div className="flex-1 bg-gray-200/80 rounded-full h-2.5 overflow-hidden p-0.5 shadow-inner">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          isCompleted
+                            ? 'bg-emerald-500'
+                            : cardProg.isRejected
+                            ? 'bg-red-500'
+                            : cardProg.isReturned
+                            ? 'bg-amber-500'
+                            : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-500'
+                        }`}
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-black text-purple-900 min-w-[36px] text-right">{progressPct}%</span>
                   </div>
                 </div>
 
@@ -1789,27 +1909,23 @@ export const MyRequestsPage: React.FC = () => {
                   )
                 })()}
 
-                {/* Currently With */}
-                <div className="mb-4 bg-gray-50 p-2.5 rounded-xl border border-gray-200 flex flex-wrap items-center justify-between text-xs gap-2">
-                  <div className="flex items-center gap-2">
-                    <User size={14} className="text-blue-600" />
-                    <span className="text-gray-600 font-medium">Currently with:</span>
-                    <strong className="text-gray-900">{req.currentlyWith?.role} — {req.currentlyWith?.name}</strong>
-                  </div>
-                  {req.currentStage >= 7 && (
-                    <div className="flex items-center gap-2 text-purple-700 font-semibold bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200">
+                {req.currentStage >= 7 && (
+                  <div className="mb-3 flex items-center justify-between gap-2 text-purple-700 font-semibold bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-200 text-xs">
+                    <div className="flex items-center gap-2">
                       <Truck size={14} />
                       <span>Delivery Ref: {req.deliveryRef || 'TRK-994821'} | Expected: {req.expectedDelivery || '2026-09-25'}</span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <TrackingStepper
+                  requestId={req.id}
                   currentStage={req.currentStage}
                   status={req.status}
                   category={req.category}
                   title={req.title}
                   flowType={req.flowType}
+                  workflowType={(req as any).workflow_type || (req as any).workflowType}
                   history={req.history as any}
                   approval_steps={(req as any).approval_steps}
                   financeStatus={(req as any).financeStatus}
@@ -1819,10 +1935,91 @@ export const MyRequestsPage: React.FC = () => {
                   invoiceNumber={(req as any).invoiceNumber || (req as any).invoice_number}
                   is_invoice_verified={(req as any).is_invoice_verified || (req as any).documentsVerified}
                   rfqId={(req as any).rfqId || (req as any).rfq_id}
+                  timeline={(req as any).timeline}
+                  finalApprovalBy={(req as any).final_approval_by || (req as any).approval_path}
+                  approvalPath={(req as any).approval_path || (req as any).final_approval_by}
+                  requestOperation={(req as any).request_operation}
+                  currentlyWith={
+                    (req as any).currently_with ||
+                    (req.currentlyWith?.name && req.currentlyWith?.role
+                      ? `${req.currentlyWith.role} — ${req.currentlyWith.name}`
+                      : req.currentlyWith?.name || req.currentlyWith?.role || undefined)
+                  }
                 />
 
-                {/* ─── SUBSCRIPTION & RENEWAL SECTION ─────────────────────────────────── */}
-                {(req as any).renewal_eligibility && (req as any).renewal_eligibility.available !== undefined && (
+                {isSoftwareRequest(req) && req.can_pay_mock === true && (
+                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-emerald-900">Approval complete — payment is ready</h3>
+                      <p className="text-xs text-emerald-800 mt-0.5">
+                        Process the mock payment to continue to payment justification.
+                      </p>
+                      {mockPaymentErrors[req.id] && (
+                        <p role="alert" className="text-xs text-red-700 mt-2">{mockPaymentErrors[req.id]}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                      <label className="sr-only" htmlFor={`mock-payment-method-${req.id}`}>Mock payment method</label>
+                      <select
+                        id={`mock-payment-method-${req.id}`}
+                        value={mockPaymentMethods[req.id] || 'Corporate Card'}
+                        onChange={(event) => setMockPaymentMethods((previous) => ({
+                          ...previous,
+                          [req.id]: event.target.value,
+                        }))}
+                        disabled={processingMockPaymentId === req.id}
+                        className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-950"
+                      >
+                        <option value="Corporate Card">Corporate Card</option>
+                        <option value="Wire Transfer / NEFT">Wire Transfer / NEFT</option>
+                        <option value="Credit Card">Credit Card</option>
+                        <option value="UPI">UPI</option>
+                        <option value="Direct Bank Transfer">Direct Bank Transfer</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handleMockPayment(req)}
+                        disabled={processingMockPaymentId === req.id}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-400"
+                      >
+                        <CreditCard size={14} />
+                        {processingMockPaymentId === req.id ? 'Processing…' : 'Pay Now (Mock)'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {isSoftwareRequest(req) && req.raw_status?.toUpperCase() === 'PAYMENT_PROCESSED' && (
+                  <div className="mt-4">
+                    <SoftwareJustificationForm req={req} />
+                  </div>
+                )}
+
+                {isSoftwareRequest(req) && req.can_acknowledge === true && (
+                  <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-violet-950">Manager verification complete</h3>
+                      <p className="text-xs text-violet-900 mt-0.5">
+                        Acknowledge the verified purchase to complete this software request.
+                      </p>
+                      {acknowledgementErrors[req.id] && (
+                        <p role="alert" className="text-xs text-red-700 mt-2">{acknowledgementErrors[req.id]}</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAcknowledgeSoftwareRequest(req)}
+                      disabled={acknowledgingRequestId === req.id}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-700 px-4 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-400"
+                    >
+                      <CheckCircle2 size={14} />
+                      {acknowledgingRequestId === req.id ? 'Acknowledging…' : 'Acknowledge & Complete'}
+                    </button>
+                  </div>
+                )}
+
+                {/* ─── SUBSCRIPTION & RENEWAL SECTION (Software Requests Only) ─────────── */}
+                {isSoftwareRequest(req) && (req as any).renewal_eligibility && (req as any).renewal_eligibility.available !== undefined && (req as any).renewal_eligibility.reason !== 'Not a software request' && (
                   <div className="mt-4 p-4 bg-white rounded-xl border border-blue-200 shadow-sm space-y-3 text-xs">
                     <h4 className="font-bold text-blue-900 uppercase tracking-wider text-[11px] border-b border-blue-100 pb-2 flex items-center gap-1">
                       <Package size={14} /> Subscription Details & Renewal Options

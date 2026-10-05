@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { getTeamLeadRequests, renewRequestApi, upgradeRequestApi } from '../../api/teamleadApi'
 import { triggerGlobalDataSync } from '../../utils/syncUtils'
+import { sortRequestsNewestFirst } from '../../utils/workflowUtils'
 import {
   RefreshCw,
   Zap,
@@ -103,8 +104,8 @@ export function RenewalsPage() {
 
   useEffect(() => { fetchData() }, [])
 
-  const processed = useMemo(() => requests.map(r => {
-    const pj = r.payment_justification_detail
+  const processed = useMemo(() => sortRequestsNewestFirst(requests).map(r => {
+    const pj = r.payment_justification_detail || r.original_payment_justification
     const endDate = pj?.end_date || r.renewal_eligibility?.subscription_end_date || null
     const days = daysUntil(endDate)
     return { ...r, _endDate: endDate, _days: days, _re: r.renewal_eligibility as RenewalEligibility | undefined }
@@ -138,13 +139,13 @@ export function RenewalsPage() {
   }), [processed])
 
   const handleRenew = async (req: any) => {
-    if (!window.confirm(`Create a Renewal request for "${req.title}"?\n\nA draft will be created. Go to My Requests → Edit & Submit to fill in the new quote and push it through approval.`)) return
+    if (!window.confirm(`Submit a Renewal request for "${req.title}"?\n\nThe request will be sent to Manager Review. You can update the renewal quote and details from My Requests.`)) return
     setActionLoading(req.id)
     try {
       const newReq = await renewRequestApi(req.id)
       await fetchData()
       triggerGlobalDataSync()
-      showToast(`✅ Renewal request ${newReq.request_id} created! Go to My Requests to complete it.`)
+      showToast(`✅ Renewal request ${newReq.request_id} submitted to Manager Review.`)
     } catch (e: any) {
       showToast(e?.response?.data?.error || 'Failed to create renewal request.', 'error')
     } finally {
@@ -267,7 +268,7 @@ export function RenewalsPage() {
       ) : (
         <div className="space-y-4">
           {filtered.map((req: any) => {
-            const pj = req.payment_justification_detail
+            const pj = req.payment_justification_detail || req.original_payment_justification
             const re: RenewalEligibility | undefined = req._re
             const days = req._days as number | null
             const isExpanded = expandedId === req.id
@@ -463,10 +464,11 @@ export function RenewalsPage() {
         <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
         <div className="text-xs text-blue-900 space-y-1.5">
           <p className="font-bold text-sm">How Renewal & Upgrade Works</p>
-          <p>1. Click <strong>Renew</strong> or <strong>Upgrade</strong> — a new linked draft request is created (e.g. <code className="bg-blue-100 px-1 rounded">REQ-XXXX-R1</code>).</p>
-          <p>2. Go to <strong>My Requests</strong> → find the new draft → <strong>Edit & Submit</strong> to enter the updated quote, amount, and justification.</p>
-          <p>3. The request flows through the standard <strong>Manager → Finance</strong> approval pipeline — same as any new request.</p>
-          <p>4. The original request is permanently preserved. All renewals and upgrades are linked and visible in the Lifecycle History above.</p>
+          <p>1. Click <strong>Renew</strong> or <strong>Upgrade</strong> — a linked request is submitted to Manager Review (e.g. <code className="bg-blue-100 px-1 rounded">REQ-XXXX-R1</code>).</p>
+          <p>2. The renewal starts with the subscription details and amount from the completed request. If information needs correction, ask the Manager to send it back for revision.</p>
+          <p>3. The renewal follows <strong>Manager Review → Manager Approval → Recommend to Finance → Finance Review → Finance Approval</strong>.</p>
+          <p>4. The Team Lead processes the mock payment, submits payment justification, then acknowledges the Manager-verified justification to complete the renewal.</p>
+          <p>5. The original request is permanently preserved. All renewals and upgrades are linked and visible in the Lifecycle History above.</p>
         </div>
       </div>
 

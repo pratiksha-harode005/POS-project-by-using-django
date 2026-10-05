@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import { useManagerData, ProcurementRequest, TicketProduct, ApprovalParameters } from '../../context/ManagerDataContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
+import { useAuth } from '../../context/AuthContext'
+import { verifyDocumentApi } from '../../api/managerApi'
 import { TrackingStepper } from '../../components/portal/TrackingStepper'
 import { RequestDetailsModal } from '../../components/portal/RequestDetailsModal'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
@@ -49,6 +51,7 @@ export type FilterStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RETURNED' | 'A
 export const AdminRequestsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { isUnread, markAsRead } = useActivity()
+  const { user } = useAuth()
   const {
     allRequests,
     refreshData,
@@ -58,7 +61,8 @@ export const AdminRequestsPage: React.FC = () => {
     purchaseOrders,
     payments,
     budgets,
-    tickets
+    tickets,
+    verifyDocument
   } = useManagerData()
 
   useEffect(() => {
@@ -124,6 +128,38 @@ export const AdminRequestsPage: React.FC = () => {
     showToast(`✓ Research & Cost Estimation submitted! Requisition forwarded to Finance Report.`, 'success')
     setResearchModalReq(null)
     window.dispatchEvent(new Event('kss_backend_updated'))
+  }
+
+  const handleVerifyDoc = (productId: string, docType: 'goodsReceipt' | 'invoice' | 'productOrder') => {
+    const verifier = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username : 'Executive Administrator'
+    const ticket = tickets?.find(t => t.requestId === liveTrackingReq?.id || t.id === liveTrackingReq?.id)
+    if (ticket) {
+      verifyDocument(ticket.id, productId, docType, verifier)
+    }
+
+    const product = matchedTicketProducts.find(p => p.id === productId)
+    let documentId = ''
+    if (docType === 'goodsReceipt') {
+      documentId = product?.goodsReceipt?.id || ticket?.goodsReceipt?.id || ''
+    } else if (docType === 'invoice') {
+      documentId = product?.invoice?.id || ticket?.invoice?.id || ''
+    } else {
+      documentId = product?.productOrder?.id || ticket?.productOrder?.id || ticket?.requestId || ''
+    }
+
+    if (documentId) {
+      verifyDocumentApi(documentId, docType, verifier, productId)
+        .then(() => {
+          refreshData?.()
+          window.dispatchEvent(new Event('kss_backend_updated'))
+          showToast(`✓ Document verified successfully (${docType === 'goodsReceipt' ? 'Goods Receipt Note' : docType === 'invoice' ? 'Tax Invoice' : 'Purchase Order'})!`, 'success')
+        })
+        .catch(e => console.error('API verify error:', e))
+    } else {
+      refreshData?.()
+      window.dispatchEvent(new Event('kss_backend_updated'))
+      showToast(`✓ Document marked as verified!`, 'success')
+    }
   }
 
   const handleFilterChange = (filter: FilterStatus) => {
@@ -200,7 +236,7 @@ export const AdminRequestsPage: React.FC = () => {
 
   const rejectedRequests = useMemo(() => {
     return allRequests.filter(r => {
-      return r.status.includes('rejected') || Boolean(r.financeStatus?.includes('Rejected'))
+      return String(r.status || '').toLowerCase().includes('rejected') || Boolean(r.financeStatus?.includes('Rejected'))
     })
   }, [allRequests])
 
@@ -281,24 +317,34 @@ export const AdminRequestsPage: React.FC = () => {
     setApprovalNote('')
   }
 
-  const handleConfirmApprovalDossier = (params: ApprovalParameters) => {
+  const handleConfirmApprovalDossier = async (params: ApprovalParameters) => {
     if (!approveModalReq) return
     const approvedId = approveModalReq.id
+    try {
+      await adminApproveRequest(
+        approvedId,
+        params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
+        'Executive Administrator',
+        params.approvedAmount
+      )
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || 'Admin approval could not be saved.', 'error')
+      return
+    }
     setJustApprovedIds(prev => [...prev, approvedId])
-    adminApproveRequest(
-      approvedId,
-      params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
-      'Executive Administrator',
-      params.approvedAmount
-    )
     showToast(`✓ Request ${approvedId} approved with executive authority!`, 'success')
     setApproveModalReq(null)
     setApprovalNote('')
   }
 
-  const handleApprove = (r: ProcurementRequest) => {
+  const handleApprove = async (r: ProcurementRequest) => {
+    try {
+      await adminApproveRequest(r.id, approvalNote.trim() || 'Verified within Q3 budget cap. Authorized for PO release.', 'Executive Administrator')
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || 'Admin approval could not be saved.', 'error')
+      return
+    }
     setJustApprovedIds(prev => [...prev, r.id])
-    adminApproveRequest(r.id, approvalNote.trim() || 'Verified within Q3 budget cap. Authorized for PO release.', 'Executive Administrator')
     showToast(`✓ Request ${r.id} approved with executive authority!`, 'success')
     setApproveModalReq(null)
     setApprovalNote('')
@@ -678,7 +724,7 @@ export const AdminRequestsPage: React.FC = () => {
 
             // Matched budget for live budget availability check
             const matchedBudget = budgets?.find(
-              (b) => b.department === req.department && b.category.includes(req.category)
+              (b) => b.department === req.department && String(b.category || '').includes(req.category || '')
             ) || budgets?.find((b) => b.department === req.department)
             const budgetAvailable = matchedBudget ? matchedBudget.available : 1250000
 
@@ -1360,6 +1406,24 @@ export const AdminRequestsPage: React.FC = () => {
             grnDocNumber: viewModalDoc.product.goodsReceipt.grnDocNumber
           }}
           onClose={() => setViewModalDoc(null)}
+          onVerify={() => {
+            if (!viewModalDoc) return
+            handleVerifyDoc(viewModalDoc.product.id, viewModalDoc.docType)
+            const verifier = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username : 'Executive Administrator'
+            const now = new Date().toISOString()
+            setViewModalDoc(prev => prev ? {
+              ...prev,
+              product: {
+                ...prev.product,
+                [viewModalDoc.docType]: {
+                  ...prev.product[viewModalDoc.docType],
+                  verified: true,
+                  verifiedBy: verifier,
+                  verifiedAt: now
+                }
+              }
+            } : null)
+          }}
         />
       )}
       {/* Structured Executive Request Approval Dossier Modal (Image 2) */}

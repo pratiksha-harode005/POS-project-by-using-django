@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('request_management', '0003_purchaserequest_approved_amount_and_more'),
-        ('request_management', '0003_purchaserequest_extra_fields_and_more'),
+        ('request_management', '0004_alter_approvalstep_created_at_and_more'),
     ]
 
     operations = [

@@ -5,14 +5,47 @@ from apps.procurement.models import PurchaseOrder, GoodsReceipt
 from apps.vendor_management.models import Vendor
 
 
+class InvoiceQuerySet(models.QuerySet):
+    def _get_missing_columns(self):
+        try:
+            from django.db import connection
+            if connection.vendor == 'sqlite':
+                with connection.cursor() as cursor:
+                    cursor.execute(f"PRAGMA table_info({self.model._meta.db_table})")
+                    cols = {row[1] for row in cursor.fetchall()}
+                    if cols:
+                        return [f.name for f in self.model._meta.concrete_fields if f.column and f.column not in cols]
+        except Exception:
+            pass
+        return []
+
+    def iterator(self, *args, **kwargs):
+        missing = self._get_missing_columns()
+        if missing:
+            return super().defer(*missing).iterator(*args, **kwargs)
+        return super().iterator(*args, **kwargs)
+
+
+class InvoiceManager(models.Manager):
+    def get_queryset(self):
+        qs = InvoiceQuerySet(self.model, using=self._db)
+        missing = qs._get_missing_columns()
+        if missing:
+            return qs.defer(*missing)
+        return qs
+
+
 class Invoice(TimeStampedModel):
     STATUS_CHOICES = (
         ('Pending Match', 'Pending Match'),
         ('Matched', 'Matched'),
         ('Exception', 'Exception'),
         ('Approved', 'Approved'),
+        ('Rejected', 'Rejected'),
         ('Paid', 'Paid'),
     )
+
+    objects = InvoiceManager()
 
     invoice_id = models.CharField(max_length=50, unique=True, editable=False)
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='invoices')
@@ -28,6 +61,7 @@ class Invoice(TimeStampedModel):
     is_manager_verified = models.BooleanField(default=False, db_index=True)
     verified_by_name = models.CharField(max_length=200, blank=True, default='')
     verified_at = models.DateTimeField(null=True, blank=True)
+    reject_reason = models.TextField(blank=True, default='')
 
     def save(self, *args, **kwargs):
         if not self.invoice_id:

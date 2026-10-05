@@ -4,10 +4,11 @@ import {
   Calendar, Truck, Check, Clock, X, Users, Package, FileText,
   BarChart2, History, AlertCircle, Eye
 } from 'lucide-react'
-import { useManagerData, isMockRfq } from '../../context/ManagerDataContext'
+import { useManagerData, isMockRfq, isFinanceRelevantRequest } from '../../context/ManagerDataContext'
 import type { RFQ, RFQStatus } from '../../context/ManagerDataContext'
 import { CreateRFQModal } from '../../components/portal/CreateRFQModal'
 import { formatDate } from '../../utils/formatDate'
+import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v?: number | string | null) => {
   if (v === undefined || v === null) return '₹0'
@@ -220,8 +221,15 @@ function RFQDetail({ rfq, onBack }: { rfq: RFQ; onBack: () => void }) {
   )
 }
 
-export const ManagerRFQsPage: React.FC = () => {
-  const { rfqs } = useManagerData()
+interface ManagerRFQsPageProps {
+  role?: 'MANAGER' | 'FINANCE' | 'ADMIN'
+}
+
+export const ManagerRFQsPage: React.FC<ManagerRFQsPageProps> = ({ role = 'MANAGER' }) => {
+  const { user } = useAuth()
+  const effectiveRole = role || (user?.role as any) || 'MANAGER'
+  const isFinance = (effectiveRole || '').toUpperCase() === 'FINANCE'
+  const { rfqs, allRequests } = useManagerData()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<RFQStatus | 'all'>('all')
   const [deptFilter, setDeptFilter] = useState('All')
@@ -229,25 +237,52 @@ export const ManagerRFQsPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
-  const departments = ['All', ...Array.from(new Set(rfqs.map(r => r.department)))]
+  // Filter RFQs for the current role
+  const roleFilteredRfqs = useMemo(() => {
+    if (!isFinance) return rfqs
+    return rfqs.filter((r: any) => {
+      const prDetail = r.purchase_request_detail
+      const matchedReq = (allRequests || []).find(req =>
+        req.id === r.purchase_request ||
+        req.id === prDetail?.request_id ||
+        (req as any).rawRequest?.id === r.purchase_request ||
+        (req as any).rawRequest?.request_id === prDetail?.request_id
+      )
+      if (matchedReq) {
+        return isFinanceRelevantRequest(matchedReq)
+      }
+      if (prDetail) {
+        if (prDetail.flow_type === 'B') return true
+        if (prDetail.created_by_detail?.role === 'FINANCE') return true
+        if (prDetail.is_forwarded_to_finance) return true
+        const st = (prDetail.status || '').toUpperCase()
+        if (st.includes('FINANCE') || st === 'RECOMMENDED_TO_FINANCE' || st === 'MANAGER_RECOMMENDED_TO_FINANCE' || st === 'RECOMMENDED_TO_ADMIN') {
+          return true
+        }
+      }
+      return false
+    })
+  }, [rfqs, allRequests, isFinance])
 
-  const filtered = useMemo(() => rfqs.filter(r => {
+  const departments = ['All', ...Array.from(new Set(roleFilteredRfqs.map(r => r.department)))]
+
+  const filtered = useMemo(() => roleFilteredRfqs.filter(r => {
     const matchSearch = !search || r.title.toLowerCase().includes(search.toLowerCase()) || r.id.toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === 'all' || r.status === statusFilter
     const matchDept = deptFilter === 'All' || r.department === deptFilter
     return matchSearch && matchStatus && matchDept
-  }), [rfqs, search, statusFilter, deptFilter])
+  }), [roleFilteredRfqs, search, statusFilter, deptFilter])
 
   // Summary card counts
   const counts = useMemo(() => ({
-    total: rfqs.length,
-    draft: rfqs.filter(r => r.status === 'draft').length,
-    sent: rfqs.filter(r => r.status === 'sent').length,
-    quotes_received: rfqs.filter(r => r.status === 'quotes_received').length,
-    under_evaluation: rfqs.filter(r => r.status === 'under_evaluation').length,
-    awarded: rfqs.filter(r => r.status === 'awarded').length,
-    expired: rfqs.filter(r => r.status === 'expired').length,
-  }), [rfqs])
+    total: roleFilteredRfqs.length,
+    draft: roleFilteredRfqs.filter(r => r.status === 'draft').length,
+    sent: roleFilteredRfqs.filter(r => r.status === 'sent').length,
+    quotes_received: roleFilteredRfqs.filter(r => r.status === 'quotes_received').length,
+    under_evaluation: roleFilteredRfqs.filter(r => r.status === 'under_evaluation').length,
+    awarded: roleFilteredRfqs.filter(r => r.status === 'awarded').length,
+    expired: roleFilteredRfqs.filter(r => r.status === 'expired').length,
+  }), [roleFilteredRfqs])
 
   if (selectedRFQ) return <RFQDetail rfq={selectedRFQ} onBack={() => setSelectedRFQ(null)} />
 

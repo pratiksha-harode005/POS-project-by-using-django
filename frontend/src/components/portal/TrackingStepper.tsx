@@ -44,6 +44,7 @@ export interface TrackingStepperProps {
   is_invoice_verified?: boolean
   finalApprovalBy?: string
   approvalPath?: string
+  requestOperation?: string
   timeline?: Array<{
     stage: number
     title: string
@@ -85,6 +86,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
   is_invoice_verified,
   finalApprovalBy,
   approvalPath,
+  requestOperation,
   timeline,
 }) => {
   const [showHistory, setShowHistory] = useState(false)
@@ -130,6 +132,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
       timeline,
       finalApprovalBy,
       approvalPath,
+      requestOperation,
     })
     return res
   }, [
@@ -154,6 +157,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
     timeline,
     finalApprovalBy,
     approvalPath,
+    requestOperation,
     tick
   ])
 
@@ -187,181 +191,11 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
       if (recorded.length > 0) return recorded
     }
 
+    // Use real approval history if provided — never fall back to hardcoded/mock data
     if (history && history.length > 0) return history
 
-    const isSoftware = progression.workflowType === 'SOFTWARE'
-    const items: StepHistoryItem[] = [
-      {
-        stageNumber: 1,
-        stageName: 'Create Request',
-        actor: 'Team Lead (Requester)',
-        action: 'Request Created & Submitted',
-        timestamp: lastUpdated ? `${lastUpdated} 09:30 AM` : '2026-09-11 09:30 AM',
-        note: 'Initial procurement request submitted for approval.',
-      },
-    ]
-
-    if (isSoftware) {
-      // Software 6-Stage Workflow History Fallback
-      if (effectiveStageIdx >= 1) {
-        items.push({
-          stageNumber: 2,
-          stageName: 'PM Review',
-          actor: 'Project Manager — Sarah Manager',
-          action: effectiveStageIdx === 1 ? 'Under Review & Pre-Estimation' : 'PM Review Completed',
-          timestamp: lastUpdated ? `${lastUpdated} 11:15 AM` : '2026-09-11 11:15 AM',
-          note:
-            effectiveStageIdx === 1
-              ? 'Request is currently undergoing manager budget and pre-estimation review.'
-              : 'PM review and pre-estimation completed.',
-        })
-      }
-
-      if (effectiveStageIdx >= 2) {
-        items.push({
-          stageNumber: 3,
-          stageName: 'Request Approved',
-          actor: 'Sarah Manager (Procurement Manager)',
-          action: effectiveStageIdx === 2 ? 'Pending Final Recommendation' : 'Request Approved & Forwarded',
-          timestamp: lastUpdated ? `${lastUpdated} 01:30 PM` : '2026-09-11 01:30 PM',
-          note: 'Request approved by PM and recommended to Finance Directorate.',
-        })
-      }
-
-      if (effectiveStageIdx >= 3) {
-        items.push({
-          stageNumber: 4,
-          stageName: 'Payment Approved',
-          actor: 'Mark Finance (Finance Directorate)',
-          action: effectiveStageIdx === 3 ? 'Under Financial Audit' : 'Payment Approved',
-          timestamp: lastUpdated ? `${lastUpdated} 03:00 PM` : '2026-09-11 03:00 PM',
-          note: 'Commercial budget approved and capital authorized for disbursement.',
-        })
-      }
-
-      if (effectiveStageIdx >= 4) {
-        items.push({
-          stageNumber: 5,
-          stageName: 'Payment Justified',
-          actor: 'Treasury & Bank Clearing',
-          action: effectiveStageIdx === 4 ? 'Awaiting Payment Disbursement' : 'Payment Justified & Settled',
-          timestamp: lastUpdated ? `${lastUpdated} 04:15 PM` : '2026-09-11 04:15 PM',
-          note: 'Transaction executed and UTR justification recorded.',
-        })
-      }
-
-      if (effectiveStageIdx >= 5 || progression.isCompleted) {
-        items.push({
-          stageNumber: 6,
-          stageName: 'Request Closed',
-          actor: 'Team Lead / Requester',
-          action: progression.isCompleted ? 'Request Closed & Verified' : 'Awaiting Receipt Confirmation',
-          timestamp: lastUpdated ? `${lastUpdated} 05:00 PM` : '2026-09-11 05:00 PM',
-          note: 'Software credentials received, verified, and procurement request closed.',
-        })
-      }
-    } else {
-      // Hardware supply chain steps
-      if (effectiveStageIdx >= 1) {
-        items.push({
-          stageNumber: 2,
-          stageName: 'Manager Approval',
-          actor: 'Sarah Manager',
-          action: effectiveStageIdx === 1 ? 'Under Review' : 'Approved by Manager',
-          timestamp: lastUpdated ? `${lastUpdated} 11:15 AM` : '2026-09-11 11:15 AM',
-          note:
-            effectiveStageIdx === 1
-              ? 'Request is currently undergoing manager budget and justification verification.'
-              : 'Manager approved and routed to next approval stage.',
-        })
-      }
-
-      if (effectiveStageIdx >= 2) {
-        items.push({
-          stageNumber: 3,
-          stageName: 'Finance Approval',
-          actor: 'Mark Finance',
-          action: effectiveStageIdx === 2 ? 'In Review' : 'Budget Approved',
-          timestamp: lastUpdated ? `${lastUpdated} 02:45 PM` : '2026-09-11 02:45 PM',
-          note: 'Department allocation checked against Q3 Capex threshold.',
-        })
-      }
-
-      if (effectiveStageIdx >= 3) {
-        items.push({
-          stageNumber: 4,
-          stageName: 'Admin Approval',
-          actor: 'Priyanka Sharma (Admin)',
-          action: effectiveStageIdx === 3 ? 'Under Admin Review' : 'Approved by Executive Authority',
-          timestamp: lastUpdated ? `${lastUpdated} 04:30 PM` : '2026-09-11 04:30 PM',
-          note: 'Executive procurement governance and compliance sign-off.',
-        })
-      }
-
-      if (effectiveStageIdx >= 4) {
-        items.push({
-          stageNumber: 5,
-          stageName: 'RFQ Sent',
-          actor: 'Procurement Sourcing Team',
-          action: 'RFQs Dispatched to Vendors',
-          timestamp: `${lastUpdated} 09:00 AM`,
-          note: 'Request for Quotations dispatched to verified vendors.',
-        })
-      }
-      if (effectiveStageIdx >= 5) {
-        items.push({
-          stageNumber: 6,
-          stageName: 'Vendor Quotes Received',
-          actor: 'Vendor Sourcing Desk',
-          action: 'Quotations Evaluated',
-          timestamp: `${lastUpdated} 01:20 PM`,
-          note: 'Bids received and commercial comparison completed.',
-        })
-      }
-      if (effectiveStageIdx >= 6) {
-        items.push({
-          stageNumber: 7,
-          stageName: 'Delivery',
-          actor: 'Dock & Receiving',
-          action: 'Physical Delivery Verified',
-          timestamp: `${lastUpdated} 03:00 PM`,
-          note: 'Goods received on-site and inspected.',
-        })
-      }
-      if (effectiveStageIdx >= 7) {
-        items.push({
-          stageNumber: 8,
-          stageName: 'Invoice',
-          actor: 'Accounts Payable',
-          action: 'Invoice Reconciled',
-          timestamp: `${lastUpdated} 10:30 AM`,
-          note: 'Vendor tax invoice matched with delivery receipt and order record.',
-        })
-      }
-      if (effectiveStageIdx >= 8) {
-        items.push({
-          stageNumber: 9,
-          stageName: 'Verification and Order Complete',
-          actor: 'Procurement Audit & Operations',
-          action: 'Two-Way Verification Certified',
-          timestamp: `${lastUpdated} 02:00 PM`,
-          note: 'Goods Receipt and Invoice verification completed and approved for payment release.',
-        })
-      }
-      if (effectiveStageIdx >= 9 || progression.isCompleted) {
-        items.push({
-          stageNumber: 10,
-          stageName: 'Payment',
-          actor: 'Treasury & Finance',
-          action: progression.isCompleted ? 'Payment Processed & Released' : 'Disbursement Scheduled',
-          timestamp: `${lastUpdated} 04:45 PM`,
-          note: 'Procurement payment disbursed to awarded supplier to settle order fulfillment.',
-        })
-      }
-    }
-
-    return items
-  }, [history, hasBackendTimeline, timeline, effectiveStageIdx, lastUpdated, progression.workflowType, progression.isCompleted])
+    return []
+  }, [history, hasBackendTimeline, timeline])
 
   // Derive active status badge that works with both backend timeline and client progression
   const statusBadge = useMemo(() => {
@@ -395,7 +229,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
               Live Workflow Sync
             </span>
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-              {progression.workflowType === 'SOFTWARE' ? 'Software / Digital (6 Stages)' : 'Hardware Workflow (10 Stages)'}
+              {progression.workflowType === 'SOFTWARE' ? `Software Workflow (${stages.length} Stages)` : `Hardware Workflow (${stages.length} Stages)`}
             </span>
           </div>
         </div>
@@ -594,37 +428,44 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
         {/* Expandable History Timeline */}
         {showHistory && (
           <div className="mt-4 pt-4 border-t border-gray-100 animate-fadeIn">
-            <div className="space-y-3">
-              {effectiveHistory.map((h, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-3 p-3 bg-gray-50/80 rounded-xl border border-gray-200/80 text-xs"
-                >
-                  <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
-                    {h.stageNumber}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center justify-between gap-1">
-                      <span className="font-bold text-gray-900">{h.stageName}</span>
-                      <span className="text-[11px] text-gray-400 font-medium">{h.timestamp}</span>
+            {effectiveHistory.length === 0 ? (
+              <div className="flex items-center gap-2 text-xs text-gray-400 italic py-2">
+                <AlertCircle size={14} className="text-gray-300 flex-shrink-0" />
+                <span>No history entries available yet. Activity will appear here as the request progresses.</span>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {effectiveHistory.map((h, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 p-3 bg-gray-50/80 rounded-xl border border-gray-200/80 text-xs"
+                  >
+                    <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
+                      {h.stageNumber}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <span className="font-bold text-gray-900">{h.stageName}</span>
+                        <span className="text-[11px] text-gray-400 font-medium">{h.timestamp}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-gray-500">By:</span>
+                        <span className="font-semibold text-gray-700">{h.actor}</span>
+                        <span className="text-gray-300">•</span>
+                        <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-bold">
+                          {h.action}
+                        </span>
+                      </div>
+                      {h.note && (
+                        <p className="text-gray-600 text-[11px] mt-1.5 bg-white p-2 rounded-lg border border-gray-100">
+                          {h.note}
+                        </p>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-gray-500">By:</span>
-                      <span className="font-semibold text-gray-700">{h.actor}</span>
-                      <span className="text-gray-300">•</span>
-                      <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-bold">
-                        {h.action}
-                      </span>
-                    </div>
-                    {h.note && (
-                      <p className="text-gray-600 text-[11px] mt-1.5 bg-white p-2 rounded-lg border border-gray-100">
-                        {h.note}
-                      </p>
-                    )}
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

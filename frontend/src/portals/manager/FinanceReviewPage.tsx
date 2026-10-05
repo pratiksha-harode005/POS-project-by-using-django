@@ -40,6 +40,21 @@ export const isRequestTransmittedToFinance = (r?: ProcurementRequest | null): bo
   if (!r) return false
   const rawSt = String(r.status || '').toLowerCase()
   const rawFst = String(r.financeStatus || '').toLowerCase()
+
+  const finalBy = (r as any).final_approval_by || (r as any).extra_fields?.final_approval_by
+  const isManagerApprovedOnly = (
+    finalBy === 'MANAGER' ||
+    (r as any).raw_status === 'MANAGER_APPROVED' ||
+    rawSt === 'manager_approved'
+  ) && !r.isForwardedToFinance && !r.financeApprovedBy && !['Approved', 'Paid', 'Recommended to Admin'].includes(r.financeStatus || '') && !['RECOMMENDED_TO_FINANCE', 'FINANCE_REVIEW', 'RECOMMENDED_TO_ADMIN'].includes((r as any).raw_status || '')
+
+  if (isManagerApprovedOnly) {
+    if (r.paymentStatus === 'Paid' || rawSt === 'payment_completed' || rawSt === 'completed' || (r as any).raw_status === 'PAYMENT_COMPLETED' || (r as any).raw_status === 'COMPLETED') {
+      return true
+    }
+    return false
+  }
+
   return Boolean(
     r.isForwardedToFinance ||
     rawSt === 'sent_to_finance' ||
@@ -51,14 +66,14 @@ export const isRequestTransmittedToFinance = (r?: ProcurementRequest | null): bo
     rawSt.includes('recommend') ||
     rawSt.includes('finance') ||
     rawFst.includes('sent to finance') ||
-    rawFst.includes('review') ||
-    rawFst.includes('approved') ||
+    rawFst.includes('recommended') ||
+    rawFst === 'approved' ||
     rawFst.includes('finance') ||
     rawFst.includes('completed') ||
     rawFst.includes('settled') ||
-    (r.currentStage !== undefined && r.currentStage >= 2) ||
     (Array.isArray(r.history) && r.history.some((h: any) =>
       h.action === 'RECOMMEND' ||
+      h.action === 'RECOMMEND_FINANCE' ||
       (typeof h.actorRole === 'string' && h.actorRole.toUpperCase().includes('FINANCE')) ||
       (typeof h.remark === 'string' && h.remark.toLowerCase().includes('finance'))
     ))
@@ -100,27 +115,40 @@ export const FinanceReviewPage: React.FC = () => {
   // Correlate requests with payments
   const enrichedList = useMemo(() => {
     return financeReview.map(r => {
-      const matchingPay = payments.find(p =>
-        p.requestId === r.id ||
-        (r.id && p.requestId?.includes(r.id.replace('REQ-', ''))) ||
-        (r.poNumber && p.poNumber === r.poNumber) ||
-        (r.invoiceDetails?.invoiceNumber && p.invoiceId === r.invoiceDetails.invoiceNumber)
-      )
+      const cleanReqId = (r.id || '').replace(/^(REQ-|PO-|TCK-|RFQ-|DOC-|INV-|GRN-|REC-)/, '').trim().toUpperCase()
+      const matchingPay = payments.find(p => {
+        if (!p.requestId) return false
+        const cleanPayReqId = String(p.requestId).replace(/^(REQ-|PO-|TCK-|RFQ-|DOC-|INV-|GRN-|REC-)/, '').trim().toUpperCase()
+        return (
+          p.requestId === r.id ||
+          (cleanReqId && cleanPayReqId === cleanReqId) ||
+          (cleanReqId && cleanPayReqId.includes(cleanReqId)) ||
+          (cleanPayReqId && cleanReqId.includes(cleanPayReqId)) ||
+          (r.poNumber && p.poNumber === r.poNumber) ||
+          (r.invoiceDetails?.invoiceNumber && p.invoiceId === r.invoiceDetails.invoiceNumber)
+        )
+      })
 
       const isPaid = Boolean(
         matchingPay?.status === 'Paid' ||
         r.paymentStatus === 'Paid' ||
         r.status === 'completed' ||
+        r.status === 'payment_completed' ||
+        (r as any).raw_status === 'COMPLETED' ||
+        (r as any).raw_status === 'PAYMENT_COMPLETED' ||
+        r.financeStatus === 'Completed — Payment Settled' ||
+        r.financeStatus === 'Paid' ||
         r.currentStage === 9 ||
         r.paymentTransactionRef
       )
 
-      const utr = r.paymentTransactionRef || matchingPay?.transactionRef || matchingPay?.referenceNumber || (matchingPay as any)?.reference_number || (isPaid ? `UTR-${(r.paidDate || r.date || new Date().toISOString().split('T')[0]).replace(/-/g, '')}-${r.id.replace(/[^a-zA-Z0-9]/g, '')}` : undefined)
+      const rawUtr = r.paymentTransactionRef || matchingPay?.transactionRef || matchingPay?.referenceNumber || (matchingPay as any)?.reference_number || (r as any).paymentReference || (r as any).extraFields?.payment_reference || (r as any).payment_reference
+      const utr = rawUtr ? String(rawUtr).replace(/^MOCK-PAY-/, 'UTR-') : (isPaid ? `UTR-${(r.paidDate || r.date || new Date().toISOString().split('T')[0]).replace(/-/g, '')}-${cleanReqId || r.id.replace(/[^a-zA-Z0-9]/g, '')}` : undefined)
       const payDate = r.paidDate || matchingPay?.paymentDate || (isPaid ? r.date : undefined)
       const payAmount = matchingPay?.amount ?? r.amount
       const vendorName = matchingPay?.vendor || r.vendor || 'Vendor Partner'
-      const poNum = matchingPay?.poNumber || r.poNumber || `PO-${r.id.replace(/^REQ-/, '')}`
-      const invNum = matchingPay?.invoiceId || r.invoiceDetails?.invoiceNumber || `INV-${r.id.replace(/^REQ-/, '')}`
+      const poNum = matchingPay?.poNumber || r.poNumber || (cleanReqId ? `PO-${cleanReqId}` : `PO-${r.id.replace(/^REQ-/, '')}`)
+      const invNum = matchingPay?.invoiceId || r.invoiceDetails?.invoiceNumber || (cleanReqId ? `INV-${cleanReqId}` : `INV-${r.id.replace(/^REQ-/, '')}`)
 
       return {
         ...r,
@@ -131,7 +159,7 @@ export const FinanceReviewPage: React.FC = () => {
         effectiveVendor: vendorName,
         effectivePoNumber: poNum,
         effectiveInvoiceNumber: invNum,
-        effectivePaymentMethod: matchingPay?.paymentMethod || 'NEFT / RTGS Corporate Treasury',
+        effectivePaymentMethod: matchingPay?.paymentMethod || (r as any).paymentMethod || (r as any).extraFields?.payment_method || 'Online Bank Transfer',
       }
     })
   }, [financeReview, payments])
@@ -439,7 +467,7 @@ export const FinanceReviewPage: React.FC = () => {
           }).map(r => {
             const isNew = isUnread(r.id)
             const isSettled = r.isPaid
-            const isAlreadySent = isRequestTransmittedToFinance(r)
+            const isAlreadySent = !isSettled && isRequestTransmittedToFinance(r)
             const isReceipt = Boolean((r as any).extraFields?.payment_justification || (r as any).extraFields?.payment_justification_detail || (r as any).raw_status === 'PAYMENT_JUSTIFICATION_SUBMITTED')
             
             return (
@@ -463,7 +491,7 @@ export const FinanceReviewPage: React.FC = () => {
                       </span>
                       {isSettled ? (
                         <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
-                          <CheckCircle2 size={11} /> Paid & Settled
+                          <CheckCircle2 size={11} /> Paid &amp; Settled
                         </span>
                       ) : (
                         <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${statusColors[r.financeStatus || ''] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
@@ -476,6 +504,11 @@ export const FinanceReviewPage: React.FC = () => {
                           r.priority === 'High' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
                         }`}>
                           {r.priority} Priority
+                        </span>
+                      )}
+                      {isReceipt && (
+                        <span className="text-[10px] text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200 font-bold flex items-center gap-1">
+                          <FileText size={11} /> Payment Receipt Submitted
                         </span>
                       )}
                     </div>
@@ -491,43 +524,39 @@ export const FinanceReviewPage: React.FC = () => {
                         <b className="text-slate-900">Justification:</b> {r.justification}
                       </p>
                     )}
-                  </div>
-                  <h2 className="text-base font-bold text-slate-900 mb-1">{r.title}</h2>
-                  <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-                    <span>👤 Requester: <b className="text-slate-800">{r.requester}</b></span>
-                    <span>🏢 Department: <b className="text-slate-800">{r.department}</b></span>
-                    <span>📁 Category: <b className="text-slate-800">{r.category || 'General'}</b></span>
-                    <span>📅 Submitted: {r.date}</span>
                     {isReceipt && (
-                      <span className="text-purple-600 font-bold flex items-center gap-1">
-                        <FileText size={13} /> Payment Receipt Submitted
-                      </span>
+                      <div className="mt-3 bg-purple-50/70 border border-purple-100 p-3 rounded-xl text-xs space-y-1.5">
+                        <p><b className="text-purple-900">Payment Method:</b> <span className="text-purple-700">{(r as any).paymentMethod || (r as any).extraFields?.payment_method || (r as any).payment_method || 'N/A'}</span></p>
+                        <p><b className="text-purple-900">Transaction Ref:</b> <span className="text-purple-700 font-mono font-bold">{String((r as any).paymentReference || (r as any).extraFields?.payment_reference || (r as any).payment_reference || r.effectiveUtr || 'N/A').replace(/^MOCK-PAY-/, 'UTR-')}</span></p>
+                        <p>
+                          <b className="text-purple-900">Payment Details:</b>{' '}
+                          <span className="text-purple-700">
+                            {typeof (r as any).extraFields?.payment_justification === 'string'
+                              ? (r as any).extraFields.payment_justification
+                              : ((r as any).extraFields?.payment_justification?.business_justification ||
+                                 (r as any).extraFields?.payment_justification?.proof_description ||
+                                 (r as any).payment_justification_detail?.business_purpose ||
+                                 (r as any).payment_justification_detail?.why_required ||
+                                 (r as any).payment_notes ||
+                                 'Receipt details provided.')}
+                          </span>
+                        </p>
+                      </div>
                     )}
                   </div>
-                  {r.justification && !isReceipt && (
-                    <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mt-3">
-                      <b className="text-slate-900">Justification:</b> {r.justification}
-                    </p>
-                  )}
-                  {isReceipt && (
-                    <div className="mt-3 bg-purple-50 border border-purple-100 p-3 rounded-lg text-xs space-y-1.5">
-                      <p><b className="text-purple-900">Payment Method:</b> <span className="text-purple-700">{(r as any).paymentMethod || (r as any).extraFields?.payment_method || (r as any).payment_method || 'N/A'}</span></p>
-                      <p><b className="text-purple-900">Transaction Ref:</b> <span className="text-purple-700">{(r as any).paymentReference || (r as any).extraFields?.payment_reference || (r as any).payment_reference || 'N/A'}</span></p>
-                      <p>
-                        <b className="text-purple-900">Payment Details:</b>{' '}
-                        <span className="text-purple-700">
-                          {typeof (r as any).extraFields?.payment_justification === 'string'
-                            ? (r as any).extraFields.payment_justification
-                            : ((r as any).extraFields?.payment_justification?.business_justification ||
-                               (r as any).extraFields?.payment_justification?.proof_description ||
-                               (r as any).payment_justification_detail?.business_purpose ||
-                               (r as any).payment_justification_detail?.why_required ||
-                               (r as any).payment_notes ||
-                               'Receipt details provided.')}
-                        </span>
-                      </p>
-                    </div>
-                  )}
+
+                  {/* Right Column: Amount & Spend Summary */}
+                  <div className="text-right bg-slate-50 border border-slate-200 rounded-2xl p-3.5 min-w-[170px] self-start flex-shrink-0">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Total Spend / Amount
+                    </span>
+                    <span className="text-lg font-black text-slate-900 block mt-0.5">
+                      {fmt(r.effectivePayAmount || r.amount || 0)}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block truncate max-w-[170px] mt-0.5" title={r.effectiveVendor || r.vendor || 'Vendor Partner'}>
+                      Vendor: <b className="text-slate-700">{r.effectiveVendor || r.vendor || 'Vendor Partner'}</b>
+                    </span>
+                  </div>
                 </div>
 
                 {/* ── DEDICATED TREASURY PAYMENT SETTLEMENT BANNER ── */}

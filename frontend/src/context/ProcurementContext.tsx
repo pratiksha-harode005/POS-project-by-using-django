@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { getTeamLeadRequests, createTeamLeadRequest, resubmitTeamLeadRequest } from '../api/teamleadApi'
 import { getWorkflowProgression, sortRequestsNewestFirst } from '../utils/workflowUtils'
-import { apiClient } from '../api/client'
+import { apiClient, invalidateApiCache } from '../api/client'
 import { triggerGlobalDataSync, subscribeGlobalDataSync } from '../utils/syncUtils'
 
 export interface ApprovalStep {
@@ -41,6 +41,10 @@ export interface PurchaseRequest {
   expectedDelivery?: string
   poRef?: string
   raw_status?: string
+  can_pay_mock?: boolean
+  is_payment_eligible?: boolean
+  can_acknowledge?: boolean
+  approved_amount?: number | string
   request_type?: string
   software_name?: string
   current_plan?: string
@@ -112,6 +116,7 @@ export interface PaymentRecord {
   payment_id?: string
   reference_number?: string
   payment_date?: string
+  created_at?: string
   vendor_name?: string
   payment_method?: string
   paymentMethod?: string
@@ -234,15 +239,14 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Dynamic parallel fetch from Django REST API backend
   const isFetchingRef = React.useRef(false)
+  const pendingRefetchRef = React.useRef(false)
 
   // Dynamic fetch from Django REST API backend
   const refreshBackendRequests = async () => {
-    const token = localStorage.getItem('access_token')
-    if (!token) {
-      setIsPaymentsLoading(false)
+    if (isFetchingRef.current) {
+      pendingRefetchRef.current = true
       return
     }
-    if (isFetchingRef.current) return
     isFetchingRef.current = true
 
     try {
@@ -260,6 +264,15 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         let normalizedStatus: PurchaseRequest['status'] = 'Pending'
         const bs = (item.status || '').toUpperCase()
+        const isSoftReq = (
+          (item.category || '').toLowerCase().includes('software') ||
+          (item.category || '').toLowerCase().includes('saas') ||
+          (item.category || '').toLowerCase().includes('cloud') ||
+          (item.category || '').toLowerCase().includes('license') ||
+          (item.category || '').toLowerCase().includes('subscription') ||
+          Boolean(item.software_name) ||
+          item.flow_type === 'B'
+        )
         if (bs === 'PAYMENT_COMPLETED') {
           normalizedStatus = 'Payment Completed'
         } else if (bs === 'COMPLETED' || bs === 'TEAM_LEAD_CONFIRMED' || bs === 'REQUEST_COMPLETED') {
@@ -295,7 +308,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           currentlyWithName = 'Pay Now (Mock) Ready'
         } else if (bs === 'PAYMENT_APPROVED') {
           currentlyWithRole = 'Team Lead'
-          currentlyWithName = 'Awaiting Payment Justification'
+          currentlyWithName = isSoftReq ? 'Pay Now (Mock) Ready' : 'Awaiting Payment Justification'
         } else if (bs === 'PAYMENT_PROCESSED') {
           currentlyWithRole = 'Team Lead'
           currentlyWithName = 'Awaiting Payment Justification'
@@ -315,15 +328,6 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           currentlyWithRole = 'Team Lead'
           currentlyWithName = 'Awaiting Re-submission'
         } else if (normalizedStatus === 'Approved' || bs === 'MANAGER_APPROVED') {
-          const isSoftReq = (
-            (item.category || '').toLowerCase().includes('software') ||
-            (item.category || '').toLowerCase().includes('saas') ||
-            (item.category || '').toLowerCase().includes('cloud') ||
-            (item.category || '').toLowerCase().includes('license') ||
-            (item.category || '').toLowerCase().includes('subscription') ||
-            Boolean(item.software_name) ||
-            item.flow_type === 'B'
-          )
           if (isSoftReq) {
             currentlyWithRole = 'Team Lead'
             currentlyWithName = 'Pay Now (Mock) Ready'
@@ -342,16 +346,6 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
             currentlyWithName = parts[0]
           }
         }
-
-        const isSoftReq = (
-          (item.category || '').toLowerCase().includes('software') ||
-          (item.category || '').toLowerCase().includes('saas') ||
-          (item.category || '').toLowerCase().includes('cloud') ||
-          (item.category || '').toLowerCase().includes('license') ||
-          (item.category || '').toLowerCase().includes('subscription') ||
-          Boolean(item.software_name) ||
-          item.flow_type === 'B'
-        )
 
         let effectiveCurrentStage = item.current_stage || 1
         if (isSoftReq) {
@@ -404,7 +398,9 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           dbId: item.id,
           lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
           currentlyWith: { role: currentlyWithRole, name: currentlyWithName },
+          currently_with: item.currently_with || undefined,
           flowType: item.flow_type || 'A',
+          workflow_type: item.workflow_type || undefined,
           extraFields: item.extra_fields || {},
           extra_fields: item.extra_fields || {},
           raw_status: item.status,
@@ -438,6 +434,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           confirmed_by_team_lead: item.confirmed_by_team_lead,
           confirmed_at: item.confirmed_at,
           timeline: item.timeline || [],
+          approval_steps: item.approval_steps || [],
+          approval_history: item.approval_history || [],
           final_approval_by: item.final_approval_by || item.extra_fields?.final_approval_by,
           approval_path: item.approval_path || item.final_approval_by || item.extra_fields?.final_approval_by,
           renewal_eligibility: item.renewal_eligibility,
@@ -480,15 +478,17 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           
           return {
             id: rp.payment_id || String(rp.id),
-            requestId: req?.id || String(rp.purchase_request),
-            title: req?.title || 'Unknown Request',
-            vendor: rp.vendor_name || req?.preferredVendor || rp.vendor_detail?.name || 'Unknown Vendor',
+            requestId: req?.request_id || req?.id || rp.purchase_request_detail?.request_id || String(rp.purchase_request),
+            title: req?.title || rp.purchase_request_detail?.title || 'Unknown Request',
+            vendor: rp.vendor_name || req?.preferredVendor || rp.purchase_request_detail?.preferred_vendor || rp.vendor_detail?.name || 'Unknown Vendor',
             amount: Number(rp.amount) || 0,
+            payment_date: rp.payment_date || undefined,
+            created_at: rp.created_at || undefined,
             status: st,
             paymentStage: 'Payment Processed',
             dueDate: req?.requiredBy || rp.payment_date || rp.created_at?.split('T')[0] || '',
             receiptUploaded: Boolean(rp.payment_proof),
-            flowType: req?.flowType || 'A',
+            flowType: req?.flowType || rp.purchase_request_detail?.flow_type || 'A',
             releaseReason: rp.notes || '',
             releasedBy: { role: 'System', name: rp.payment_method || 'Bank' },
             receiptDetails: {
@@ -547,10 +547,12 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
             )
 
             if (isSoft && hasPaymentInfo) {
-              const amt = Number(pj.actual_purchase_amount || pj.final_payable_amount || extra.actual_purchase_amount || extra.final_payable_amount || req.finance_approved_amount || req.approved_amount || req.estimatedCost || 0)
+              // Receipts must show the amount actually paid. Approval/request estimates are not
+              // payment amounts and caused unrelated receipts to inherit the same figure.
+              const amt = Number(pj.actual_purchase_amount ?? pj.final_payable_amount ?? extra.actual_purchase_amount ?? extra.final_payable_amount ?? 0)
               const receiptId = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${req.id}`
               const refNo = extra.software_receipt_id || extra.receipt_no || req.payment_reference || extra.payment_reference || `TXN-${req.id}`
-              const payDate = extra.receipt_generated_at?.split('T')[0] || extra.acknowledged_at?.split('T')[0] || pj.payment_date || extra.mock_payment_date?.split('T')[0] || req.requiredBy || req.date || ''
+              const payDate = pj.payment_date?.split('T')[0] || extra.mock_payment_date?.split('T')[0] || extra.receipt_generated_at?.split('T')[0] || extra.acknowledged_at?.split('T')[0] || req.confirmed_at?.split('T')[0] || req.created_at?.split('T')[0] || ''
 
               let st = 'Paid'
               if (rawSt === 'ADMIN_APPROVED' || rawSt === 'PAYMENT_APPROVED') {
@@ -605,6 +607,11 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } finally {
       isFetchingRef.current = false
       setIsPaymentsLoading(false)
+      if (pendingRefetchRef.current) {
+        pendingRefetchRef.current = false
+        invalidateApiCache()
+        refreshBackendRequests()
+      }
     }
   }
 
@@ -682,7 +689,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     setRequests((prev) => sortRequestsNewestFirst([newReq, ...prev.filter(r => r.id !== actualId)]))
-    triggerGlobalDataSync('request_created')
+    triggerGlobalDataSync('request_created', { request: createdData || newReq })
     // PERFORMANCE FIX: Removed duplicate refreshBackendRequests() call here.
     // triggerGlobalDataSync fires refreshBackendRequests via subscribeGlobalDataSync listener.
     // Calling it again here was causing double API fetching on every request submission.

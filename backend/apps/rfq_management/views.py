@@ -74,6 +74,35 @@ class RFQViewSet(viewsets.ModelViewSet):
                 if v_profile.category:
                     v_cat_q |= Q(purchase_request__category__iexact=v_profile.category.name)
                 return qs.filter(v_cat_q).distinct().order_by('-created_at')
+
+        is_finance_request = (
+            (getattr(user, 'is_authenticated', False) and getattr(user, 'role', None) == 'FINANCE') or
+            query_params.get('for_finance') == 'true' or
+            query_params.get('role') == 'FINANCE'
+        )
+        if is_finance_request:
+            finance_q = (
+                Q(purchase_request__flow_type='B') |
+                Q(purchase_request__created_by__role='FINANCE') |
+                Q(purchase_request__status__in=[
+                    PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE,
+                    PurchaseRequest.STATUS_MANAGER_RECOMMENDED_TO_FINANCE,
+                    PurchaseRequest.STATUS_FINANCE_REVIEW,
+                    PurchaseRequest.STATUS_FINANCE_RECOMMENDED,
+                    PurchaseRequest.STATUS_FINANCE_APPROVED,
+                    PurchaseRequest.STATUS_FINANCE_REJECTED,
+                    PurchaseRequest.STATUS_FINANCE_REPORT,
+                    PurchaseRequest.STATUS_FINANCE_RESEARCH,
+                    PurchaseRequest.STATUS_COST_ESTIMATION,
+                    PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN,
+                    PurchaseRequest.STATUS_FINANCE_RECOMMENDED_TO_ADMIN,
+                ]) |
+                Q(purchase_request__status__icontains='FINANCE') |
+                Q(purchase_request__approval_steps__decision='RECOMMEND') |
+                Q(purchase_request__approval_steps__role='FINANCE')
+            )
+            qs = qs.filter(finance_q)
+
         return qs.distinct().order_by('-created_at')
 
     def get_object(self):
@@ -81,7 +110,12 @@ class RFQViewSet(viewsets.ModelViewSet):
         lookup_val = self.kwargs.get(lookup_url_kwarg)
         qs = self.filter_queryset(self.get_queryset())
         if str(lookup_val).isdigit():
-            obj = qs.filter(Q(id=int(lookup_val)) | Q(rfq_id=str(lookup_val))).first()
+            obj = qs.filter(
+                Q(id=int(lookup_val)) |
+                Q(rfq_id__iexact=str(lookup_val)) |
+                Q(rfq_id__iexact=f"RFQ-{lookup_val}") |
+                Q(rfq_id__icontains=str(lookup_val))
+            ).first()
         else:
             obj = qs.filter(
                 Q(rfq_id__iexact=str(lookup_val)) |
@@ -171,6 +205,15 @@ class RFQViewSet(viewsets.ModelViewSet):
 
         data['invited_vendors'] = list(set(vendor_ids))
 
+        # Resolve and persist category on the RFQ itself (so vendor matching works for standalone RFQs)
+        effective_category = None
+        if pr_obj and pr_obj.category:
+            effective_category = pr_obj.category
+        elif 'category' in data and data['category']:
+            effective_category = str(data['category']).strip()
+        if effective_category:
+            data['category'] = effective_category
+
         # If an RFQ already exists for this purchase_request, update and reuse it instead of creating a duplicate
         if pr_obj:
             existing_rfq = RFQ.objects.filter(purchase_request=pr_obj).order_by('-created_at').first()
@@ -183,6 +226,8 @@ class RFQViewSet(viewsets.ModelViewSet):
                     existing_rfq.terms = data['terms']
                 if 'status' in data and data['status']:
                     existing_rfq.status = data['status']
+                if effective_category and not existing_rfq.category:
+                    existing_rfq.category = effective_category
                 existing_rfq.save()
                 if vendor_ids:
                     existing_rfq.invited_vendors.add(*vendor_ids)
@@ -371,6 +416,35 @@ class QuotationViewSet(viewsets.ModelViewSet):
             if hasattr(user, 'vendor_profile') and user.vendor_profile:
                 return qs.filter(vendor=user.vendor_profile).order_by('-created_at')
             return qs.order_by('-created_at')
+
+        is_finance_request = (
+            (getattr(user, 'is_authenticated', False) and getattr(user, 'role', None) == 'FINANCE') or
+            query_params.get('for_finance') == 'true' or
+            query_params.get('role') == 'FINANCE'
+        )
+        if is_finance_request:
+            finance_q = (
+                Q(rfq__purchase_request__flow_type='B') |
+                Q(rfq__purchase_request__created_by__role='FINANCE') |
+                Q(rfq__purchase_request__status__in=[
+                    PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE,
+                    PurchaseRequest.STATUS_MANAGER_RECOMMENDED_TO_FINANCE,
+                    PurchaseRequest.STATUS_FINANCE_REVIEW,
+                    PurchaseRequest.STATUS_FINANCE_RECOMMENDED,
+                    PurchaseRequest.STATUS_FINANCE_APPROVED,
+                    PurchaseRequest.STATUS_FINANCE_REJECTED,
+                    PurchaseRequest.STATUS_FINANCE_REPORT,
+                    PurchaseRequest.STATUS_FINANCE_RESEARCH,
+                    PurchaseRequest.STATUS_COST_ESTIMATION,
+                    PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN,
+                    PurchaseRequest.STATUS_FINANCE_RECOMMENDED_TO_ADMIN,
+                ]) |
+                Q(rfq__purchase_request__status__icontains='FINANCE') |
+                Q(rfq__purchase_request__approval_steps__decision='RECOMMEND') |
+                Q(rfq__purchase_request__approval_steps__role='FINANCE')
+            )
+            qs = qs.filter(finance_q)
+
         return qs.order_by('-created_at')
 
     def get_object(self):

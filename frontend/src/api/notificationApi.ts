@@ -20,7 +20,7 @@ export interface BackendNotification {
 export const getNotifications = async (params?: { role?: string; user?: string; vendor?: string; page_size?: number }): Promise<BackendNotification[]> => {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await apiClient.get('/notifications/', { params })
+      const res = await apiClient.get('/notifications/', { params, bypassCache: true })
       const data = res.data
       return Array.isArray(data) ? data : data?.results || []
     } catch (err: any) {
@@ -36,7 +36,7 @@ export const getNotifications = async (params?: { role?: string; user?: string; 
 
 export const getUnreadNotificationCount = async (params?: { role?: string; user?: string; vendor?: string }): Promise<number> => {
   try {
-    const res = await apiClient.get('/notifications/unread_count/', { params })
+    const res = await apiClient.get('/notifications/unread_count/', { params, bypassCache: true })
     return typeof res.data?.unread_count === 'number' ? res.data.unread_count : 0
   } catch {
     return 0

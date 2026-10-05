@@ -13,7 +13,7 @@ import autoTable from 'jspdf-autotable'
 import { useFinanceData, ProcurementRequest } from '../../context/ManagerDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { UnifiedReceiptModal } from '../../components/portal/UnifiedReceiptModal'
-import { isSoftwareRequest } from '../../utils/workflowUtils'
+import { isManagerApprovedRequest, isSoftwareRequest, normalizeWorkflowStatus } from '../../utils/workflowUtils'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -129,7 +129,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
       const extra = rrReq.extra_fields || rrReq.extraFields || rrAny.extra_fields || {}
       const realReqAmount = rrReq.requested_amount ?? pj.requested_amount ?? extra.requested_amount ?? rrReq.total_estimated_cost ?? rrAny.amount
       const realApprovedAmount = rrReq.approved_amount ?? pj.finance_approved_amount ?? pj.manager_approved_amount ?? extra.approved_amount ?? rrAny.approved_amount
-      const realActualAmount = rrReq.finance_approved_amount ?? pj.actual_purchase_amount ?? rrAny.finalPaidAmount ?? rrAny.amount
+      const realActualAmount = rrAny.finalPaidAmount ?? pj.final_payable_amount ?? pj.actual_purchase_amount ?? extra.final_payable_amount ?? extra.actual_purchase_amount ?? rrAny.amount ?? 0
 
       let pay = payments.find((p: any) => 
         p.requestId === matchedReceiptReport.id || 
@@ -175,7 +175,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
     const re = reqObj.research_estimation || {}
     const realReqAmount = reqObj.requested_amount ?? pj.requested_amount ?? extra.requested_amount ?? reqObj.total_estimated_cost ?? rAny.totalAmount ?? rAny.amount
     const realApprovedAmount = reqObj.finance_approved_amount ?? reqObj.approved_amount ?? pj.finance_approved_amount ?? pj.manager_approved_amount ?? extra.approved_amount ?? rAny.approved_amount
-    const realActualAmount = pj.final_payable_amount ?? pj.actual_purchase_amount ?? extra.final_payable_amount ?? extra.actual_purchase_amount ?? reqObj.finance_approved_amount ?? rAny.finalPaidAmount ?? realApprovedAmount ?? realReqAmount
+    const realActualAmount = pj.final_payable_amount ?? pj.actual_purchase_amount ?? extra.final_payable_amount ?? extra.actual_purchase_amount ?? rAny.finalPaidAmount ?? rAny.amount ?? 0
 
     let pay = payments.find((p: any) => 
       p.requestId === cleanId || 
@@ -228,25 +228,21 @@ export const FinanceReceivedReportsPage: React.FC = () => {
     const reqObj = item.originalRequest || item.rawRequest || item
     const cleanId = String(reqObj.request_id || reqObj.id || item.id || '').replace(/^REP-/, '')
     
-    // 1. Direct match in receiptReports
-    if (receiptReports.some(rr => rr.id === cleanId || rr.id === `REQ-${cleanId}` || rr.rawRequest?.request_id === cleanId || rr.rawRequest?.id === cleanId)) {
-      return true
-    }
-
-    // 2. Extra fields markers from DB
+    // A request row in the ledger is not itself proof that a receipt exists.
+    // Extra fields markers from DB
     const extra = reqObj.extra_fields || reqObj.extraFields || item.extra_fields || {}
     if (extra.software_receipt_id || extra.receipt_no || extra.payment_id || extra.mock_payment_ref || extra.payment_reference) {
       return true
     }
 
-    // 3. Payment record exists
+    // Payment record exists
     if (payments.some((p: any) => p.requestId === cleanId || p.purchaseRequestDetail?.id === cleanId || p.purchaseRequestDetail?.request_id === cleanId)) {
       return true
     }
 
-    // 4. Completed, acknowledged or approved status
+    // Completed or acknowledged status
     const rawSt = String(reqObj.raw_status || reqObj.status || item.status || '').toUpperCase()
-    if (['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED', 'PAID', 'APPROVED', 'FINANCE_APPROVED'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean(reqObj.confirmed_by_team_lead)) {
+    if (['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED', 'PAID'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean(reqObj.confirmed_by_team_lead)) {
       return true
     }
 
@@ -263,23 +259,39 @@ export const FinanceReceivedReportsPage: React.FC = () => {
     return allRequests
       .filter((req: any) => {
         const extra = req.extra_fields || req.extraFields || (req.rawRequest && req.rawRequest.extra_fields) || {}
-        const rawSt = ((req.raw_status || req.status || '') as string).toUpperCase()
+        const rawSt = normalizeWorkflowStatus(req.raw_status || req.status || req.rawRequest?.status)
         const cat = (req.category || '').toLowerCase()
         const isSw = isSoftwareRequest(req) || cat.includes('software') || cat.includes('saas') || Boolean(req.software_name) || req.flowType === 'B' || req.flow_type === 'B'
-        const hasReceipt = Boolean(extra.software_receipt_id || extra.receipt_no)
+        const hasReceipt = Boolean(extra.software_receipt_id || extra.receipt_no || req.receipt_file || req.payment_proof)
         const isCompleted = ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean(req.confirmed_by_team_lead)
-        return isSw && (hasReceipt || isCompleted)
+        const isManagerApproved = isManagerApprovedRequest(req) && isSw
+        const requestId = String(req.request_id || req.id).replace(/^REQ-/i, '').toUpperCase()
+        const hasPaidPayment = payments.some((p: any) => {
+          const paymentRequestId = String(p.requestId || p.purchaseRequestDetail?.request_id || p.purchaseRequestDetail?.id || '').replace(/^REQ-/i, '').toUpperCase()
+          return paymentRequestId === requestId && normalizeWorkflowStatus(p.status) === 'PAID'
+        })
+        return isSw && (hasReceipt || isCompleted || isManagerApproved || hasPaidPayment)
       })
       .map((req: any) => {
-        const rawSt = ((req.raw_status || req.status || '') as string).toUpperCase()
+        const rawSt = normalizeWorkflowStatus(req.raw_status || req.status || req.rawRequest?.status)
         const extra = req.extra_fields || req.extraFields || (req.rawRequest && req.rawRequest.extra_fields) || {}
-        const reqId = req.request_id || req.id
-        const receiptId = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${reqId}`
         const pj = req.payment_justification_detail || extra.payment_justification || (req.rawRequest && req.rawRequest.payment_justification_detail) || {}
-        const realPaidAmount = Number(pj.actual_purchase_amount || extra.actual_purchase_amount || extra.final_payable_amount || req.finance_approved_amount || req.approved_amount || req.requested_amount || 0)
-        const payRef = extra.payment_reference || req.payment_reference || extra.mock_payment_ref || pj.payment_reference || receiptId
+        const reqId = String(req.request_id || req.id)
+        const hasReceipt = Boolean(extra.software_receipt_id || extra.receipt_no || req.receipt_file || req.payment_proof)
+        const isCompleted = ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean(req.confirmed_by_team_lead)
+        const approvedAwaitingReceipt = isManagerApprovedRequest(req) && !hasReceipt && !isCompleted
+        const receiptId = extra.software_receipt_id || extra.receipt_no || (approvedAwaitingReceipt ? 'Awaiting receipt' : `RCP-SW-${reqId}`)
+        const payment = payments.find((p: any) => {
+          const paymentRequestId = String(p.requestId || p.purchaseRequestDetail?.request_id || p.purchaseRequestDetail?.id || '').replace(/^REQ-/i, '').toUpperCase()
+          return paymentRequestId === reqId.replace(/^REQ-/i, '').toUpperCase()
+        })
+        const paymentIsPaid = normalizeWorkflowStatus(payment?.status) === 'PAID'
+        const realPaidAmount = approvedAwaitingReceipt
+          ? 0
+          : Number(pj.final_payable_amount ?? pj.actual_purchase_amount ?? extra.final_payable_amount ?? extra.actual_purchase_amount ?? (paymentIsPaid ? payment?.amount : 0) ?? 0)
+        const payRef = extra.payment_reference || req.payment_reference || extra.mock_payment_ref || pj.payment_reference || payment?.referenceNumber || payment?.reference_number || (approvedAwaitingReceipt ? '—' : receiptId)
         const payMethod = extra.payment_method || req.payment_method || extra.mock_payment_method || pj.payment_method || 'Corporate Digital Card'
-        const payDate = extra.receipt_generated_at?.split('T')[0] || extra.payment_date?.split('T')[0] || req.payment_date || pj.payment_date || req.date || (req.created_at ? req.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
+        const payDate = extra.receipt_generated_at?.split('T')[0] || extra.payment_date?.split('T')[0] || req.payment_date || pj.payment_date || payment?.paymentDate || (approvedAwaitingReceipt ? '' : (req.date || (req.created_at ? req.created_at.split('T')[0] : '')))
         const vendorName = pj.vendor_name || req.vendor || req.preferred_vendor || req.software_name || req.title || 'Enterprise SaaS Provider'
 
         return {
@@ -295,10 +307,10 @@ export const FinanceReceivedReportsPage: React.FC = () => {
           paymentReference: payRef,
           paymentMethod: payMethod,
           paymentDate: payDate,
-          paymentStatus: 'Paid',
-          receiptProof: pj.proof_description || extra.payment_justification?.proof_description || `Receipt Proof - ${receiptId}.pdf`,
-          paymentJustification: pj.business_justification || extra.payment_justification?.business_justification || req.justification || 'Department operational requirement',
-          managerVerificationStatus: 'Verified & Approved',
+          paymentStatus: approvedAwaitingReceipt ? 'Awaiting Receipt' : (payment?.status || req.payment_status || (isCompleted ? 'Paid' : 'Pending')),
+          receiptProof: pj.proof_description || extra.payment_justification?.proof_description || (approvedAwaitingReceipt ? 'Awaiting Team Lead submission' : `Receipt Proof - ${receiptId}.pdf`),
+          paymentJustification: pj.business_justification || extra.payment_justification?.business_justification || req.justification || (approvedAwaitingReceipt ? 'Pending Team Lead submission' : 'Department operational requirement'),
+          managerVerificationStatus: approvedAwaitingReceipt ? 'Pending receipt' : (pj.verified_by_name ? 'Verified & Approved' : 'Pending'),
           history: req.history || req.timeline || [],
           rawStatus: rawSt,
           vendor: vendorName,
@@ -325,7 +337,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
         if (dateB !== dateA) return dateB - dateA
         return b.id.localeCompare(a.id)
       })
-  }, [allRequests, receiptSearch])
+  }, [allRequests, payments, receiptSearch])
 
   // Derive reports dynamically from real procurement requests forwarded or managed
   const reports = useMemo<FinanceReportItem[]>(() => {
@@ -954,10 +966,11 @@ export const FinanceReceivedReportsPage: React.FC = () => {
                             </button>
                             <button
                               onClick={() => handleOpenReceipt(r)}
-                              className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors border border-blue-700 cursor-pointer"
-                              title="View Software Payment Receipt"
+                              disabled={r.paymentStatus === 'Awaiting Receipt'}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors border border-blue-700 cursor-pointer disabled:bg-slate-300 disabled:border-slate-300 disabled:cursor-not-allowed"
+                              title={r.paymentStatus === 'Awaiting Receipt' ? 'The Team Lead has not submitted the receipt yet' : 'View Software Payment Receipt'}
                             >
-                              View Receipt
+                              {r.paymentStatus === 'Awaiting Receipt' ? 'Awaiting Receipt' : 'View Receipt'}
                             </button>
                           </div>
                         </td>

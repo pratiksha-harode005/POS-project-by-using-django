@@ -10,7 +10,7 @@ import { useManagerData, TicketProduct } from '../../context/ManagerDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentPdfViewerModal } from '../../components/portal/DocumentPdfViewerModal'
 import { markVendorInvoiceVerified, markVendorDeliveryVerified } from '../vendor/VendorPortalPages'
-import { verifyDocumentApi, apiClient } from '../../api/managerApi'
+import { verifyDocumentApi, rejectDocumentApi, apiClient } from '../../api/managerApi'
 import { formatDate } from '../../utils/formatDate'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
@@ -38,7 +38,7 @@ export interface PaymentFormState {
 const STEPS = ['View Receipts', 'Verify Documents', 'Review Summary', 'Submit Ticket']
 
 export const RaiseTicketPage: React.FC = () => {
-  const { tickets, verifyDocument, submitTicket, submitProductTicket, makePayment, allRequests } = useManagerData()
+  const { tickets, verifyDocument, submitTicket, submitProductTicket, makePayment, allRequests, apiError } = useManagerData()
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -61,7 +61,15 @@ export const RaiseTicketPage: React.FC = () => {
         String(p.vendor || '').toLowerCase().includes(q)
       ))
     )
-    return [...baseList].sort((a, b) => {
+    const seen = new Set<string>()
+    const dedupedList = baseList.filter(t => {
+      const k = (t.requestId || t.id || '').toUpperCase()
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+
+    return [...dedupedList].sort((a, b) => {
       const timeA = new Date(a.createdAt || a.createdDate || (a as any).created_at || 0).getTime()
       const timeB = new Date(b.createdAt || b.createdDate || (b as any).created_at || 0).getTime()
       if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
@@ -179,7 +187,7 @@ export const RaiseTicketPage: React.FC = () => {
 
   // Form validation memos (must be declared before any conditional return)
   const isUtrValid = useMemo(() => {
-    return /^[A-Z0-9]{12}$/i.test(paymentForm.utrNumber.trim())
+    return /^[A-Z0-9]{1,15}$/i.test(paymentForm.utrNumber.trim())
   }, [paymentForm.utrNumber])
 
   const isUpiValid = useMemo(() => {
@@ -188,7 +196,7 @@ export const RaiseTicketPage: React.FC = () => {
   }, [paymentForm.upiId])
 
   const isUpiTxnValid = useMemo(() => {
-    return /^\d{12}$/.test(paymentForm.upiTxnId.trim())
+    return /^\d{1,15}$/.test(paymentForm.upiTxnId.trim())
   }, [paymentForm.upiTxnId])
 
   const isCardLast4Valid = useMemo(() => {
@@ -280,7 +288,34 @@ export const RaiseTicketPage: React.FC = () => {
     if (step === 0) setStep(1)
   }
 
-  const handleSubmitProduct = async (product: TicketProduct) => {
+  const handleReject = (productId: string, docType: DocType) => {
+    const reason = window.prompt('Enter reason for rejecting this document:', 'Discrepancy in specifications or damaged goods')
+    if (reason === null) return // cancelled
+    const rejecter = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Sarah Manager'
+    const product = ticket.products?.find(p => p.id === productId)
+    let documentId: string
+    if (docType === 'goodsReceipt') {
+      documentId = product?.goodsReceipt?.id || ticket.goodsReceipt?.id || ''
+    } else if (docType === 'invoice') {
+      documentId = product?.invoice?.id || ticket.invoice?.id || ''
+    } else {
+      documentId = product?.productOrder?.id || ticket.productOrder?.id || ticket.requestId || ticket.id
+    }
+
+    if (documentId) {
+      rejectDocumentApi(documentId, docType, rejecter, reason, productId)
+        .then(() => {
+          window.dispatchEvent(new Event('kss_backend_updated'))
+          window.dispatchEvent(new Event('storage'))
+        })
+        .catch(e => console.error('API reject error:', e))
+    }
+    const docName = docType === 'goodsReceipt' ? 'Goods Receipt' : docType === 'invoice' ? 'Invoice' : 'Document'
+    showToast(`✗ ${docName} rejected: ${reason}`)
+    window.dispatchEvent(new Event('kss_backend_updated'))
+  }
+
+  const handleSubmitProduct = (product: TicketProduct) => {
     const all2Verified = product.goodsReceipt.verified && product.invoice.verified
     if (!all2Verified) {
       showToast('Both documents (Goods Receipt, Invoice) must be verified before submission.', 'error')
@@ -288,13 +323,11 @@ export const RaiseTicketPage: React.FC = () => {
     }
     const submitter = user ? `${user.first_name} ${user.last_name}` : 'Sarah Manager'
 
-    // Call backend complete verification endpoint to guarantee Stage 8
-    try {
-      const cleanReqId = (ticket.requestId || ticket.id).replace(/^(TCK-|PO-)/, '')
-      await apiClient.post(`/requests/${ticket.requestId || cleanReqId}/complete_verification/`, {
-        verified_by: submitter
-      }).catch(() => null)
-    } catch (e) {}
+    // Fire-and-forget backend call — do NOT await (causes 400 block)
+    const cleanReqId = (ticket.requestId || ticket.id).replace(/^(TCK-|PO-)/, '')
+    apiClient.post(`/requests/${ticket.requestId || cleanReqId}/complete_verification/`, {
+      verified_by: submitter
+    }).catch(() => null) // silently ignore backend errors
 
     if (submitProductTicket) {
       submitProductTicket(ticket.id, product.id, submitter)
@@ -321,13 +354,13 @@ export const RaiseTicketPage: React.FC = () => {
   // Validate UTR / reference based on payment method and dispatch
   const handleConfirmAndPay = () => {
     if (payMethod === 'bank') {
-      if (!utrRef.trim() || utrRef.trim().length < 6 || utrRef.trim().length > 22) {
-        setUtrError('Enter a valid 6–22 character UTR / NEFT / RTGS reference.')
+      if (!utrRef.trim() || utrRef.trim().length > 15) {
+        setUtrError('Enter a valid UTR / NEFT / RTGS reference (max 15 characters).')
         return
       }
     } else if (payMethod === 'upi') {
-      if (!utrRef.trim() || utrRef.trim().length < 6) {
-        setUtrError('Enter a valid UPI Transaction / Reference ID (min 6 chars).')
+      if (!utrRef.trim() || utrRef.trim().length > 15) {
+        setUtrError('Enter a valid UPI Reference ID (max 15 characters).')
         return
       }
     }
@@ -335,16 +368,22 @@ export const RaiseTicketPage: React.FC = () => {
     const product = confirmPaymentProduct || undefined
     const amount = product ? product.totalAmount : ticket.requestAmount
     const vendor = product?.vendor || ticket.products?.[0]?.vendor || 'Dell Technologies India'
-    const methodLabel = payMethod === 'bank' ? 'NEFT / RTGS / IMPS' : payMethod === 'upi' ? 'UPI Instant Transfer' : payMethod === 'cash' ? 'Cash / Petty Cash' : 'Corporate Card'
-    const res = makePayment(ticket.requestId, ticket.id, {
+    const methodLabel = payMethod === 'bank' ? 'Online Bank Transfer' : payMethod === 'upi' ? 'UPI' : payMethod === 'cash' ? 'Cash on Hand' : 'Card'
+    const cleanUtr = utrRef.trim()
+    const res = makePayment(ticket.requestId || ticket.id, ticket.id, {
       amount,
       paymentMethod: methodLabel,
-      productId: product?.id
+      referenceNumber: cleanUtr,
+      transactionRef: cleanUtr,
+      productId: product?.id,
+      notes: settlementNote.trim() || undefined
     })
 
     setPaymentResult({
       ...res,
-      utrRef: utrRef.trim() || res.utrRef,
+      utrRef: cleanUtr || res.utrRef,
+      referenceNumber: cleanUtr || res.referenceNumber,
+      paymentMethod: methodLabel,
       vendor: res.vendor || vendor,
       reqTitle: product ? `${ticket.requestTitle} — ${product.name}` : ticket.requestTitle,
       notes: settlementNote.trim() || undefined,
@@ -352,7 +391,7 @@ export const RaiseTicketPage: React.FC = () => {
       date: res.date
     })
     setConfirmPaymentProduct(null)
-    showToast(`💳 Payment Disbursed: ₹${amount.toLocaleString('en-IN')}! UTR: ${utrRef.trim() || res.utrRef}`, 'success')
+    showToast(`💳 Payment Disbursed: ₹${amount.toLocaleString('en-IN')}! UTR: ${cleanUtr || res.utrRef}`, 'success')
   }
 
   return (
@@ -369,6 +408,12 @@ export const RaiseTicketPage: React.FC = () => {
       )}
 
       {/* ── SELECT REQUISITION / TICKET SELECTOR ── */}
+      {apiError && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-2.5 rounded-xl flex items-center gap-2">
+          <AlertCircle size={15} className="text-amber-600 shrink-0" />
+          <span>{apiError} Displaying cached procurement records.</span>
+        </div>
+      )}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden transition-all">
         {/* Header & Search Bar */}
         <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50">
@@ -440,9 +485,10 @@ export const RaiseTicketPage: React.FC = () => {
                   const isPaid = t.products?.every(p => p.paymentSettled)
                   const allVerified = t.products && t.products.length > 0 && t.products.every(p => p.goodsReceipt?.verified && p.invoice?.verified)
                   const anyVerified = t.products && t.products.some(p => p.goodsReceipt?.verified || p.invoice?.verified)
+                  const hasReceipt = Boolean(t.goodsReceipt && (t.goodsReceipt.id || t.goodsReceipt.verified))
 
-                  let statusText = 'Pending Verification'
-                  let statusBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200'
+                  let statusText = 'Vendor Selected – Awaiting Delivery'
+                  let statusBadgeClass = 'bg-sky-50 text-sky-700 border-sky-200'
                   if (isPaid) {
                     statusText = 'Settled & Paid'
                     statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -455,6 +501,9 @@ export const RaiseTicketPage: React.FC = () => {
                   } else if (anyVerified) {
                     statusText = 'In Verification'
                     statusBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200'
+                  } else if (hasReceipt) {
+                    statusText = 'Delivered – Pending Verification'
+                    statusBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200'
                   }
 
                   return (
@@ -868,13 +917,23 @@ export const RaiseTicketPage: React.FC = () => {
                                     <Check size={13} /> Verified
                                   </span>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleVerify(product.id, doc.key)}
-                                    className="flex items-center gap-1.5 border border-green-600 text-green-700 hover:bg-green-50 font-semibold text-xs px-3 py-1.5 rounded-lg transition-all cursor-pointer"
-                                  >
-                                    <ShieldCheck size={13} /> Verify
-                                  </button>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReject(product.id, doc.key)}
+                                      className="flex items-center gap-1 border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold text-xs px-2.5 py-1.5 rounded-lg transition-all cursor-pointer"
+                                      title="Reject document with reason"
+                                    >
+                                      <X size={13} /> Reject
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleVerify(product.id, doc.key)}
+                                      className="flex items-center gap-1.5 border border-green-600 text-green-700 hover:bg-green-50 font-semibold text-xs px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                                    >
+                                      <ShieldCheck size={13} /> Verify
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -909,7 +968,7 @@ export const RaiseTicketPage: React.FC = () => {
                       </div>
 
                       {/* Product Actions: Once both documents verified, show Make Payment */}
-                      {product.submitted || product.paymentSettled ? (
+                      {product.paymentSettled ? (
                         <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-4 py-2 rounded-xl text-xs font-bold">
                           <span className="flex items-center gap-1.5 text-emerald-700">
                             <CheckCircle2 size={14} className="text-emerald-600 shrink-0" /> Payment Settled (Paid)
@@ -1046,13 +1105,13 @@ export const RaiseTicketPage: React.FC = () => {
           const needsRef = payMethod === 'bank' || payMethod === 'upi'
           const refLabel = payMethod === 'bank' ? 'UTR / Bank Reference Number' : 'UPI Transaction Reference'
           const refPlaceholder = payMethod === 'bank'
-            ? 'e.g., UTR202610010091 (16 or 22 chars)'
-            : 'e.g., UPI12345678901234'
+            ? 'e.g., UTR20261001009 (Max 15 chars)'
+            : 'e.g., UPI1234567890 (Max 15 chars)'
           const refHint = payMethod === 'bank'
-            ? 'Enter the 6–22 character alphanumeric reference provided by NEFT/RTGS/IMPS gateway (Max 22).'
-            : 'Enter the UPI Transaction ID / Reference from your payment app.'
+            ? 'Enter the alphanumeric reference provided by NEFT/RTGS/IMPS gateway (Max 15 chars).'
+            : 'Enter the UPI Transaction ID / Reference (Max 15 chars).'
 
-          const canPay = !needsRef || (utrRef.trim().length >= 6 && utrRef.trim().length <= 22)
+          const canPay = !needsRef || (utrRef.trim().length >= 4 && utrRef.trim().length <= 15)
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -1138,13 +1197,13 @@ export const RaiseTicketPage: React.FC = () => {
                         <label className="text-xs font-bold text-slate-800">
                           {refLabel} <span className="text-red-500">*</span>
                         </label>
-                        <span className="text-[10px] text-slate-400 font-mono">{utrRef.length}/22 Characters</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{utrRef.length}/15 Characters</span>
                       </div>
                       <input
                         type="text"
-                        maxLength={22}
+                        maxLength={15}
                         value={utrRef}
-                        onChange={(e) => { setUtrRef(e.target.value.replace(/[^A-Za-z0-9]/g, '')); setUtrError('') }}
+                        onChange={(e) => { const clean = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 15); setUtrRef(clean); setUtrError('') }}
                         placeholder={refPlaceholder}
                         className={`w-full px-4 py-2.5 rounded-xl border text-xs font-mono focus:outline-none focus:ring-2 transition-all ${
                           utrError

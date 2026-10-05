@@ -9,6 +9,40 @@
 
 export type WorkflowType = 'SOFTWARE' | 'HARDWARE'
 
+export const WORKFLOW_STATUS = {
+  MANAGER_APPROVED: 'MANAGER_APPROVED',
+} as const
+
+export function normalizeWorkflowStatus(status?: unknown): string {
+  return String(status ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_')
+}
+
+export function isManagerApprovedRequest(request?: Record<string, any> | null): boolean {
+  if (!request) return false
+  const statuses = [request.raw_status, request.status, request.rawRequest?.status]
+  if (statuses.some(status => normalizeWorkflowStatus(status) === WORKFLOW_STATUS.MANAGER_APPROVED)) return true
+
+  const finalApprovalBy = request.final_approval_by || request.extra_fields?.final_approval_by || request.extraFields?.final_approval_by
+  return normalizeWorkflowStatus(finalApprovalBy) === 'MANAGER' && statuses.some(status => normalizeWorkflowStatus(status) === 'APPROVED')
+}
+
+export function getFinanceAdminRecommendationStep(request?: Record<string, any> | null): Record<string, any> | null {
+  if (!request) return null
+  const steps = request.rawRequest?.approval_steps || request.approval_steps
+  if (!Array.isArray(steps)) return null
+
+  return steps
+    .filter(step =>
+      normalizeWorkflowStatus(step?.role) === 'FINANCE' &&
+      ['RECOMMEND', 'RECOMMEND_ADMIN'].includes(normalizeWorkflowStatus(step?.decision))
+    )
+    .sort((a, b) => {
+      const dateA = new Date(a.created_at || a.updated_at || 0).getTime()
+      const dateB = new Date(b.created_at || b.updated_at || 0).getTime()
+      return dateB - dateA
+    })[0] || null
+}
+
 export const PATH_A_MANAGER_STAGES = [
   'Request Created',
   'Manager Review',
@@ -26,6 +60,30 @@ export const PATH_B_FINANCE_STAGES = [
   'Recommended to Finance',
   'Finance Review',
   'Finance Approved',
+  'Payment Processed',
+  'Payment Justification Submitted',
+  'Manager Verified',
+  'Awaiting Team Lead Acknowledgement',
+  'Request Completed',
+] as const
+
+export const PATH_B_RENEWAL_STAGES = [
+  'Renewal Request',
+  'Manager Review',
+  'Recommended to Finance',
+  'Finance Review',
+  'Finance Approved',
+  'Payment Processed',
+  'Payment Justification Submitted',
+  'Manager Verified',
+  'Awaiting Team Lead Acknowledgement',
+  'Request Completed',
+] as const
+
+export const PATH_B_RENEWAL_DIRECT_STAGES = [
+  'Renewal Request',
+  'Manager Review',
+  'Manager Approval',
   'Payment Processed',
   'Payment Justification Submitted',
   'Manager Verified',
@@ -67,8 +125,7 @@ export const HARDWARE_STAGES = [
 
 const SOFTWARE_CATEGORIES = new Set([
   'Software & SaaS', 'Cloud & Infrastructure', 'Cybersecurity',
-  'IT Services', 'Training & Certifications', 'Software', 'SaaS',
-  'Cloud', 'Digital', 'Subscription', 'License',
+  'Software', 'SaaS', 'Cloud', 'Digital', 'Subscription', 'License',
 ])
 
 const SOFTWARE_KEYWORDS = [
@@ -78,37 +135,16 @@ const SOFTWARE_KEYWORDS = [
 ]
 
 const HARDWARE_CATEGORIES = new Set([
-  'IT Hardware', 'Office Accessories', 'Office Technology',
-  'Networking & Telecom', 'Hardware', 'Equipment', 'Furniture',
+  'IT Hardware', 'IT Services', 'Office Accessories', 'Office Technology',
+  'Networking & Telecom', 'Hardware', 'Equipment', 'Furniture', 'Services', 'Maintenance & Repair',
 ])
 
 const HARDWARE_KEYWORDS = [
-  'server',
-  'servers',
-  'laptop',
-  'laptops',
-  'desktop',
-  'desktops',
-  'monitor',
-  'monitors',
-  'printer',
-  'scanner',
-  'sensor',
-  'workstation',
-  'hardware',
-  'keyboard',
-  'mouse',
-  'cisco',
-  'switch',
-  'router',
-  'cable',
-  'docking',
-  'peripherals',
-  'equipment',
-  'furniture',
-  'ram',
-  'ssd',
-  'hard drive',
+  'hardware', 'equipment', 'accessories', 'furniture', 'peripherals',
+  'server', 'servers', 'laptop', 'laptops', 'desktop', 'desktops',
+  'monitor', 'monitors', 'printer', 'scanner', 'sensor', 'workstation',
+  'keyboard', 'mouse', 'cisco', 'switch', 'router', 'cable', 'docking',
+  'ram', 'ssd', 'hard drive', 'it services', 'services', 'maintenance', 'repair',
 ]
 
 /**
@@ -117,22 +153,30 @@ const HARDWARE_KEYWORDS = [
 export function detectWorkflowType(
   category?: string,
   title?: string,
-  extra?: { flowType?: string; flow_type?: string; software_name?: string }
+  extra?: { flowType?: string; flow_type?: string; software_name?: string; workflow_type?: string; workflowType?: string }
 ): WorkflowType {
+  if (extra?.workflowType === 'SOFTWARE' || extra?.workflow_type === 'SOFTWARE') return 'SOFTWARE'
+  if (extra?.workflowType === 'HARDWARE' || extra?.workflow_type === 'HARDWARE') return 'HARDWARE'
+
   const cat = (category || '').trim().toLowerCase()
   const tit = (title || '').toLowerCase()
   const flow = extra?.flowType || extra?.flow_type
   const swName = (extra?.software_name || '').trim()
 
-  // 1. Explicit Hardware Check First (physical hardware should never be misclassified as software)
+  // 1. Explicit Hardware / IT Services / Physical Goods Check First
   const isHardwareCategory = (
     cat.includes('hardware') ||
     cat.includes('equipment') ||
     cat.includes('accessories') ||
     cat.includes('furniture') ||
-    cat.includes('peripherals')
+    cat.includes('peripherals') ||
+    cat.includes('it services') ||
+    cat.includes('services') ||
+    cat.includes('networking') ||
+    cat.includes('telecom') ||
+    HARDWARE_CATEGORIES.has(category || '')
   )
-  const isHardwareTitle = HARDWARE_KEYWORDS.some(k => tit.includes(k))
+  const isHardwareTitle = HARDWARE_KEYWORDS.some(k => tit.includes(k) || cat.includes(k))
 
   if (isHardwareCategory || isHardwareTitle) {
     return 'HARDWARE'
@@ -149,7 +193,9 @@ export function detectWorkflowType(
     cat.includes('saas') ||
     cat.includes('cloud') ||
     cat.includes('license') ||
-    cat.includes('subscription')
+    cat.includes('subscription') ||
+    cat.includes('digital') ||
+    SOFTWARE_CATEGORIES.has(category || '')
   ) {
     return 'SOFTWARE'
   }
@@ -158,46 +204,21 @@ export function detectWorkflowType(
     return 'SOFTWARE'
   }
 
-  // Default to Hardware for physical assets
+  // Default to Hardware for physical / service assets
   return 'HARDWARE'
 }
 
-export function isSoftwareRequest(req: { category?: string; title?: string; flowType?: string; flow_type?: string; software_name?: string; extra_fields?: any; payment_justification_detail?: any }): boolean {
+export function isSoftwareRequest(req: { category?: string; title?: string; flowType?: string; flow_type?: string; software_name?: string; extra_fields?: any; payment_justification_detail?: any; workflow_type?: string; workflowType?: string }): boolean {
   if (!req) return false
-  const cat = (req.category || '').toLowerCase().trim()
-  const tit = (req.title || '').toLowerCase().trim()
-
-  if (
-    cat.includes('hardware') ||
-    cat.includes('equipment') ||
-    cat.includes('furniture') ||
-    cat.includes('peripherals') ||
-    HARDWARE_KEYWORDS.some(k => tit.includes(k))
-  ) {
-    return false
-  }
-
-  if (
-    cat.includes('software') ||
-    cat.includes('saas') ||
-    cat.includes('cloud') ||
-    cat.includes('license') ||
-    cat.includes('subscription') ||
-    req.flowType === 'B' ||
-    req.flow_type === 'B' ||
-    Boolean(req.payment_justification_detail) ||
-    Boolean(req.extra_fields?.software_receipt_id)
-  ) {
-    return true
-  }
-
   return detectWorkflowType(req.category, req.title, {
     flowType: req.flowType || req.flow_type,
     software_name: req.software_name,
+    workflow_type: req.workflow_type,
+    workflowType: req.workflowType,
   }) === 'SOFTWARE'
 }
 
-export function isHardwareRequest(req: { category?: string; title?: string; flowType?: string; flow_type?: string; software_name?: string; extra_fields?: any; payment_justification_detail?: any }): boolean {
+export function isHardwareRequest(req: { category?: string; title?: string; flowType?: string; flow_type?: string; software_name?: string; extra_fields?: any; payment_justification_detail?: any; workflow_type?: string; workflowType?: string }): boolean {
   return !isSoftwareRequest(req)
 }
 
@@ -251,6 +272,7 @@ export interface RequestWorkflowInput {
   }>
   finalApprovalBy?: 'MANAGER' | 'FINANCE' | 'ADMIN' | string
   approvalPath?: 'MANAGER' | 'FINANCE' | 'ADMIN' | string
+  requestOperation?: string
   extra_fields?: Record<string, any>
 }
 
@@ -341,6 +363,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
   const st = (req.status || '').toLowerCase()
   const fst = (req.financeStatus || '').toLowerCase()
   const pst = (req.paymentStatus || '').toLowerCase()
+  const isRenewal = req.requestOperation?.toUpperCase() === 'RENEWAL'
 
   const isRejected =
     st === 'rejected' ||
@@ -359,12 +382,21 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     )) || st === 'quotes_received' || st === 'under_evaluation'
   )
   const hasPo = Boolean(req.poNumber || req.po_id || req.po_number)
-  const hasGrn = Boolean(req.grnNumber || req.grn_number || req.receipt_id)
+  const hasGrn = Boolean(
+    st === 'delivered' ||
+    st === 'goods_received' ||
+    (req as any).raw_status === 'DELIVERED' ||
+    (req as any).raw_status === 'GOODS_RECEIVED' ||
+    (req as any).deliveryDetails?.deliveryDate ||
+    (req as any).delivery_status === 'Delivered' ||
+    (req as any).po_status === 'Delivered'
+  )
   const areDocsVerified = Boolean(
-    req.isVerified ||
-    req.documentsVerified ||
+    req.isVerified === true ||
+    req.documentsVerified === true ||
     (req.is_invoice_verified === true) ||
-    (req.status === 'verified')
+    (st === 'verified') ||
+    ((req as any).raw_status === 'VERIFIED')
   )
 
   const isCompleted =
@@ -391,7 +423,17 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     if (isCompleted) {
       currentlyWith = 'Completed & Archived'
     } else if (isSoftware) {
-      if (currentStageName === 'Manager Approval') {
+      if (currentStageName === 'Now Pay (Mock)' || currentStageName === 'Finance Approval') {
+        currentlyWith = 'Team Lead — Pay Now (Mock) Ready'
+      } else if (currentStageName === 'Recommend to Finance') {
+        currentlyWith = 'Project Manager — Recommend to Finance'
+      } else if (currentStageName === 'Payment Justification') {
+        currentlyWith = 'Team Lead — Submit Payment Justification'
+      } else if (currentStageName === 'Manager Verifies Justification') {
+        currentlyWith = 'Manager — Verifying Justification'
+      } else if (currentStageName === 'Team Lead Acknowledgement') {
+        currentlyWith = 'Team Lead — Final Acknowledgment Required'
+      } else if (currentStageName === 'Manager Approval') {
         currentlyWith = 'Team Lead — Pay Now (Mock) Ready'
       } else if (currentStageName === 'Finance Approved') {
         currentlyWith = 'Team Lead — Pay Now (Mock) Ready'
@@ -502,7 +544,16 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       }
     }
 
-    if (finalApprovalBy === 'MANAGER') {
+    if (isRenewal) {
+      const financePathStatuses = [
+        'recommended_to_finance', 'manager_recommended_to_finance', 'finance_recommended',
+        'sent_to_finance', 'finance_review', 'finance_research', 'cost_estimation',
+        'finance_report', 'pre_estimation_completed', 'finance_approved',
+      ]
+      dynamicStages = financePathStatuses.includes(st)
+        ? [...PATH_B_RENEWAL_STAGES]
+        : [...PATH_B_RENEWAL_DIRECT_STAGES]
+    } else if (finalApprovalBy === 'MANAGER') {
       dynamicStages = [...PATH_A_MANAGER_STAGES]
     } else if (finalApprovalBy === 'FINANCE') {
       dynamicStages = [...PATH_B_FINANCE_STAGES]
@@ -510,10 +561,17 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       dynamicStages = [...PATH_C_ADMIN_STAGES]
     }
   } else {
-    dynamicStages = [...HARDWARE_STAGES]
-    if (!wentToAdmin) {
-      dynamicStages = dynamicStages.filter((s) => s !== 'Admin Approval')
-    }
+    // Hardware dynamicStages calculation
+    const hasFinance = (req.history || []).some((h: any) => {
+      const act = (h.action || h.stageName || '').toUpperCase()
+      const rol = (h.actorRole || '').toUpperCase()
+      return act.includes('FINANCE') || rol === 'FINANCE' || (act.includes('RECOMMEND') && !act.includes('ADMIN'))
+    }) || st.includes('finance') || fst.includes('finance') || st === 'recommended_to_finance'
+
+    dynamicStages = ['Create Request', 'Manager Approval']
+    if (hasFinance) dynamicStages.push('Finance Approval')
+    if (wentToAdmin) dynamicStages.push('Admin Approval')
+    dynamicStages.push('RFQ Sent', 'Vendor Quotes Received', 'Product Order', 'Delivery', 'Verification and Order Complete', 'Payment')
   }
 
   let stageIndex = 0
@@ -525,7 +583,40 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     currentStageName = dynamicStages[stageIndex]
     currentlyWith = 'Completed & Archived'
   } else if (isSoftware) {
-    if (st === 'created' || st === 'team_lead_review' || st === 'draft') {
+    if (isRenewal && ['created', 'team_lead_review', 'draft'].includes(st)) {
+      currentStageName = 'Renewal Request'
+      currentlyWith = 'Team Lead / Requester'
+    } else if (
+      isRenewal &&
+      ['manager_review', 'team_lead_submitted', 'pending', 'pending_approval'].includes(st)
+    ) {
+      currentStageName = 'Manager Review'
+      currentlyWith = 'Project Manager — Under Review'
+    } else if (isRenewal && st === 'manager_approved') {
+      currentStageName = 'Manager Approval'
+      currentlyWith = 'Team Lead — Pay Now (Mock) Ready'
+    } else if (
+      isRenewal &&
+      ['recommended_to_finance', 'manager_recommended_to_finance', 'finance_recommended', 'sent_to_finance', 'finance_review', 'finance_research', 'cost_estimation', 'finance_report', 'pre_estimation_completed'].includes(st)
+    ) {
+      currentStageName = 'Finance Review'
+      currentlyWith = 'Finance Directorate — Under Review'
+    } else if (isRenewal && st === 'finance_approved') {
+      currentStageName = 'Now Pay (Mock)'
+      currentlyWith = 'Team Lead — Pay Now (Mock) Ready'
+    } else if (isRenewal && ['payment_processed', 'payment_completed'].includes(st)) {
+      currentStageName = 'Payment Justification'
+      currentlyWith = 'Team Lead — Submit Payment Justification'
+    } else if (isRenewal && st === 'payment_justification_submitted') {
+      currentStageName = 'Manager Verifies Justification'
+      currentlyWith = 'Manager — Verifying Justification'
+    } else if (
+      isRenewal &&
+      ['payment_justified', 'manager_verified', 'manager_verified_pending_team_lead_acknowledgement'].includes(st)
+    ) {
+      currentStageName = 'Team Lead Acknowledgement'
+      currentlyWith = 'Team Lead — Final Acknowledgment Required'
+    } else if (st === 'created' || st === 'team_lead_review' || st === 'draft') {
       currentStageName = 'Request Created'
       currentlyWith = 'Team Lead / Requester'
     } else if (
@@ -601,58 +692,93 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     const foundIdx = dynamicStages.indexOf(currentStageName)
     stageIndex = foundIdx >= 0 ? foundIdx : 0
   } else {
-    // Hardware Stages
-    if (st === 'pending_arrival' || st === 'draft') {
+    // Hardware & IT Services Stages
+    if (st === 'pending_arrival' || st === 'draft' || st === 'created_draft') {
       currentStageName = 'Create Request'
       currentlyWith = 'Team Lead / Requester'
-    } else if (st === 'pending_approval') {
+    } else if (
+      st === 'pending' ||
+      st === 'pending_approval' ||
+      st === 'created' ||
+      st === 'team_lead_submitted' ||
+      st === 'manager_review' ||
+      st === 'team_lead_review'
+    ) {
       currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
     } else if (
       st === 'finance_review' ||
       st === 'sent_to_finance' ||
       st === 'recommended_to_finance' ||
+      st === 'manager_recommended_to_finance' ||
+      st === 'finance_recommended' ||
       st === 'finance_on_hold' ||
       st === 'clarification_requested' ||
-      st === 'manager_approved' ||
-      (st === 'approved' && req.currentStage === 3)
+      (st === 'approved' && req.currentStage === 2 && dynamicStages.includes('Finance Approval'))
     ) {
       currentStageName = 'Finance Approval'
       currentlyWith = 'Finance — Mark Finance Officer'
-    } else if (st === 'approved' || st === 'rfq_sent') {
-      currentStageName = 'RFQ Sent'
-      currentlyWith = 'Sourcing Team (RFQ Sent)'
-    } else if (st === 'recommended_to_admin' || fst === 'recommended to admin') {
+    } else if (
+      st === 'recommended_to_admin' ||
+      st === 'finance_recommended_to_admin' ||
+      st === 'admin_review' ||
+      st === 'admin_research' ||
+      fst === 'recommended to admin'
+    ) {
       currentStageName = 'Admin Approval'
-      currentlyWith = 'Admin — Executive Authority'
-    } else if (st === 'quotes_received' || st === 'assigned_to_vendor' || st === 'vendor_assigned' || st === 'rfq_sent' || st === 'in_procurement') {
+      currentlyWith = 'Executive Administrator'
+    } else if (
+      st === 'approved' ||
+      st === 'manager_approved' ||
+      st === 'rfq_sent' ||
+      st === 'in_procurement' ||
+      st === 'in procurement' ||
+      st === 'sourcing' ||
+      (hasRfq && !hasQuotes)
+    ) {
+      currentStageName = 'RFQ Sent'
+      currentlyWith = 'Procurement Sourcing Desk'
+    } else if (
+      st === 'quotes_received' ||
+      st === 'under_evaluation' ||
+      st === 'assigned_to_vendor' ||
+      st === 'vendor_assigned' ||
+      (hasQuotes && !hasPo)
+    ) {
       currentStageName = 'Vendor Quotes Received'
       currentlyWith = 'Selected Vendor (Awaiting Acceptance)'
-    } else if (st === 'vendor_accepted') {
-      currentStageName = 'Delivery'
-      currentlyWith = 'Vendor Partner (Delivery in Progress)'
-    } else if (st === 'vendor_rejected') {
-      currentStageName = 'Vendor Quotes Received'
-      currentlyWith = 'Vendor Declined — Reassignment Required'
-    } else if (st === 'delivered' || st === 'delivery') {
-      currentStageName = 'Invoice'
-      currentlyWith = 'Accounts & Dock (Invoice & GRN Verification)'
-    } else if (st === 'invoiced' || st === 'invoice') {
-      currentStageName = 'Verification and Order Complete'
-      currentlyWith = 'Procurement Audit & Raise Ticket Verification'
     } else if (
-      st === 'verified' ||
-      st === 'order_complete' ||
-      st === 'finance_approved' ||
-      st === 'product_order'
+      st === 'product_order' ||
+      st === 'po_released' ||
+      st === 'po_created' ||
+      (hasPo && !hasGrn && st !== 'delivered' && st !== 'delivery')
+    ) {
+      currentStageName = 'Product Order'
+      currentlyWith = 'Procurement Operations'
+    } else if (
+      st === 'delivered' ||
+      st === 'delivery' ||
+      st === 'in_transit' ||
+      st === 'dispatched' ||
+      st === 'vendor_accepted' ||
+      (hasGrn && !areDocsVerified && st !== 'verified' && st !== 'invoiced')
     ) {
       currentStageName = 'Delivery'
       currentlyWith = 'Logistics & Receiving Dock'
     } else if (
-      st === 'completed' ||
+      st === 'invoiced' ||
+      st === 'invoice' ||
+      st === 'verified' ||
+      st === 'order_complete' ||
+      st === 'documents_verified' ||
+      areDocsVerified
+    ) {
+      currentStageName = 'Verification and Order Complete'
+      currentlyWith = 'Procurement Audit & 3-Way Match'
+    } else if (
       st === 'payment' ||
       st === 'payment_pending' ||
-      pst === 'pending' ||
+      st === 'payment_processing' ||
       pst === 'processing' ||
       pst === 'paid'
     ) {
@@ -663,13 +789,15 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       currentlyWith = 'Manager — Sarah Manager'
     }
 
-    if (typeof req.currentStage === 'number' && !isNaN(req.currentStage)) {
+    const foundIdx = dynamicStages.indexOf(currentStageName)
+    if (foundIdx >= 0) {
+      stageIndex = foundIdx
+    } else if (typeof req.currentStage === 'number' && !isNaN(req.currentStage)) {
       stageIndex = mapBackendStageToIndex(req.currentStage, dynamicStages, false)
       stageIndex = Math.min(Math.max(stageIndex, 0), dynamicStages.length - 1)
       currentStageName = dynamicStages[stageIndex] || currentStageName
     } else {
-      const foundIdx = dynamicStages.indexOf(currentStageName)
-      stageIndex = foundIdx >= 0 ? foundIdx : 0
+      stageIndex = 0
     }
   }
 
@@ -711,8 +839,13 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
  */
 export const sortRequestsNewestFirst = <T extends { date?: string; createdAt?: string; id?: string | number; dbId?: number }>(list: T[]): T[] => {
   return [...list].sort((a, b) => {
-    const timeA = new Date((a as any).createdAt || (a as any).created_at || a.date || 0).getTime()
-    const timeB = new Date((b as any).createdAt || (b as any).created_at || b.date || 0).getTime()
+    const getCreatedTime = (item: T) => {
+      const raw = (item as any).createdAt || (item as any).created_at || (item as any).createdDate || (item as any).created_date || item.date || 0
+      const time = new Date(raw).getTime()
+      return Number.isFinite(time) ? time : 0
+    }
+    const timeA = getCreatedTime(a)
+    const timeB = getCreatedTime(b)
     if (timeB !== timeA) return timeB - timeA
 
     const idA = Number((a as any).dbId ?? (a as any).pk ?? (typeof a.id === 'number' ? a.id : 0)) || 0

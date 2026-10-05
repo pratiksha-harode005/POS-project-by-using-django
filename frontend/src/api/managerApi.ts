@@ -65,8 +65,13 @@ export const getManagerRequestById = async (id: string | number) => {
 export const getDashboardStats = async () => {
   try {
     const role = (localStorage.getItem('user_role') || '').toUpperCase()
-    const endpoint = (role === 'MANAGER' || role === 'ADMIN') ? '/manager/requests/' : '/requests/'
-    const res = await apiClient.get(endpoint, { params: { page_size: 100 } })
+    const endpoint = role === 'MANAGER' || role === 'ADMIN'
+      ? '/manager/requests/'
+      : role === 'FINANCE'
+        ? '/finance/requests/'
+        : '/requests/'
+    const params = role === 'FINANCE' ? { page_size: 100, status: 'ALL' } : { page_size: 100 }
+    const res = await apiClient.get(endpoint, { params })
     return res.data
   } catch {
     try {
@@ -212,42 +217,15 @@ export const getFinanceRequests = async (params?: ApiRequestParams) => {
   }
 }
 
-/** POST /api/requests/{id}/process_approval/ (Finance recommendation to Admin) */
-export const recommendToAdminApi = async (id: string, reason: string, notes?: string) => {
-  let matchedReasonId: number | undefined
-  try {
-    const reasonsResponse = await apiClient.get('/requests/reasons/', {
-      params: { reason_type: 'RECOMMEND', page_size: 100 },
-    })
-    const reasons = Array.isArray(reasonsResponse.data)
-      ? reasonsResponse.data
-      : reasonsResponse.data?.results || []
-    const normalizedReason = (reason || '').toLowerCase()
-    const reasonKeywords = normalizedReason.includes('budget') || normalizedReason.includes('delegation') || normalizedReason.includes('exceeds')
-      ? ['budget', 'exceeds']
-      : normalizedReason.includes('strategic') || normalizedReason.includes('director') || normalizedReason.includes('board') || normalizedReason.includes('executive')
-        ? ['executive', 'director', 'high-value', 'strategic']
-        : normalizedReason.includes('policy') || normalizedReason.includes('exception')
-          ? ['policy exception', 'policy']
-          : normalizedReason.includes('cross-department')
-            ? ['cross-department']
-            : ['additional financial review', 'review', 'recommend']
-    const matchedReason = reasons.find((item: { id: number; text: string }) =>
-      reasonKeywords.some(keyword => item.text.toLowerCase().includes(keyword))
-    ) || reasons[0]
-
-    matchedReasonId = matchedReason?.id
-  } catch (err) {
-    console.warn('Failed fetching recommendation reasons from backend:', err)
-  }
-
-  return apiClient.post(`/requests/${id}/process_approval/`, {
-    action: 'RECOMMEND',
-    ...(matchedReasonId ? { reason_id: matchedReasonId } : {}),
-    notes: [reason, notes].filter(Boolean).join('\n'),
+/** POST /api/finance/requests/{id}/recommend-admin/ */
+export const recommendToAdminApi = async (id: string | number, reason: string, notes?: string) => {
+  const res = await apiClient.post(`/finance/requests/${id}/recommend-admin/`, {
+    reason,
+    comments: notes || reason,
+    notes: notes || reason,
   })
+  return res.data
 }
-
 /** POST /api/requests/{id}/process_approval/ (RECOMMEND to Finance) */
 export const sendToFinanceApi = async (id: string, message?: string) => {
   try {
@@ -292,9 +270,11 @@ export const verifyDocumentApi = async (
   documentId: string,
   docType: 'productOrder' | 'goodsReceipt' | 'invoice',
   verifiedBy: string,
-  productId?: string
+  productId?: string,
+  action: 'verify' | 'reject' = 'verify',
+  reason: string = ''
 ): Promise<any> => {
-  const body = { verified_by: verifiedBy }
+  const body = { verified_by: verifiedBy, action, reason }
 
   // Helper: try an ID as-is, then as numeric PK extracted from the suffix
   const tryVerify = async (baseUrl: string, id: string): Promise<any> => {
@@ -331,6 +311,16 @@ export const verifyDocumentApi = async (
     console.error('Failed to verify document via API:', err)
     return { success: false }
   }
+}
+
+export const rejectDocumentApi = async (
+  documentId: string,
+  docType: 'productOrder' | 'goodsReceipt' | 'invoice',
+  rejectedBy: string,
+  reason: string = '',
+  productId?: string
+): Promise<any> => {
+  return verifyDocumentApi(documentId, docType, rejectedBy, productId, 'reject', reason)
 }
 
 /** POST /api/manager/tickets/{id}/submit/ */
@@ -430,10 +420,10 @@ export const selectVendorQuotationApi = async (quoteId: string, rfqId: string, p
     })
 
     // Update RFQ status to Closed/Awarded
-    const rfqRes = await apiClient.patch(`/rfq/${cleanRfqId}/`, {
+    const rfqRes = await apiClient.patch(`/rfq/${rfqId}/`, {
       status: 'Closed'
     }).catch(async () => {
-      return await apiClient.patch(`/rfq/${rfqId}/`, { status: 'Closed' })
+      return await apiClient.patch(`/rfq/${cleanRfqId}/`, { status: 'Closed' })
     }).catch(() => null)
 
     // Broadcast real-time update to all portal listeners

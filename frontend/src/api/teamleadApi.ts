@@ -79,8 +79,34 @@ export const sendBackTeamLeadRequest = async (id: string | number, comments: str
 }
 
 export const resubmitTeamLeadRequest = async (requestId: string | number, payload?: any) => {
-  const response = await apiClient.post(`/requests/${requestId}/resubmit/`, payload || {})
-  return response.data
+  const p = payload || {}
+  const reqAmt = p.requested_amount !== undefined ? p.requested_amount : (p.estimatedCost !== undefined ? Number(p.estimatedCost) : undefined)
+  const body = {
+    ...p,
+    title: p.title,
+    description: p.description,
+    quantity: p.quantity,
+    category: p.category,
+    subcategory: p.subcategory,
+    priority: p.priority,
+    justification: p.justification,
+    delivery_location: p.delivery_location || p.deliveryLocation || '',
+    required_by: p.required_by || p.requiredBy || null,
+    preferred_vendor: p.preferred_vendor || p.preferredVendor || '',
+    requested_amount: reqAmt,
+    total_estimated_cost: reqAmt,
+    estimated_cost: reqAmt,
+    extra_fields: p.extra_fields || p.extraFields || {},
+    comments: p.comments || 'Request revised and resubmitted for Manager review.',
+  }
+  const cleanId = String(requestId).replace(/^REQ-/, '')
+  try {
+    const response = await apiClient.post(`/requests/${requestId}/resubmit/`, body)
+    return response.data
+  } catch (err) {
+    const response = await apiClient.post(`/requests/${cleanId}/resubmit/`, body)
+    return response.data
+  }
 }
 
 export const confirmTeamLeadRequest = async (id: string | number, comments?: string) => {
@@ -103,6 +129,8 @@ export interface MockPaymentPayload {
 }
 
 export const mockPaymentApi = async (id: string | number, payload?: MockPaymentPayload) => {
+  // The Team Lead router is the canonical endpoint. A payment must never be
+  // reported as successful locally when the backend did not persist it.
   const response = await apiClient.post(`/team-lead/requests/${id}/mock-payment/`, payload || {})
   return response.data
 }

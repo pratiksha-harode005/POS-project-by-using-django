@@ -274,13 +274,17 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
         return 'IT Hardware'
 
 
-def compute_po_document_verification(po):
+def compute_po_document_verification(po, force_refresh: bool = False):
     if not po:
         return {
             'status': 'Verification Pending',
+            'verification_status': 'PENDING',
             'is_both_verified': False,
             'is_invoice_verified': False,
             'is_goods_receipt_verified': False,
+            'verified_by': '',
+            'verified_at': None,
+            'reject_reason': '',
             'po_id': None,
             'invoice_status': None,
             'goods_receipt_status': None,
@@ -288,45 +292,84 @@ def compute_po_document_verification(po):
             'goods_receipt_count': 0,
         }
 
-    if hasattr(po, '_doc_verif_cache'):
+    if not force_refresh and hasattr(po, '_doc_verif_cache'):
         return po._doc_verif_cache
 
     has_verified_invoice = False
     has_verified_gr = False
+    has_rejected_invoice = False
+    has_rejected_gr = False
+    invoice_reject_reason = ''
+    gr_reject_reason = ''
     latest_inv_status = None
     latest_gr_status = None
+    verified_by = ''
+    verified_at = None
 
-    # Use cached prefetched invoices if available
+    # 1. Use cached prefetched invoices if available
     invoices = list(po.invoices.all()) if hasattr(po, 'invoices') else []
     total_inv_count = len(invoices)
     for inv in invoices:
         latest_inv_status = inv.status
-        if inv.is_manager_verified or inv.status in ['Matched', 'Paid', 'Verified']:
+        if inv.status in ['Rejected', 'Exception'] and getattr(inv, 'reject_reason', ''):
+            has_rejected_invoice = True
+            invoice_reject_reason = getattr(inv, 'reject_reason', '')
+        # STRICT: Only explicit manager verification counts!
+        if inv.is_manager_verified is True and bool(getattr(inv, 'verified_by_name', '')):
             has_verified_invoice = True
+            if not verified_by:
+                verified_by = inv.verified_by_name
+            if not verified_at:
+                verified_at = inv.verified_at
 
-    # Use cached prefetched goods receipts if available
+    # 2. Use cached prefetched goods receipts if available
     receipts = list(po.goods_receipts.all()) if hasattr(po, 'goods_receipts') else []
     total_gr_count = len(receipts)
     for gr in receipts:
         latest_gr_status = gr.status
-        if gr.status in ['Verified', 'Confirmed', 'Approved']:
+        if gr.status == 'Rejected' or gr.status == 'Damaged':
+            has_rejected_gr = True
+            gr_reject_reason = getattr(gr, 'reject_reason', '') or getattr(gr, 'notes', '')
+        # STRICT: Only explicit manager verification counts!
+        if gr.status == 'Verified' and bool(getattr(gr, 'verified_by_name', '')):
             has_verified_gr = True
+            if not verified_by:
+                verified_by = gr.verified_by_name
+            if not verified_at:
+                verified_at = gr.verified_at
 
     is_delivered = (
         po.status in ['Delivered', 'Fulfilled', 'Completed'] or
-        has_verified_gr or
         bool(receipts)
     )
 
-    is_both = is_delivered and has_verified_invoice and has_verified_gr
+    # REMOVED: Auto-verification on pr_completed or po_is_paid.
+    # Documents MUST be verified by a Manager, never auto-derived from stage or payment.
 
-    effective_gr_status = latest_gr_status or ('Verified' if has_verified_gr else ('Pending Verification' if is_delivered else 'Pending Delivery'))
+    if has_rejected_invoice or has_rejected_gr:
+        final_status = 'Verification Rejected'
+        v_status = 'REJECTED'
+        reject_reason = invoice_reject_reason or gr_reject_reason or 'Document verification rejected by manager.'
+    elif has_verified_invoice and has_verified_gr:
+        final_status = 'Documents Verified'
+        v_status = 'VERIFIED'
+        reject_reason = ''
+    else:
+        final_status = 'Verification Pending'
+        v_status = 'PENDING'
+        reject_reason = ''
+
+    effective_gr_status = 'Verified' if has_verified_gr else (latest_gr_status or ('Pending Verification' if is_delivered else 'Pending Delivery'))
 
     res = {
-        'status': 'Documents Verified' if is_both else 'Verification Pending',
-        'is_both_verified': is_both,
+        'status': final_status,
+        'verification_status': v_status,
+        'is_both_verified': (v_status == 'VERIFIED'),
         'is_invoice_verified': has_verified_invoice,
         'is_goods_receipt_verified': has_verified_gr,
+        'verified_by': verified_by,
+        'verified_at': verified_at.isoformat() if verified_at else None,
+        'reject_reason': reject_reason,
         'is_delivered': is_delivered,
         'po_id': po.po_id,
         'invoice_status': latest_inv_status or ('Approved' if has_verified_invoice else 'Pending Review'),

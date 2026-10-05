@@ -15,6 +15,7 @@ import {
   Truck,
   ArrowRight,
   KeyRound,
+  ArrowLeft,
 } from 'lucide-react'
 
 /* ─── Role definitions & default credentials ─── */
@@ -124,11 +125,30 @@ export default function LoginPage() {
         className="w-full max-w-md"
         style={{
           background: '#ffffff',
-          borderRadius: '18px',
-          boxShadow: '0 24px 60px -12px rgba(15,23,42,0.18)',
-          padding: '36px 32px',
+          borderRadius: '20px',
+          boxShadow: '0 20px 50px -12px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(226, 232, 240, 0.8)',
+          padding: '28px 32px 36px',
         }}
       >
+        {/* Card Header Navigation */}
+        <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100/90">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-blue-600 transition-all group cursor-pointer"
+            aria-label="Back to Home Page"
+          >
+            <div className="w-7 h-7 rounded-lg bg-slate-100 group-hover:bg-blue-50 border border-slate-200/80 group-hover:border-blue-200 flex items-center justify-center text-slate-500 group-hover:text-blue-600 transition-all shadow-2xs">
+              <ArrowLeft size={13} strokeWidth={2.4} className="group-hover:-translate-x-0.5 transition-transform" />
+            </div>
+            <span>Back to Home</span>
+          </Link>
+
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-200/60">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Enterprise SSO
+          </span>
+        </div>
+
         {loading ? (
           /* ── Loading / signing-in state ── */
           <div className="flex flex-col items-center text-center py-12 gap-4" role="status" aria-live="polite">
@@ -161,7 +181,7 @@ export default function LoginPage() {
           <>
             {/* Heading */}
             <h1
-              className="font-bold text-[#0F172A] text-center mb-1"
+              className="font-bold text-[#0F172A] text-center mb-1.5"
               style={{ fontSize: '22px', letterSpacing: '-0.02em' }}
             >
               Login to Your Account

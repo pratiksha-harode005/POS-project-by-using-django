@@ -216,26 +216,8 @@ export const recommendToAdminApi = async (
     recommended_amount: amount,
   }
 
-  try {
-    const res = await apiClient.post(`/finance/requests/${id}/recommend-admin/`, payload)
-    return res.data
-  } catch {
-    try {
-      const fallback = await apiClient.post(`/requests/${id}/recommend-admin/`, payload)
-      return fallback.data
-    } catch {
-      try {
-        const legacyFallback = await apiClient.post(`/requests/${id}/process_approval/`, {
-          action: 'RECOMMEND_ADMIN',
-          notes: payload.comments,
-          amount: payload.approved_amount,
-        })
-        return legacyFallback.data
-      } catch {
-        return { success: true }
-      }
-    }
-  }
+  const res = await apiClient.post(`/finance/requests/${id}/recommend-admin/`, payload)
+  return res.data
 }
 
 

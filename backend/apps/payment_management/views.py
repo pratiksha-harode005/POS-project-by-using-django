@@ -120,16 +120,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
         )
         if is_bank_method:
             if raw_ref:
-                if len(str(raw_ref).strip()) != 12 or not str(raw_ref).strip().isalnum():
+                clean_ref_str = str(raw_ref).strip()
+                if len(clean_ref_str) > 15 or not clean_ref_str.isalnum():
                     return Response(
-                        {'error': 'UTR / Bank Reference Number must be exactly 12 alphanumeric characters.'},
+                        {'error': 'UTR / Bank Reference Number must be alphanumeric and have a maximum limit of 15 characters.'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                ref_num = str(raw_ref).strip().upper()
+                ref_num = clean_ref_str.upper()
             else:
                 ref_num = payment.reference_number
         else:
-            ref_num = raw_ref or payment.reference_number
+            ref_num = str(raw_ref).strip()[:15] if raw_ref else payment.reference_number
         notes = data.get('notes') or data.get('comment') or payment.notes
 
         payment.payment_method = pay_method
@@ -147,59 +148,86 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return Response(PaymentSerializer(payment).data)
 
     def _complete_stage(self, payment):
-        # 1. Update Invoice to Paid
-        inv = payment.invoice
-        if inv:
-            inv.status = 'Paid'
-            inv.save()
-            if inv.purchase_order:
-                if inv.purchase_order.status in ['Issued', 'Confirmed']:
-                    inv.purchase_order.status = 'Delivered'
-                    inv.purchase_order.save()
+        try:
+            # 1. Update Invoice to Paid
+            inv = payment.invoice
+            if inv:
+                inv.status = 'Paid'
+                inv.save()
+                if inv.purchase_order:
+                    if inv.purchase_order.status in ['Issued', 'Confirmed']:
+                        inv.purchase_order.status = 'Delivered'
+                        inv.purchase_order.save()
 
-        # 2. Update PurchaseRequest to Stage 9 (Payment) and Completed
-        pr = payment.purchase_request
-        if pr:
-            pr.current_stage = 9  # Payment
-            pr.status = 'Completed'
-            pr.save()
+            # 2. Update PurchaseRequest to Stage 9 (Payment) and Completed
+            pr = payment.purchase_request
+            if pr:
+                pr.current_stage = 9  # Payment
+                pr.status = 'Completed'
+                pr.save()
 
-            for po in pr.purchase_orders.all():
-                if po.status in ['Issued', 'Confirmed']:
-                    po.status = 'Delivered'
-                    po.save()
+                for po in pr.purchase_orders.all():
+                    if po.status in ['Issued', 'Confirmed']:
+                        po.status = 'Delivered'
+                        po.save()
 
-            user_actor = self.request.user if hasattr(self, 'request') and self.request and hasattr(self.request, 'user') and self.request.user.is_authenticated else None
-            if user_actor:
-                ApprovalStep.objects.create(
-                    request=pr,
-                    actor=user_actor,
-                    role=getattr(user_actor, 'role', 'MANAGER') or 'MANAGER',
-                    decision='APPROVE',
-                    notes=f"Payment settled. UTR: {payment.reference_number}"
-                )
+                user_actor = None
+                if hasattr(self, 'request') and self.request and hasattr(self.request, 'user'):
+                    if getattr(self.request.user, 'is_authenticated', False):
+                        user_actor = self.request.user
+                if not user_actor:
+                    from apps.users.models import User
+                    user_actor = User.objects.filter(role='MANAGER').first() or User.objects.first()
 
-        from apps.notification_management.services import notify_stage_event, notify_vendor
-        # 1. Notify Vendor
-        if payment.vendor:
-            notify_vendor(
-                vendor=payment.vendor,
-                purchase_request=pr,
-                title=f"Payment Disbursed (UTR: {payment.reference_number})",
-                message=f"Payment of Rs.{payment.amount:,.2f} has been disbursed for Invoice {inv.invoice_number if inv else ''} (PO: {inv.purchase_order.po_id if inv and inv.purchase_order else ''})."
-            )
+                if user_actor:
+                    try:
+                        ApprovalStep.objects.create(
+                            request=pr,
+                            actor=user_actor,
+                            role=getattr(user_actor, 'role', 'MANAGER') or 'MANAGER',
+                            decision='APPROVE',
+                            notes=f"Payment settled. UTR: {payment.reference_number}"
+                        )
+                    except Exception as e:
+                        print(f"ApprovalStep creation warning: {e}")
 
-        # 2. Notify Requester (Originating Portal), Manager, Finance, and Admin
-        if pr:
-            notify_stage_event(
-                'PAYMENT_COMPLETED',
-                purchase_request=pr,
-                actor=self.request.user if hasattr(self, 'request') and self.request and hasattr(self.request, 'user') and self.request.user.is_authenticated else None,
-                details={
-                    'amount': float(payment.amount or 0),
-                    'reference_number': payment.reference_number,
-                    'vendor_name': payment.vendor.name if payment.vendor else 'Vendor',
-                    'po_id': inv.purchase_order.po_id if inv and inv.purchase_order else 'PO-AUTO'
-                }
-            )
+            from apps.notification_management.services import notify_stage_event, notify_vendor
+            # 3. Notify Vendor
+            if payment.vendor:
+                try:
+                    po_id = inv.purchase_order.po_id if (inv and inv.purchase_order) else (pr.purchase_orders.first().po_id if (pr and pr.purchase_orders.exists()) else 'PO-AUTO')
+                    amt_val = float(payment.amount) if payment.amount else 0.0
+                    notify_vendor(
+                        vendor=payment.vendor,
+                        purchase_request=pr,
+                        title=f"Payment Disbursed (UTR: {payment.reference_number})",
+                        message=f"Payment of Rs.{amt_val:,.2f} has been disbursed for Invoice {inv.invoice_number if inv else ''} (PO: {po_id})."
+                    )
+                except Exception as e:
+                    print(f"Vendor notification warning: {e}")
+
+            # 4. Notify Requester (Originating Portal), Manager, Finance, and Admin
+            if pr:
+                try:
+                    actor_user = None
+                    if hasattr(self, 'request') and self.request and hasattr(self.request, 'user') and getattr(self.request.user, 'is_authenticated', False):
+                        actor_user = self.request.user
+                    po_id = inv.purchase_order.po_id if (inv and inv.purchase_order) else (pr.purchase_orders.first().po_id if pr.purchase_orders.exists() else 'PO-AUTO')
+                    amt_val = float(payment.amount) if payment.amount else 0.0
+                    vendor_display = payment.vendor.name if payment.vendor else (payment.vendor_name or 'Vendor Partner')
+                    notify_stage_event(
+                        'PAYMENT_COMPLETED',
+                        purchase_request=pr,
+                        actor=actor_user,
+                        details={
+                            'amount': amt_val,
+                            'reference_number': payment.reference_number,
+                            'vendor_name': vendor_display,
+                            'po_id': po_id
+                        }
+                    )
+                except Exception as e:
+                    print(f"Stage event notification warning: {e}")
+        except Exception as e:
+            print(f"Error in Payment _complete_stage: {e}")
 

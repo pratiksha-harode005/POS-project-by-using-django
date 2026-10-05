@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { History, Search, Filter, Download, ArrowUpDown, ChevronLeft, ChevronRight, FileSpreadsheet, FileText } from 'lucide-react'
 import { useProcurement } from '../../context/ProcurementContext'
 import { formatDate } from '../../utils/formatDate'
+import { sortRequestsNewestFirst } from '../../utils/workflowUtils'
 
 export const RequestHistoryPage: React.FC = () => {
   const { requests } = useProcurement()
@@ -70,14 +71,16 @@ export const RequestHistoryPage: React.FC = () => {
   })
 
   // Sorting logic
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = sortOrder === 'desc' && sortField === 'date'
+    ? sortRequestsNewestFirst(filtered)
+    : [...filtered].sort((a, b) => {
     if (sortField === 'cost') {
       const valA = a.estimatedCost || 0
       const valB = b.estimatedCost || 0
       return sortOrder === 'asc' ? valA - valB : valB - valA
     } else {
-      const valA = new Date(a.date).getTime()
-      const valB = new Date(b.date).getTime()
+      const valA = new Date((a as any).createdAt || (a as any).created_at || a.date).getTime()
+      const valB = new Date((b as any).createdAt || (b as any).created_at || b.date).getTime()
       return sortOrder === 'asc' ? valA - valB : valB - valA
     }
   })

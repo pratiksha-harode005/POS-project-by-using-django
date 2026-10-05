@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { CreditCard, Eye, AlertTriangle, Search, Filter } from 'lucide-react'
 import { useProcurement, PaymentRecord } from '../../context/ProcurementContext'
 import { UnifiedReceiptModal } from '../../components/portal/UnifiedReceiptModal'
@@ -8,7 +8,14 @@ export const PaymentStatusPage: React.FC = () => {
 
   const [selectedViewReceipt, setSelectedViewReceipt] = useState<PaymentRecord | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
+  const [sortOrder, setSortOrder] = useState<'NEWEST' | 'OLDEST'>('NEWEST')
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300)
+    return () => window.clearTimeout(timeout)
+  }, [searchQuery])
 
   // Helper to format INR currency
   const formatINR = (val: number | undefined | null) => {
@@ -21,13 +28,16 @@ export const PaymentStatusPage: React.FC = () => {
     }).format(val)
   }
 
-  // Filter & Sort payments: Newest receipt first, one card per receipt
+  // Filter receipts and sort by the actual payment/receipt date, never the due date.
   const filteredAndSortedPayments = useMemo(() => {
     // Only include software/SaaS payments, exclude hardware
     let result = payments.filter((p: any) => {
       // It's software if flowType is 'B', or category has software/saas/cloud/license/subscription, or software_name exists
       const isSoft = (
         p.flowType === 'B' ||
+        (p as any).purchaseRequestDetail?.flow_type === 'B' ||
+        (p as any).purchaseRequestDetail?.request_operation === 'RENEWAL' ||
+        (p as any).purchaseRequestDetail?.request_operation === 'UPGRADE' ||
         (p.category || '').toLowerCase().includes('software') ||
         (p.category || '').toLowerCase().includes('saas') ||
         (p.category || '').toLowerCase().includes('cloud') ||
@@ -41,29 +51,16 @@ export const PaymentStatusPage: React.FC = () => {
       return isSoft
     })
 
-    // Newest first (by receipt generated date / confirmed date / payment date / created_at descending)
-    result.sort((a, b) => {
-      const prA = a.purchaseRequestDetail || {}
-      const prB = b.purchaseRequestDetail || {}
-      const extraA = prA.extra_fields || prA.extraFields || {}
-      const extraB = prB.extra_fields || prB.extraFields || {}
-      const timeA = new Date(extraA.receipt_generated_at || prA.confirmed_at || a.dueDate || (a as any).created_at || prA.date || 0).getTime()
-      const timeB = new Date(extraB.receipt_generated_at || prB.confirmed_at || b.dueDate || (b as any).created_at || prB.date || 0).getTime()
-      if (timeB !== timeA) return timeB - timeA
-      return String(b.id).localeCompare(String(a.id))
-    })
-
-    // Search filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
+    if (debouncedSearchQuery) {
+      const q = debouncedSearchQuery.toLowerCase()
       result = result.filter(p => {
         const pr = p.purchaseRequestDetail || {}
         const extra = pr.extra_fields || pr.extraFields || {}
         const pj = pr.payment_justification_detail || extra.payment_justification || {}
-        const swName = (pj.software_name || pr.software_name || p.title || '').toLowerCase()
-        const reqId = (p.requestId || pr.request_id || pr.id || '').toLowerCase()
-        const pId = (p.id || '').toLowerCase()
-        const rcpId = (extra.software_receipt_id || '').toLowerCase()
+        const swName = String(pj.software_name || pr.software_name || p.title || '').toLowerCase()
+        const reqId = String(p.requestId || pr.request_id || pr.id || '').toLowerCase()
+        const pId = String(p.id || '').toLowerCase()
+        const rcpId = String(extra.software_receipt_id || extra.receipt_no || p.receiptDetails?.fileName || '').toLowerCase()
         return swName.includes(q) || reqId.includes(q) || pId.includes(q) || rcpId.includes(q)
       })
     }
@@ -73,8 +70,35 @@ export const PaymentStatusPage: React.FC = () => {
       result = result.filter(p => (p.status || '').toUpperCase() === statusFilter.toUpperCase())
     }
 
+    const paymentTimestamp = (payment: PaymentRecord): number => {
+      const pr = payment.purchaseRequestDetail || {}
+      const extra = pr.extra_fields || pr.extraFields || {}
+      const pj = pr.payment_justification_detail || extra.payment_justification || {}
+      const candidates = [
+        payment.payment_date,
+        extra.receipt_generated_at,
+        pj.payment_date,
+        pr.confirmed_at,
+        (payment as any).created_at,
+        pr.created_at,
+      ]
+      for (const candidate of candidates) {
+        if (!candidate) continue
+        const time = new Date(candidate).getTime()
+        if (Number.isFinite(time)) return time
+      }
+      return 0
+    }
+    result.sort((a, b) => {
+      const delta = paymentTimestamp(b) - paymentTimestamp(a)
+      if (delta !== 0) return sortOrder === 'NEWEST' ? delta : -delta
+      return sortOrder === 'NEWEST'
+        ? String(b.id).localeCompare(String(a.id))
+        : String(a.id).localeCompare(String(b.id))
+    })
+
     return result
-  }, [payments, searchQuery, statusFilter])
+  }, [payments, debouncedSearchQuery, statusFilter, sortOrder])
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -133,6 +157,19 @@ export const PaymentStatusPage: React.FC = () => {
                 <option value="Awaiting Receipt">Awaiting Receipt</option>
               </select>
             </div>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="receipt-sort-order" className="text-xs font-bold text-slate-500">Sort:</label>
+              <select
+                id="receipt-sort-order"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as 'NEWEST' | 'OLDEST')}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="NEWEST">Newest</option>
+                <option value="OLDEST">Oldest</option>
+              </select>
+            </div>
           </div>
 
           {/* Empty State */}
@@ -157,9 +194,9 @@ export const PaymentStatusPage: React.FC = () => {
                 // Card Display Fields strictly limited to real PostgreSQL fields:
                 const softwareName = pj.software_name || pr.software_name || pr.title || p.receiptDetails?.itemName || p.title || 'Software Requisition'
                 const requestId = p.requestId || pr.request_id || pr.id || 'Not available'
-                const paymentAmount = formatINR(p.amount ?? pj.actual_purchase_amount ?? pr.finance_approved_amount ?? pr.approved_amount)
+                const paymentAmount = formatINR(p.amount > 0 ? p.amount : null)
                 const paymentStatus = p.status || pr.payment_status || 'Paid'
-                const paymentDate = extra.receipt_generated_at?.split('T')[0] || p.payment_date || p.dueDate || pj.payment_date || pr.confirmed_at?.split('T')[0] || 'Not available'
+                const paymentDate = p.payment_date?.split('T')[0] || extra.receipt_generated_at?.split('T')[0] || pj.payment_date?.split('T')[0] || pr.confirmed_at?.split('T')[0] || (p as any).created_at?.split('T')[0] || pr.created_at?.split('T')[0] || 'Not available'
 
                 return (
                   <div

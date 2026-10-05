@@ -17,6 +17,7 @@ class RFQ(TimeStampedModel):
     title = models.CharField(max_length=200)
     deadline = models.DateField(db_index=True)
     terms = models.TextField(blank=True)
+    category = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     invited_vendors = models.ManyToManyField(Vendor, related_name='invited_rfqs')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Open', db_index=True)
     attachments = models.FileField(upload_to='rfq_attachments/', blank=True, null=True)

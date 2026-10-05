@@ -215,6 +215,54 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
 
   const product = getProductDetails()
   const recInfo = request ? getRecommendationStatus(request) : null
+  const rawSt = ((request as any).raw_status || request.status || '').toUpperCase()
+  const st = (request.status || '').toLowerCase()
+  // Authoritative approved check: based ONLY on the backend-returned raw_status / status.
+  // Do NOT use currentStage, extra_fields content, approvedBy, or approval_history action strings
+  // to infer approval — these fire incorrectly on pending renewals that inherit parent data.
+  const isAlreadyApproved = Boolean(
+    !request ? false :
+    // For Manager portal: request is already approved if it moved past Manager Review
+    rawSt === 'MANAGER_APPROVED' ||
+    rawSt === 'FINANCE_APPROVED' ||
+    rawSt === 'ADMIN_APPROVED' ||
+    rawSt === 'PAYMENT_APPROVED' ||
+    rawSt === 'PAYMENT_PROCESSED' ||
+    rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+    rawSt === 'PAYMENT_JUSTIFIED' ||
+    rawSt === 'MANAGER_VERIFIED' ||
+    rawSt === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT' ||
+    rawSt === 'TEAM_LEAD_ACKNOWLEDGED' ||
+    rawSt === 'REQUEST_COMPLETED' ||
+    rawSt === 'COMPLETED' ||
+    rawSt === 'IN_PROCUREMENT' ||
+    rawSt === 'RFQ_SENT' ||
+    rawSt === 'QUOTES_RECEIVED' ||
+    rawSt === 'DELIVERED' ||
+    rawSt === 'INVOICED' ||
+    rawSt === 'VERIFIED' ||
+    rawSt === 'PAYMENT_COMPLETED' ||
+    st === 'approved' ||
+    st === 'manager_approved' ||
+    st === 'finance_approved' ||
+    st === 'admin_approved' ||
+    st === 'payment_approved' ||
+    st === 'payment_processed' ||
+    st === 'payment_justification_submitted' ||
+    st === 'payment_justified' ||
+    st === 'manager_verified' ||
+    st === 'manager_verified_pending_team_lead_acknowledgement' ||
+    st === 'team_lead_acknowledged' ||
+    st === 'request_completed' ||
+    st === 'completed'
+  )
+
+  const isAlreadyRejected = Boolean(
+    st === 'rejected' ||
+    st === 'finance_rejected' ||
+    rawSt.includes('REJECT') ||
+    Boolean((request as any).extra_fields?.manager_rejected)
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
@@ -249,7 +297,7 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
                   }`}>
                     {request.financeStatus
                       ? `Finance: ${request.financeStatus.toUpperCase()}`
-                      : request.status.replace(/_/g, ' ').toUpperCase()}
+                      : String(request.status || '').replace(/_/g, ' ').toUpperCase()}
                   </span>
                 )}
               </div>
@@ -306,15 +354,24 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
           {/* Tracking Progress Bar */}
           <div className="pb-2">
             <TrackingStepper
+              requestId={request.id}
               category={request.category}
               title={request.title}
               status={request.raw_status || request.status}
+              currentStage={request.currentStage}
               currentlyWith={request.currentlyWith || (request as any).currently_with}
               financeStatus={request.financeStatus}
               paymentStatus={request.paymentStatus}
               lastUpdated={request.date}
               history={request.history}
+              approval_steps={(request as any).approval_steps}
               timeline={(request as any).timeline}
+              rfqId={(request as any).rfqId || (request as any).rfq_id}
+              poNumber={(request as any).poNumber || (request as any).po_number}
+              grnNumber={(request as any).grnNumber || (request as any).grn_number}
+              invoiceNumber={(request as any).invoiceNumber || (request as any).invoice_number || (request as any).invoiceDetails?.invoiceNumber}
+              isVerified={(request as any).isVerified || (request as any).documentsVerified}
+              documentsVerified={(request as any).documentsVerified}
             />
           </div>
 
@@ -699,32 +756,44 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
           </button>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {onReject && (
-              <button
-                type="button"
-                onClick={() => onReject(request)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-              >
-                <XCircle size={14} /> Reject
-              </button>
-            )}
-            {onRecommend && (
-              <button
-                type="button"
-                onClick={() => onRecommend(request)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-              >
-                <ArrowUpRight size={14} /> {recommendLabel}
-              </button>
-            )}
-            {onApprove && (
-              <button
-                type="button"
-                onClick={() => onApprove(request)}
-                className="flex items-center gap-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-              >
-                <CheckCircle size={15} /> Approve Request
-              </button>
+            {isAlreadyApproved ? (
+              <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                <CheckCircle size={15} className="text-emerald-600" /> Manager Sign-Off Completed
+              </span>
+            ) : isAlreadyRejected ? (
+              <span className="text-xs font-bold text-rose-800 bg-rose-100 border border-rose-300 px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                <XCircle size={15} className="text-rose-600" /> Request Disapproved
+              </span>
+            ) : (
+              <>
+                {onReject && (
+                  <button
+                    type="button"
+                    onClick={() => onReject(request)}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                  >
+                    <XCircle size={14} /> Reject
+                  </button>
+                )}
+                {onRecommend && (
+                  <button
+                    type="button"
+                    onClick={() => onRecommend(request)}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                  >
+                    <ArrowUpRight size={14} /> {recommendLabel}
+                  </button>
+                )}
+                {onApprove && (
+                  <button
+                    type="button"
+                    onClick={() => onApprove(request)}
+                    className="flex items-center gap-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                  >
+                    <CheckCircle size={15} /> Approve Request
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

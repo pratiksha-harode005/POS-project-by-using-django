@@ -214,13 +214,25 @@ class PurchaseRequest(TimeStampedModel):
     def workflow_type(self):
         cat = (self.category or '').strip().lower()
         tit = (self.title or '').strip().lower()
+
+        # 1. Hardware, Physical Goods & IT Services Check First
+        hardware_keywords = [
+            'hardware', 'equipment', 'accessories', 'furniture', 'peripherals',
+            'server', 'laptop', 'desktop', 'monitor', 'printer', 'scanner',
+            'networking', 'telecom', 'cisco', 'switch', 'router', 'cable',
+            'docking', 'ram', 'ssd', 'hard drive', 'it services', 'services', 'maintenance'
+        ]
+        if any(k in cat or k in tit for k in hardware_keywords):
+            return 'HARDWARE'
+
+        # 2. Software / SaaS indicators
         software_keywords = [
             'software', 'saas', 'cloud', 'license', 'subscription',
             'digital', 'api', 'aws', 'azure', 'gcp', 'jira', 'figma',
             'slack', 'github', 'zoom', 'antivirus', 'database', 'security tool', 'devops',
-            'cybersecurity', 'it services', 'training & certifications'
+            'cybersecurity', 'training & certifications'
         ]
-        if any(k in cat or k in tit for k in software_keywords):
+        if any(k in cat or k in tit for k in software_keywords) or getattr(self, 'flow_type', '') == 'B' or bool(getattr(self, 'software_name', '')):
             return 'SOFTWARE'
         return 'HARDWARE'
 
@@ -230,14 +242,7 @@ class PurchaseRequest(TimeStampedModel):
 
     @property
     def is_software(self):
-        cat_lower = (self.category or '').lower()
-        title_lower = (self.title or '').lower()
-        return (
-            any(k in cat_lower for k in ['software', 'saas', 'cloud', 'license', 'subscription', 'digital', 'it services', 'cybersecurity']) or
-            any(k in title_lower for k in ['software', 'saas', 'cloud', 'license', 'subscription', 'jira', 'slack', 'aws', 'azure']) or
-            getattr(self, 'flow_type', '') == 'B' or
-            bool(getattr(self, 'software_name', ''))
-        )
+        return self.workflow_type == 'SOFTWARE'
 
     @property
     def requester(self):

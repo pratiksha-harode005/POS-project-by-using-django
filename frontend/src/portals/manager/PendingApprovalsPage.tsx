@@ -460,8 +460,48 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
         ) : (
           paged.map((req) => {
             const recInfo = getRecommendationStatus(req)
-            const isApproved = statusFilter === 'APPROVED' || req.status === 'approved' || req.status === 'finance_approved' || (req.status as string) === 'payment_approved' || (req.status as string) === 'payment_justified' || (req.status as string) === 'payment_completed' || (req.status as string) === 'completed'
-            const isRejected = statusFilter === 'REJECTED' || req.status === 'rejected' || req.status === 'finance_rejected'
+            const rawSt = ((req as any).raw_status || req.status || '').toUpperCase()
+            const st = (req.status || '').toLowerCase()
+            const isRenewal = (req.request_operation || '').toUpperCase() === 'RENEWAL'
+            const isCompleted = ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED'].includes(rawSt) || st === 'completed'
+            const isApproved = !isCompleted && (statusFilter === 'APPROVED' || 
+              st === 'approved' || 
+              st === 'finance_approved' || 
+              rawSt.includes('APPROVED') || 
+              rawSt.includes('PROCUREMENT') || 
+              rawSt.includes('PO_') || 
+              rawSt.includes('RFQ') || 
+              rawSt.includes('QUOTES') || 
+              rawSt.includes('DELIVER') || 
+              rawSt.includes('VERIF') || 
+              rawSt.includes('PAYMENT') || 
+              rawSt.includes('ORDER_') || 
+              rawSt.includes('MATCH') || 
+              rawSt === 'COMPLETED' || 
+              rawSt === 'REQUEST_COMPLETED' || 
+              rawSt === 'FINANCE_REVIEW' ||
+              rawSt === 'RECOMMENDED_TO_FINANCE' ||
+              rawSt === 'RECOMMENDED_TO_ADMIN' ||
+              rawSt === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
+              st === 'finance_review' ||
+              st === 'recommended_to_finance' ||
+              st === 'payment_approved' || 
+              st === 'payment_justified' || 
+              st === 'payment_completed' || 
+              st === 'completed' || 
+              (req.currentStage !== undefined && req.currentStage >= 2) ||
+              Boolean((req as any).extra_fields?.manager_approved) || 
+              Boolean((req as any).extra_fields?.manager_signed_off) || 
+              Boolean((req as any).extra_fields?.approved_at) ||
+              Boolean(req.approvedBy) ||
+              Boolean((req as any).approved_by) ||
+              Boolean((req as any).approval_steps?.some((s: any) => (s.role === 'MANAGER' || s.step_order === 1) && (s.decision === 'APPROVE' || s.status === 'APPROVED' || s.action === 'APPROVE'))) ||
+              Boolean((req as any).approval_history?.some((s: any) => (s.user_role === 'MANAGER' || s.action === 'APPROVE' || s.action === 'APPROVED' || s.action === 'RECOMMEND'))))
+            const isRejected = statusFilter === 'REJECTED' || 
+              st === 'rejected' || 
+              st === 'finance_rejected' || 
+              rawSt.includes('REJECT') || 
+              Boolean((req as any).extra_fields?.manager_rejected)
             const isPending = !isApproved && !isRejected && !recInfo.isRecommended
             const isNew = isUnread(req.id) && (statusFilter === 'PENDING' || isPending)
 
@@ -509,6 +549,10 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                             Escalated by Manager
                           </span>
                         </>
+                      ) : isCompleted ? (
+                        <span className="text-[10px] font-black text-sky-900 bg-sky-100 px-3 py-0.5 rounded-full border border-sky-300 shadow-2xs flex items-center gap-1">
+                          <CheckCircle size={11} /> Request Completed
+                        </span>
                       ) : isApproved ? (
                         <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
                           <CheckCircle size={11} /> Manager Approved
@@ -557,31 +601,16 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                 {/* Software / SaaS Payment Justification Banner */}
                 {(() => {
                   const reqRawSt = ((req as any).raw_status || req.status || '').toUpperCase()
-                  const isJustificationVerified = 
-                    reqRawSt === 'PAYMENT_JUSTIFIED' ||
-                    reqRawSt === 'MANAGER_VERIFIED' ||
-                    reqRawSt === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT' ||
-                    reqRawSt === 'TEAM_LEAD_ACKNOWLEDGED' ||
-                    reqRawSt === 'REQUEST_COMPLETED' ||
-                    reqRawSt === 'COMPLETED' ||
-                    Boolean((req as any).extra_fields?.justification_verified_at) ||
-                    Boolean((req as any).payment_justification_detail?.verified_at)
-
-                  const hasJustification = Boolean(
-                    isJustificationVerified ||
-                    reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-                    reqRawSt === 'PAYMENT_PROCESSED' ||
-                    (req as any).payment_justification_detail ||
-                    (req as any).extra_fields?.payment_justification
+                  const verifiedStatuses = ['PAYMENT_JUSTIFIED', 'MANAGER_VERIFIED', 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'TEAM_LEAD_ACKNOWLEDGED', 'REQUEST_COMPLETED', 'COMPLETED']
+                  const submittedAt = (req as any).payment_justification_detail?.submitted_at
+                  const hasSubmittedJustification = reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' || Boolean(submittedAt)
+                  // Ignore legacy verification timestamps unless the request has reached
+                  // a verification state and contains an actual submitted dossier.
+                  const isJustificationVerified = verifiedStatuses.includes(reqRawSt) && Boolean(
+                    submittedAt && ((req as any).extra_fields?.justification_verified_at || (req as any).payment_justification_detail?.verified_at || verifiedStatuses.includes(reqRawSt))
                   )
-                  const isAwaitingJustificationVerification = (
-                    !isJustificationVerified &&
-                    (reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-                     reqRawSt === 'PAYMENT_PROCESSED' ||
-                     Boolean((req as any).extra_fields?.payment_justification || (req as any).payment_justification_detail)) &&
-                    reqRawSt !== 'COMPLETED' &&
-                    reqRawSt !== 'REQUEST_COMPLETED'
-                  )
+                  const hasJustification = isJustificationVerified || hasSubmittedJustification
+                  const isAwaitingJustificationVerification = hasSubmittedJustification && !isJustificationVerified
 
                   if (!hasJustification) return null
 
@@ -742,24 +771,11 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                   {/* Action Buttons: Show ONLY View/Verify Justification when justification exists */}
                   {(() => {
                     const reqRawSt = ((req as any).raw_status || req.status || '').toUpperCase()
-                    const hasJustification = Boolean(
-                      reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-                      (req as any).payment_justification_detail ||
-                      (req as any).extra_fields?.payment_justification ||
-                      (req as any).extra_fields?.justification_verified_at ||
-                      reqRawSt === 'PAYMENT_JUSTIFIED' ||
-                      reqRawSt === 'MANAGER_VERIFIED' ||
-                      reqRawSt === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT'
-                    )
-                    const isAwaitingJustificationVerification = (
-                      reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-                      (Boolean((req as any).extra_fields?.payment_justification || (req as any).payment_justification_detail) &&
-                       !(req as any).extra_fields?.justification_verified_at &&
-                       reqRawSt !== 'PAYMENT_JUSTIFIED' &&
-                       reqRawSt !== 'MANAGER_VERIFIED' &&
-                       reqRawSt !== 'COMPLETED' &&
-                       reqRawSt !== 'REQUEST_COMPLETED')
-                    )
+                    const verifiedStatuses = ['PAYMENT_JUSTIFIED', 'MANAGER_VERIFIED', 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'TEAM_LEAD_ACKNOWLEDGED', 'REQUEST_COMPLETED', 'COMPLETED']
+                    const hasSubmittedJustification = reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' || Boolean((req as any).payment_justification_detail?.submitted_at)
+                    const isVerified = verifiedStatuses.includes(reqRawSt) && Boolean((req as any).payment_justification_detail?.submitted_at)
+                    const hasJustification = hasSubmittedJustification || isVerified
+                    const isAwaitingJustificationVerification = hasSubmittedJustification && !isVerified
 
                     if (hasJustification) {
                       return (
@@ -769,9 +785,9 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                               markAsRead(req.id)
                               setJustificationModalReq(req)
                             }}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                            className={`flex items-center gap-1.5 px-4 py-2 ${isAwaitingJustificationVerification ? 'bg-violet-600 hover:bg-violet-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer`}
                           >
-                            <ShieldCheck size={14} /> View/Verify Justification
+                            {isAwaitingJustificationVerification ? <><ShieldCheck size={14} /> View/Verify Justification</> : <><CheckCircle size={14} /> View Justification</>}
                           </button>
                           {isAwaitingJustificationVerification ? (
                             <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold animate-pulse">
@@ -804,7 +820,7 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
 
                     return (
                       <>
-                        {(statusFilter === 'PENDING' || (statusFilter === 'ALL' && isPending)) && (
+                        {isPending && (
                           <div className="flex items-center gap-2 flex-wrap">
                             <button
                               onClick={() => handleOpenViewDetails(req)}
@@ -824,12 +840,14 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                             >
                               <XCircle size={14} /> Reject
                             </button>
-                            <button
-                              onClick={() => openModal(req, 'RECOMMEND')}
-                              className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-                            >
-                              <ArrowUpRight size={14} /> Recommend to Higher Authority
-                            </button>
+                            {!isRenewal && (
+                              <button
+                                onClick={() => openModal(req, 'RECOMMEND')}
+                                className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                              >
+                                <ArrowUpRight size={14} /> Recommend to Higher Authority
+                              </button>
+                            )}
                           </div>
                         )}
 
@@ -848,6 +866,14 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                               <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
                                 Approved: {fmt(req.approvalParams.approvedAmount)} • {req.approvalParams.costCenter}
                               </span>
+                            )}
+                            {isRenewal && rawSt === 'MANAGER_APPROVED' && (
+                              <button
+                                onClick={() => openModal(req, 'RECOMMEND')}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                              >
+                                <ArrowUpRight size={14} /> Recommend to Finance
+                              </button>
                             )}
                           </div>
                         )}
@@ -949,18 +975,111 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
         isOpen={!!viewingRequest}
         request={viewingRequest}
         onClose={() => setViewingRequest(null)}
-        onApprove={(req) => {
-          setViewingRequest(null)
-          openApprovalModal(req)
-        }}
-        onReject={(req) => {
-          setViewingRequest(null)
-          openModal(req, 'REJECT')
-        }}
-        onRecommend={(req) => {
-          setViewingRequest(null)
-          openModal(req, 'RECOMMEND')
-        }}
+        onApprove={(() => {
+          if (!viewingRequest) return undefined
+          const rawSt = ((viewingRequest as any).raw_status || viewingRequest.status || '').toUpperCase()
+          const st = (viewingRequest.status || '').toLowerCase()
+          const isPostAppr = (
+            rawSt.includes('APPROVED') ||
+            rawSt.includes('PROCUREMENT') ||
+            rawSt.includes('PO_') ||
+            rawSt.includes('RFQ') ||
+            rawSt.includes('QUOTES') ||
+            rawSt.includes('DELIVER') ||
+            rawSt.includes('VERIF') ||
+            rawSt.includes('PAYMENT') ||
+            rawSt.includes('ORDER_') ||
+            rawSt.includes('MATCH') ||
+            rawSt === 'COMPLETED' ||
+            rawSt === 'REQUEST_COMPLETED' ||
+            rawSt === 'FINANCE_REVIEW' ||
+            rawSt === 'RECOMMENDED_TO_FINANCE' ||
+            st === 'approved' ||
+            st === 'finance_approved' ||
+            st === 'finance_review' ||
+            st === 'recommended_to_finance' ||
+            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 2) ||
+            Boolean((viewingRequest as any).extra_fields?.manager_approved) ||
+            Boolean((viewingRequest as any).extra_fields?.manager_signed_off) ||
+            Boolean(viewingRequest.approvedBy) ||
+            Boolean((viewingRequest as any).approved_by)
+          )
+          if (isPostAppr) return undefined
+          return (req) => {
+            setViewingRequest(null)
+            openApprovalModal(req)
+          }
+        })()}
+        onReject={(() => {
+          if (!viewingRequest) return undefined
+          const rawSt = ((viewingRequest as any).raw_status || viewingRequest.status || '').toUpperCase()
+          const st = (viewingRequest.status || '').toLowerCase()
+          const isPostAppr = (
+            rawSt.includes('APPROVED') ||
+            rawSt.includes('PROCUREMENT') ||
+            rawSt.includes('PO_') ||
+            rawSt.includes('RFQ') ||
+            rawSt.includes('QUOTES') ||
+            rawSt.includes('DELIVER') ||
+            rawSt.includes('VERIF') ||
+            rawSt.includes('PAYMENT') ||
+            rawSt.includes('ORDER_') ||
+            rawSt.includes('MATCH') ||
+            rawSt === 'COMPLETED' ||
+            rawSt === 'REQUEST_COMPLETED' ||
+            rawSt === 'FINANCE_REVIEW' ||
+            rawSt === 'RECOMMENDED_TO_FINANCE' ||
+            st === 'approved' ||
+            st === 'finance_approved' ||
+            st === 'finance_review' ||
+            st === 'recommended_to_finance' ||
+            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 2) ||
+            Boolean((viewingRequest as any).extra_fields?.manager_approved) ||
+            Boolean((viewingRequest as any).extra_fields?.manager_signed_off) ||
+            Boolean(viewingRequest.approvedBy) ||
+            Boolean((viewingRequest as any).approved_by)
+          )
+          if (isPostAppr) return undefined
+          return (req) => {
+            setViewingRequest(null)
+            openModal(req, 'REJECT')
+          }
+        })()}
+        onRecommend={(() => {
+          if (!viewingRequest) return undefined
+          const rawSt = ((viewingRequest as any).raw_status || viewingRequest.status || '').toUpperCase()
+          const st = (viewingRequest.status || '').toLowerCase()
+          const isPostAppr = (
+            rawSt.includes('APPROVED') ||
+            rawSt.includes('PROCUREMENT') ||
+            rawSt.includes('PO_') ||
+            rawSt.includes('RFQ') ||
+            rawSt.includes('QUOTES') ||
+            rawSt.includes('DELIVER') ||
+            rawSt.includes('VERIF') ||
+            rawSt.includes('PAYMENT') ||
+            rawSt.includes('ORDER_') ||
+            rawSt.includes('MATCH') ||
+            rawSt === 'COMPLETED' ||
+            rawSt === 'REQUEST_COMPLETED' ||
+            rawSt === 'FINANCE_REVIEW' ||
+            rawSt === 'RECOMMENDED_TO_FINANCE' ||
+            st === 'approved' ||
+            st === 'finance_approved' ||
+            st === 'finance_review' ||
+            st === 'recommended_to_finance' ||
+            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 2) ||
+            Boolean((viewingRequest as any).extra_fields?.manager_approved) ||
+            Boolean((viewingRequest as any).extra_fields?.manager_signed_off) ||
+            Boolean(viewingRequest.approvedBy) ||
+            Boolean((viewingRequest as any).approved_by)
+          )
+          if (isPostAppr) return undefined
+          return (req) => {
+            setViewingRequest(null)
+            openModal(req, 'RECOMMEND')
+          }
+        })()}
       />
 
       {/* View / Verify Justification Modal (Software & SaaS) */}

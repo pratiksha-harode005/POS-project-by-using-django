@@ -74,7 +74,9 @@ export const TeamLeadDashboard: React.FC = () => {
     window.addEventListener('kss_backend_updated', handleUpdate)
     window.addEventListener('focus', handleUpdate)
     window.addEventListener('storage', handleUpdate)
-    const interval = setInterval(fetchLiveNotifications, 3000)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchLiveNotifications()
+    }, 3000)
     return () => {
       window.removeEventListener('kss_backend_updated', handleUpdate)
       window.removeEventListener('focus', handleUpdate)
@@ -194,7 +196,7 @@ export const TeamLeadDashboard: React.FC = () => {
             onClick={() => navigate('/portal/team_lead/my-requests', { state: { filterStatus: 'Returned' } })}
             className="bg-amber-600 text-white font-bold text-xs px-4 py-2 rounded-xl hover:bg-amber-700 transition-colors flex items-center gap-1.5 flex-shrink-0 shadow-xs cursor-pointer"
           >
-            <RotateCcw size={14} /> Edit & Resubmit
+            <RotateCcw size={14} /> Review Returned Requests
           </button>
         </div>
       )}

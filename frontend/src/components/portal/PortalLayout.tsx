@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { Sidebar } from './Sidebar'
 import { NotificationDropdown } from './NotificationDropdown'
+import { PortalErrorBoundary } from './PortalErrorBoundary'
 import { useAuth, UserRole } from '../../context/AuthContext'
 import { useManagerData } from '../../context/ManagerDataContext'
 import {
@@ -505,7 +506,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
 
         {/* Dynamic Page Content — Only this content area scrolls */}
         <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-[#F8FAFC] min-h-0 overscroll-contain">
-          {children}
+          <PortalErrorBoundary key={location.pathname}>{children}</PortalErrorBoundary>
         </main>
       </div>
     </div>

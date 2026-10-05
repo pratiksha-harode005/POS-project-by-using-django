@@ -5,7 +5,7 @@ import {
   FileText, ArrowRight, ShieldCheck, User, Building, Calendar,
   Paperclip, DollarSign, X, Check, ArrowUpRight, Eye, Layers, CreditCard
 } from 'lucide-react'
-import { useFinanceData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
+import { useFinanceData, ProcurementRequest, ApprovalParameters, isFinanceRelevantRequest } from '../../context/ManagerDataContext'
 import { useActivity, UnreadBadge } from '../../context/ActivityContext'
 import { useAuth } from '../../context/AuthContext'
 import { RequestDetailsModal } from '../../components/portal/RequestDetailsModal'
@@ -74,15 +74,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
       ...pendingFinancialApprovals,
       ...approvedFinanceRequests,
       ...rejectedFinanceRequests,
-      ...allRequests.filter(r => 
-        r.financeStatus || 
-        r.status.startsWith('finance_') || 
-        r.status.startsWith('payment_') || 
-        r.status === 'approved' || 
-        r.status === 'recommended_to_admin' || 
-        r.status === 'completed' ||
-        ['FINANCE_APPROVED', 'ADMIN_APPROVED', 'PAYMENT_APPROVED', 'PAYMENT_PROCESSED', 'PAYMENT_JUSTIFICATION_SUBMITTED', 'PAYMENT_JUSTIFIED', 'PAYMENT_COMPLETED', 'COMPLETED', 'TEAM_LEAD_CONFIRMED', 'RECOMMENDED_TO_FINANCE', 'FINANCE_REVIEW'].includes((r as any).raw_status || '')
-      )
+      ...allRequests.filter(isFinanceRelevantRequest)
     ]
     return list.filter((item, idx, self) => idx === self.findIndex(t => t.id === item.id))
   }, [pendingFinancialApprovals, approvedFinanceRequests, rejectedFinanceRequests, allRequests])
@@ -134,21 +126,28 @@ export const PendingFinancialApprovalPage: React.FC = () => {
 
   const openAction = (req: ProcurementRequest, act: ActionType) => {
     markAsRead(req.id)
+    const rawSt = String((req as any).raw_status || req.status || '').toUpperCase()
     const isApp = Boolean(
-      req.status === 'approved' ||
       req.status === 'finance_approved' ||
-      (req.currentStage !== undefined && req.currentStage >= 4) ||
-      req.status === 'quotes_received' ||
-      req.status === 'assigned_to_vendor' ||
-      req.status === 'delivered' ||
-      req.status === 'invoiced' ||
+      rawSt === 'FINANCE_APPROVED' ||
+      rawSt === 'ADMIN_APPROVED' ||
+      rawSt === 'PAYMENT_APPROVED' ||
+      rawSt === 'PAYMENT_PROCESSED' ||
+      rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+      rawSt === 'PAYMENT_JUSTIFIED' ||
+      rawSt === 'PAYMENT_COMPLETED' ||
+      rawSt === 'COMPLETED' ||
+      rawSt === 'REQUEST_COMPLETED' ||
+      req.status === 'payment_approved' ||
+      req.status === 'payment_completed' ||
       req.status === 'completed' ||
-      req.financeApprovedBy ||
-      req.financeApprovedDate ||
-      req.financeStatus === 'Approved'
+      req.financeStatus === 'Approved' ||
+      req.financeStatus === 'Paid' ||
+      req.financeStatus === 'Completed' ||
+      (Boolean(req.financeApprovedBy) && Boolean(req.financeApprovedDate))
     )
     if (isApp && act === 'APPROVE') {
-      showToast(`Request ${req.id} is already approved.`, 'info')
+      showToast(`Request ${req.id} is already approved by Finance.`, 'info')
       return
     }
     setActiveReq(req)
@@ -205,9 +204,18 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     } else if (modalAction === 'RECOMMEND_ADMIN') {
       if (!comment.trim()) {
         showToast('Please provide recommendation notes / justification for Admin', 'error')
+        setIsSubmitting(false)
         return
       }
-      recommendToHigherAuthority(activeReq.id, reason, comment, actorName)
+      try {
+        await recommendToHigherAuthority(activeReq.id, reason, comment, actorName)
+      } catch (error: any) {
+        const message = error?.response?.data?.reason || error?.response?.data?.detail || error?.message || 'Could not save the recommendation.'
+        showToast(message, 'error')
+        setIsSubmitting(false)
+        return
+      }
+      setIsSubmitting(false)
       showToast(`✓ Request ${activeReq.id} recommended to Higher Authority (Admin) for executive approval.`, 'success')
     }
   }
@@ -410,6 +418,8 @@ export const PendingFinancialApprovalPage: React.FC = () => {
               req.status === 'payment_justified' ||
               req.status === 'payment_completed' ||
               req.status === 'completed' ||
+              (req.status as string) === 'manager_approved' ||
+              (req as any).raw_status === 'MANAGER_APPROVED' ||
               req.financeStatus === 'Approved' ||
               req.financeStatus === 'Paid' ||
               req.financeStatus === 'Completed' ||
@@ -422,7 +432,25 @@ export const PendingFinancialApprovalPage: React.FC = () => {
               req.financeStatus === 'Rejected' ||
               ['REJECTED', 'FINANCE_REJECTED'].includes((req as any).raw_status || '')
 
-            const isPending = !isApproved && !isRejected
+            const isPending =
+              !isApproved &&
+              !isRejected &&
+              (
+                req.status === 'sent_to_finance' ||
+                req.status === 'finance_review' ||
+                req.status === 'recommended_to_finance' ||
+                (req as any).raw_status === 'RECOMMENDED_TO_FINANCE' ||
+                (req as any).raw_status === 'FINANCE_REVIEW' ||
+                (req as any).raw_status === 'FINANCE_RECOMMENDED' ||
+                (req as any).raw_status === 'FINANCE_RESEARCH' ||
+                (req as any).raw_status === 'COST_ESTIMATION' ||
+                (req as any).raw_status === 'FINANCE_REPORT' ||
+                req.financeStatus === 'Awaiting Finance Action' ||
+                req.financeStatus === 'Sent to Finance' ||
+                req.financeStatus === 'Under Review' ||
+                req.financeStatus === 'Recommended to Finance' ||
+                (req as any).current_approval_level === 'FINANCE'
+              )
             const isNew = isUnread(req.id) && !isApproved && !isRejected
 
             return (
@@ -1030,18 +1058,25 @@ export const PendingFinancialApprovalPage: React.FC = () => {
         })()}
         onRecommend={(() => {
           if (!viewingRequest) return undefined
+          const rawSt = String((viewingRequest as any).raw_status || viewingRequest.status || '').toUpperCase()
           const isApp = Boolean(
-            viewingRequest.status === 'approved' ||
             viewingRequest.status === 'finance_approved' ||
-            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 4) ||
-            viewingRequest.status === 'quotes_received' ||
-            viewingRequest.status === 'assigned_to_vendor' ||
-            viewingRequest.status === 'delivered' ||
-            viewingRequest.status === 'invoiced' ||
+            rawSt === 'FINANCE_APPROVED' ||
+            rawSt === 'ADMIN_APPROVED' ||
+            rawSt === 'PAYMENT_APPROVED' ||
+            rawSt === 'PAYMENT_PROCESSED' ||
+            rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+            rawSt === 'PAYMENT_JUSTIFIED' ||
+            rawSt === 'PAYMENT_COMPLETED' ||
+            rawSt === 'COMPLETED' ||
+            rawSt === 'REQUEST_COMPLETED' ||
+            viewingRequest.status === 'payment_approved' ||
+            viewingRequest.status === 'payment_completed' ||
             viewingRequest.status === 'completed' ||
-            viewingRequest.financeApprovedBy ||
-            viewingRequest.financeApprovedDate ||
-            viewingRequest.financeStatus === 'Approved'
+            viewingRequest.financeStatus === 'Approved' ||
+            viewingRequest.financeStatus === 'Paid' ||
+            viewingRequest.financeStatus === 'Completed' ||
+            (Boolean(viewingRequest.financeApprovedBy) && Boolean(viewingRequest.financeApprovedDate))
           )
           const isRej = Boolean(
             viewingRequest.status === 'rejected' ||

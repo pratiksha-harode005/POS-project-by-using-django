@@ -97,28 +97,41 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     def get_object(self):
         """Support lookup by numeric pk, invoice_id string (e.g. INV-DELL-E37DC5E8), or related PO/PR."""
+        import re
         pk = self.kwargs.get('pk', '')
-        pk_str = str(pk)
+        pk_str = str(pk).strip()
         if pk_str.isdigit():
+            obj = Invoice.objects.filter(id=int(pk_str)).first()
+            if obj:
+                self.check_object_permissions(self.request, obj)
+                return obj
             return super().get_object()
-        # Try invoice_id exact match first
-        qs = self.get_queryset()
-        obj = qs.filter(invoice_id__iexact=pk_str).first()
-        if not obj:
-            # Try invoice_number (vendor reference)
-            obj = qs.filter(invoice_number__iexact=pk_str).first()
-        if not obj:
-            # Try stripping INV- prefix
-            clean = pk_str.replace('INV-DELL-', '').replace('INV-', '').strip()
-            obj = qs.filter(
-                Q(invoice_id__icontains=clean) | Q(invoice_number__icontains=clean)
+
+        # Try invoice_id and invoice_number exact match first across all invoices
+        obj = Invoice.objects.filter(
+            Q(invoice_id__iexact=pk_str) |
+            Q(invoice_number__iexact=pk_str)
+        ).first()
+
+        clean = re.sub(r'^(INV-DELL-|INV-|PO-|REQ-|TCK-|REC-|GRN-|V_|T_)', '', pk_str, flags=re.I).strip()
+
+        if not obj and clean:
+            obj = Invoice.objects.filter(
+                Q(invoice_id__iexact=clean) |
+                Q(invoice_number__iexact=clean) |
+                Q(invoice_id__icontains=clean) |
+                Q(invoice_number__icontains=clean) |
+                Q(purchase_order__po_id__iexact=pk_str) |
+                Q(purchase_order__po_id__icontains=clean) |
+                Q(purchase_order__purchase_request__request_id__iexact=pk_str) |
+                Q(purchase_order__purchase_request__request_id__icontains=clean)
             ).first()
+
         if not obj:
-            # Resolve via matching PurchaseOrder or PurchaseRequest
+            # Resolve or auto-generate invoice if PO or PR exists
             from apps.procurement.models import PurchaseOrder
             from apps.vendor_management.models import Vendor
             from django.utils import timezone
-            clean = pk_str.replace('INV-DELL-', '').replace('INV-', '').replace('PO-', '').replace('REQ-', '').strip()
             po_obj = PurchaseOrder.objects.filter(
                 Q(po_id__iexact=pk_str) |
                 Q(po_id__icontains=clean) |
@@ -127,7 +140,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 Q(purchase_request__rfqs__rfq_id__icontains=clean)
             ).first()
             if po_obj:
-                obj = qs.filter(purchase_order=po_obj).first()
+                obj = Invoice.objects.filter(purchase_order=po_obj).first()
                 if not obj:
                     vendor_obj = po_obj.vendor or Vendor.objects.first()
                     inv_amt = po_obj.total_amount or getattr(po_obj.purchase_request, 'total_estimated_cost', 0) or 50000.00
@@ -142,8 +155,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                         due_date=(timezone.now() + timezone.timedelta(days=15)).date(),
                         is_manager_verified=False
                     )
+
         if not obj:
-            return super().get_object()
+            from django.http import Http404
+            raise Http404("Invoice not found")
         self.check_object_permissions(self.request, obj)
         return obj
 
@@ -231,10 +246,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             inv_num = f"INV-{vendor_obj.unique_vendor_id.replace('-', '')}-{uuid.uuid4().hex[:6].upper()}"
         data['invoice_number'] = str(inv_num)
 
-        # Status
-        status_val = data.get('status') or 'Approved'
+        # Status: Newly submitted vendor invoices start as Pending Match / Pending Verification
+        status_val = data.get('status') or 'Pending Match'
         if status_val in ['Verified', 'Verified & Approved', 'Approved']:
-            data['status'] = 'Approved'
+            data['status'] = 'Pending Match'
         elif status_val in ['Matched', '3-Way Match Verified']:
             data['status'] = 'Matched'
         elif status_val == 'Submitted':
@@ -253,10 +268,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 if field in data:
                     setattr(existing_inv, field, data[field])
             existing_inv.save()
-            pr = po_obj.purchase_request
-            if pr:
-                pr.current_stage = 8
-                pr.save(update_fields=['current_stage', 'updated_at'])
+            # NOTE: Do NOT auto-advance to stage 8!
+            # Documents must be verified by a Manager first.
 
             # Sync ThreeWayMatch
             try:
@@ -306,12 +319,23 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch', 'post'], permission_classes=[AllowAny], url_path='verify')
     def verify(self, request, pk=None):
         """
-        Explicitly marks an Invoice as Verified (manager-verified) in the database.
+        Explicitly marks an Invoice as Verified (manager-verified) or Rejected in the database.
         PATCH /api/invoices/{id}/verify/
-        Body: { "verified_by": "Sarah Manager" }
+        Body: { "verified_by": "Sarah Manager", "action": "verify"|"reject", "reject_reason": "..." }
         """
         from django.utils import timezone as tz
         from apps.notification_management.services import notify_roles, create_notification
+
+        # 1. Server-side role check: Vendors CANNOT verify documents!
+        user = request.user
+        role = getattr(user, 'role', '') or ''
+        if getattr(user, 'is_authenticated', False):
+            if role == 'VENDOR' or getattr(user, 'is_vendor', False):
+                return Response(
+                    {'error': 'Permission denied: Vendors are not permitted to verify documents.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
         try:
             instance = self.get_object()
         except Exception:
@@ -320,15 +344,40 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         verifier_name = request.data.get('verified_by', '') or request.data.get('verifiedBy', '')
         if not verifier_name and getattr(request.user, 'is_authenticated', False):
             verifier_name = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
+        if not verifier_name:
+            verifier_name = 'Manager'
 
         now = tz.now()
-        instance.is_manager_verified = True
-        instance.verified_by_name = verifier_name
-        instance.verified_at = now
-        # Promote status to Approved if it was Pending Match
-        if instance.status in ['Pending Match', 'Exception']:
+        is_reject = (
+            request.data.get('action') == 'reject' or
+            request.data.get('status') in ['Rejected', 'REJECTED'] or
+            bool(request.data.get('reject_reason')) or
+            bool(request.data.get('reason'))
+        )
+
+        if is_reject:
+            reason = request.data.get('reject_reason') or request.data.get('reason') or 'Invoice verification rejected by manager.'
+            instance.is_manager_verified = False
+            instance.status = 'Rejected'
+            if hasattr(instance, 'reject_reason'):
+                instance.reject_reason = reason
+            instance.verified_by_name = verifier_name
+            instance.verified_at = now
+            update_fields = ['is_manager_verified', 'verified_by_name', 'verified_at', 'status', 'updated_at']
+            if hasattr(instance, 'reject_reason'):
+                update_fields.append('reject_reason')
+            instance.save(update_fields=update_fields)
+        else:
+            instance.is_manager_verified = True
             instance.status = 'Approved'
-        instance.save(update_fields=['is_manager_verified', 'verified_by_name', 'verified_at', 'status', 'updated_at'])
+            if hasattr(instance, 'reject_reason'):
+                instance.reject_reason = ''
+            instance.verified_by_name = verifier_name
+            instance.verified_at = now
+            update_fields = ['is_manager_verified', 'verified_by_name', 'verified_at', 'status', 'updated_at']
+            if hasattr(instance, 'reject_reason'):
+                update_fields.append('reject_reason')
+            instance.save(update_fields=update_fields)
 
         # Advance PR stage and sync ThreeWayMatch
         po_obj = instance.purchase_order
@@ -336,14 +385,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             pr = po_obj.purchase_request
             if pr:
                 grs = list(po_obj.goods_receipts.all())
-                has_verified_gr = any(g.status in ['Verified', 'Confirmed', 'Approved'] or getattr(g, 'verified_by_name', None) for g in grs)
-                if has_verified_gr:
-                    if pr.current_stage < 9:
-                        pr.current_stage = 9
-                else:
+                has_verified_gr = any(g.status == 'Verified' and bool(getattr(g, 'verified_by_name', '')) for g in grs)
+                if not is_reject and instance.is_manager_verified and has_verified_gr:
                     if pr.current_stage < 8:
                         pr.current_stage = 8
-                pr.save(update_fields=['current_stage', 'updated_at'])
+                        pr.save(update_fields=['current_stage', 'updated_at'])
 
             try:
                 user_obj = request.user if getattr(request.user, 'is_authenticated', False) else None

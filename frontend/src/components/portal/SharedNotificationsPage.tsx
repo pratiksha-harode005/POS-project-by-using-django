@@ -32,7 +32,6 @@ export const SharedNotificationsPage: React.FC = () => {
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
-  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (selectedNotificationId) {
@@ -48,7 +47,6 @@ export const SharedNotificationsPage: React.FC = () => {
 
   const fetchRealNotifications = useCallback(async () => {
     try {
-      setLoading(true)
       let queryParams: { role?: string; user?: string; vendor?: string } = { role: currentRole }
 
       if (isVendorPortal) {
@@ -76,8 +74,6 @@ export const SharedNotificationsPage: React.FC = () => {
       setNotifications(mapped)
     } catch (err) {
       console.error('Failed to load notifications page data:', err)
-    } finally {
-      setLoading(false)
     }
   }, [currentRole, isVendorPortal, activeVendorId, user?.username])
 
@@ -92,7 +88,9 @@ export const SharedNotificationsPage: React.FC = () => {
     window.addEventListener('focus', handleBackendUpdate)
     window.addEventListener('storage', handleBackendUpdate)
 
-    const interval = setInterval(fetchRealNotifications, 3000)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchRealNotifications()
+    }, 3000)
 
     return () => {
       window.removeEventListener('kss_backend_updated', handleBackendUpdate)

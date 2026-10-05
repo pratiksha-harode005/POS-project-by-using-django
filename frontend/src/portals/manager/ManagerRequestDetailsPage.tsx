@@ -178,7 +178,38 @@ export const ManagerRequestDetailsPage: React.FC = () => {
     )
   }
 
-  const isApproved = req.approvedBy || req.status === 'approved' || req.status === 'finance_approved' || req.status === 'finance_review' || (req as any).raw_status === 'FINANCE_REVIEW' || (req as any).raw_status === 'FINANCE_APPROVED'
+  const rawSt = ((req as any).raw_status || req.status || '').toUpperCase()
+  const st = (req.status || '').toLowerCase()
+  const isApproved = Boolean(
+    st === 'approved' ||
+    st === 'finance_approved' ||
+    rawSt.includes('APPROVED') ||
+    rawSt.includes('PROCUREMENT') ||
+    rawSt.includes('PO_') ||
+    rawSt.includes('RFQ') ||
+    rawSt.includes('QUOTES') ||
+    rawSt.includes('DELIVER') ||
+    rawSt.includes('VERIF') ||
+    rawSt.includes('PAYMENT') ||
+    rawSt.includes('ORDER_') ||
+    rawSt.includes('MATCH') ||
+    rawSt === 'COMPLETED' ||
+    rawSt === 'REQUEST_COMPLETED' ||
+    rawSt === 'FINANCE_REVIEW' ||
+    rawSt === 'RECOMMENDED_TO_FINANCE' ||
+    st === 'finance_review' ||
+    st === 'recommended_to_finance' ||
+    st === 'payment_approved' ||
+    st === 'payment_justified' ||
+    st === 'payment_completed' ||
+    st === 'completed' ||
+    (req.currentStage !== undefined && req.currentStage >= 2) ||
+    Boolean((req as any).extra_fields?.manager_approved) ||
+    Boolean((req as any).extra_fields?.manager_signed_off) ||
+    Boolean((req as any).extra_fields?.approved_at) ||
+    Boolean(req.approvedBy) ||
+    Boolean((req as any).approved_by)
+  )
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -242,7 +273,7 @@ export const ManagerRequestDetailsPage: React.FC = () => {
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
               >
                 <CheckCircle size={15} />
-                Approve & Forward to Finance
+                Approve & Move to RFQ
               </button>
             </div>
           )}
@@ -571,17 +602,26 @@ export const ManagerRequestDetailsPage: React.FC = () => {
             <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Stage 5 Hand-off</span>
-                <p className="text-xs font-bold text-emerald-950">Ready to escalate to Finance Review (Stage 6)?</p>
+                <p className="text-xs font-bold text-emerald-950">
+                  {isApproved ? 'Approved & Escalated to Finance Review' : 'Ready to escalate to Finance Review (Stage 6)?'}
+                </p>
                 <p className="text-[11px] text-emerald-700">Pre-estimated amount: <b>{fmt(Number(finalEstimatedAmount) || 0)}</b> will be submitted for budget allocation.</p>
               </div>
-              <button
-                type="button"
-                onClick={handleDirectApprove}
-                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer flex-shrink-0"
-              >
-                <CheckCircle size={15} />
-                Approve & Forward to Finance
-              </button>
+              {isApproved ? (
+                <span className="flex items-center gap-2 px-4 py-2 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold shadow-2xs">
+                  <CheckCircle size={15} className="text-emerald-600" />
+                  Manager Sign-Off Cleared
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDirectApprove}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer flex-shrink-0"
+                >
+                  <CheckCircle size={15} />
+                  Approve & Forward to Finance
+                </button>
+              )}
             </div>
           </div>
         </div>

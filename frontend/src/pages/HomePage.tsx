@@ -373,56 +373,143 @@ export default function HomePage() {
         {/* ══════════════════════════════════════════════════════════════
             HERO SECTION (High-End Enterprise SaaS Background)
            ══════════════════════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════════════════════════
+            HERO SECTION (High-End Enterprise SaaS Background)
+           ══════════════════════════════════════════════════════════════ */}
         <section
-          className="relative overflow-hidden bg-gradient-to-b from-[#F8FAFC] via-[#F0F6FD] to-[#E8F2FC] pt-[84px] pb-10 sm:pt-[92px] sm:pb-12 lg:pt-[100px] lg:pb-14 select-none border-b border-blue-100/60"
+          className="relative overflow-hidden bg-white py-12 sm:py-16 lg:py-20 select-none border-b border-blue-50/80"
           aria-labelledby="hero-heading"
         >
-          {/* ── Ambient Radial Glow Orbs for High-End Depth ── */}
+          {/* ── Atmospheric Gradients & Modern Fluid Wave Vector ── */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-            {/* 1. Large luminous blue glow centered behind laptop mockup */}
-            <div className="absolute -top-12 right-0 lg:right-[-5%] w-[650px] h-[550px] bg-gradient-to-tr from-blue-400/25 via-indigo-300/20 to-sky-200/30 rounded-full blur-[110px] transform-gpu" />
+            {/* Base atmospheric sky-to-white radial / linear gradient backdrop */}
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_95%_80%_at_12%_15%,#cce4fd_0%,#e1f0fe_35%,#f3f8fe_65%,#ffffff_100%)]" />
 
-            {/* 2. Soft cyan/blue accent glow behind hero headline */}
-            <div className="absolute top-10 left-[-8%] w-[420px] h-[420px] bg-gradient-to-br from-blue-300/20 via-sky-200/15 to-transparent rounded-full blur-[90px] transform-gpu" />
+            {/* Soft top-left ambient illumination orb */}
+            <div className="absolute -top-20 -left-20 w-[560px] h-[560px] bg-gradient-to-br from-[#bfe0fd]/50 via-[#dbeafe]/30 to-transparent rounded-full blur-[100px] transform-gpu" />
 
-            {/* 3. High-Precision Engineered Grid Pattern with Soft Fade Mask */}
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,#2563eb0a_1px,transparent_1px),linear-gradient(to_bottom,#2563eb0a_1px,transparent_1px)] bg-[size:36px_36px] [mask-image:radial-gradient(ellipse_75%_65%_at_50%_45%,#000_50%,transparent_100%)]" />
+            {/* Soft ambient glow behind laptop mockup */}
+            <div className="absolute top-1/2 -translate-y-1/2 right-0 lg:right-[-2%] w-[680px] h-[520px] bg-gradient-to-tl from-[#bfdbfe]/30 via-[#dbeafe]/20 to-transparent rounded-full blur-[120px] transform-gpu" />
 
-            {/* 4. Subtle ambient horizon highlight line */}
-            <div className="absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-200/60 to-transparent" />
+            {/* Fluid Curved Vector Wave Ribbons */}
+            <svg
+              className="absolute inset-0 w-full h-full"
+              viewBox="0 0 1440 640"
+              fill="none"
+              preserveAspectRatio="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient id="refWaveGrad1" x1="0%" y1="30%" x2="100%" y2="85%">
+                  <stop offset="0%" stopColor="#BAE6FD" stopOpacity="0.55" />
+                  <stop offset="25%" stopColor="#CBE8FD" stopOpacity="0.45" />
+                  <stop offset="60%" stopColor="#E0F2FE" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+                </linearGradient>
+
+                <linearGradient id="refWaveGrad2" x1="0%" y1="45%" x2="90%" y2="95%">
+                  <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.38" />
+                  <stop offset="30%" stopColor="#BAE6FD" stopOpacity="0.32" />
+                  <stop offset="70%" stopColor="#E0F2FE" stopOpacity="0.18" />
+                  <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+                </linearGradient>
+
+                <linearGradient id="refWaveGrad3" x1="0%" y1="60%" x2="75%" y2="100%">
+                  <stop offset="0%" stopColor="#7DD3FC" stopOpacity="0.35" />
+                  <stop offset="40%" stopColor="#BAE6FD" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+                </linearGradient>
+
+                <linearGradient id="refWaveGradUpper" x1="0%" y1="20%" x2="80%" y2="70%">
+                  <stop offset="0%" stopColor="#E0F2FE" stopOpacity="0.6" />
+                  <stop offset="35%" stopColor="#EFF6FF" stopOpacity="0.35" />
+                  <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+                </linearGradient>
+
+                <linearGradient id="waveStroke1" x1="0%" y1="30%" x2="100%" y2="80%">
+                  <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.9" />
+                  <stop offset="30%" stopColor="#BAE6FD" stopOpacity="0.5" />
+                  <stop offset="70%" stopColor="#E0F2FE" stopOpacity="0.2" />
+                  <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+                </linearGradient>
+
+                <linearGradient id="waveStroke2" x1="0%" y1="45%" x2="100%" y2="90%">
+                  <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.6" />
+                  <stop offset="40%" stopColor="#BAE6FD" stopOpacity="0.35" />
+                  <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+
+              <path
+                d="M 0,210 C 130,270 230,350 370,410 C 580,500 860,530 1440,490 L 1440,640 L 0,640 Z"
+                fill="url(#refWaveGradUpper)"
+              />
+              <path
+                d="M 0,275 C 150,345 270,440 440,495 C 680,570 1020,575 1440,545 L 1440,640 L 0,640 Z"
+                fill="url(#refWaveGrad1)"
+              />
+              <path
+                d="M 0,275 C 150,345 270,440 440,495 C 680,570 1020,575 1440,545"
+                stroke="url(#waveStroke1)"
+                strokeWidth="1.5"
+                fill="none"
+              />
+              <path
+                d="M 0,360 C 140,415 250,500 410,545 C 630,605 950,610 1440,580 L 1440,640 L 0,640 Z"
+                fill="url(#refWaveGrad2)"
+              />
+              <path
+                d="M 0,360 C 140,415 250,500 410,545 C 630,605 950,610 1440,580"
+                stroke="url(#waveStroke2)"
+                strokeWidth="1.2"
+                fill="none"
+              />
+              <path
+                d="M 0,445 C 130,480 230,555 370,585 C 560,625 860,635 1440,610 L 1440,640 L 0,640 Z"
+                fill="url(#refWaveGrad3)"
+              />
+            </svg>
+
+            {/* Clean bottom border transition */}
+            <div className="absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-100/50 to-transparent" />
           </div>
 
-          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="grid lg:grid-cols-12 gap-6 lg:gap-8 items-center">
+          <div className="max-w-[1440px] 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 relative z-10">
+            <div className="grid lg:grid-cols-12 gap-10 lg:gap-12 items-center">
 
-              {/* ── Left Column: Hero Copy & CTA (5 or 6 cols) ── */}
-              <div className="lg:col-span-6 xl:col-span-5 flex flex-col items-start text-left z-10">
-                {/* Eyebrow Pill Badge */}
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-[#EBF4FE] text-[#2563EB] text-xs font-semibold mb-3.5 shadow-2xs">
-                  <ShoppingCart size={13} className="text-[#2563EB]" />
-                  <span>IT Procurement Platform</span>
+              {/* ── Left Column: Hero Copy & CTA (6 cols, shifted gracefully to RHS) ── */}
+              <div className="lg:col-span-6 xl:col-span-6 flex flex-col items-start text-left z-10 lg:pl-6 xl:pl-10 2xl:pl-14">
+                {/* Eyebrow Pill Badge with live pulse */}
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-blue-200/90 text-blue-700 text-xs font-semibold mb-5 shadow-xs">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600" />
+                  </span>
+                  <span className="tracking-wide">Enterprise IT Procurement Platform</span>
                 </div>
 
-                {/* H1 Main Heading: Line 1 "Smarter Procurement.", Line 2 "Stronger Business." */}
+                {/* H1 Main Heading: Perfectly balanced typography without clipping or overlap */}
                 <h1
                   id="hero-heading"
-                  className="text-3xl sm:text-4xl lg:text-[42px] xl:text-[48px] font-black tracking-tight leading-[1.12] mb-3.5 text-[#0F172A] w-full"
+                  className="text-3xl sm:text-4xl md:text-5xl lg:text-[46px] xl:text-[52px] font-black tracking-tight text-[#0F172A] leading-[1.18] sm:leading-[1.15] mb-5 w-full"
                 >
-                  <span className="block whitespace-normal sm:whitespace-nowrap">Smarter Procurement.</span>
-                  <span className="block text-[#2563EB] whitespace-normal sm:whitespace-nowrap">Stronger Business.</span>
+                  <span className="block text-slate-900">Smarter Procurement.</span>
+                  <span className="block mt-1 sm:mt-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 bg-clip-text text-transparent pb-1">
+                    Stronger Business.
+                  </span>
                 </h1>
 
                 {/* Subtitle description */}
-                <p className="text-slate-600 text-sm sm:text-base leading-relaxed max-w-lg mb-5">
-                  Procurement OS helps IT companies manage everything they purchase, subscribe, renew, receive and pay for — all in one place.
+                <p className="text-slate-600 text-sm sm:text-base lg:text-[17px] leading-relaxed max-w-xl mb-7 font-normal">
+                  Procurement OS empowers modern IT enterprises to automate requisitions, compare vendor quotes, enforce 3-way matching, and manage disbursements — in one unified platform.
                 </p>
 
                 {/* CTA Action Buttons */}
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-4 mb-7">
                   {/* Primary Login Button */}
                   <Link
                     to="/login"
-                    className="bg-[#2563EB] hover:bg-blue-700 text-white font-semibold text-sm sm:text-base px-6 sm:px-7 py-2.5 sm:py-3 rounded-full inline-flex items-center gap-2 shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm sm:text-base px-7 py-3.5 rounded-full inline-flex items-center gap-2.5 shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer"
                   >
                     <User size={16} strokeWidth={2.2} />
                     <span>Login</span>
@@ -434,17 +521,32 @@ export default function HomePage() {
                     onClick={() => {
                       document.getElementById('procurement-categories')?.scrollIntoView({ behavior: 'smooth' })
                     }}
-                    className="bg-white hover:bg-blue-50/50 text-[#2563EB] hover:text-blue-700 border border-[#2563EB] font-semibold text-sm sm:text-base px-5 sm:px-6 py-2 sm:py-2.5 rounded-full inline-flex items-center gap-2 hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                    className="bg-white hover:bg-slate-50 text-slate-800 hover:text-blue-600 border border-slate-300 hover:border-blue-300 font-semibold text-sm sm:text-base px-6 py-3.5 rounded-full inline-flex items-center gap-2 shadow-xs hover:shadow-sm hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer"
                     aria-label="View all procurement categories"
                   >
-                    <LayoutGrid size={16} strokeWidth={2.2} className="text-[#2563EB]" />
+                    <LayoutGrid size={16} strokeWidth={2.2} className="text-blue-600" />
                     <span>View All Categories</span>
                   </button>
                 </div>
+
+                {/* Live Social Proof / Trust Strip */}
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-medium pt-1">
+                  <div className="flex items-center -space-x-1.5">
+                    <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold ring-2 ring-white shadow-xs">TL</div>
+                    <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold ring-2 ring-white shadow-xs">MG</div>
+                    <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold ring-2 ring-white shadow-xs">FN</div>
+                    <div className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px] font-bold ring-2 ring-white shadow-xs">VN</div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-amber-500 text-sm leading-none">★★★★★</span>
+                    <span className="font-bold text-slate-800">4.9/5</span>
+                    <span>• Trusted by 500+ IT teams</span>
+                  </div>
+                </div>
               </div>
 
-              {/* ── Right Column: Dashboard Illustration (6 or 7 cols) ── */}
-              <div className="lg:col-span-6 xl:col-span-7 flex items-center justify-center lg:justify-end w-full">
+              {/* ── Right Column: Dashboard Illustration (6 cols) ── */}
+              <div className="lg:col-span-6 xl:col-span-6 flex items-center justify-center lg:justify-end w-full">
                 <DashboardIllustration />
               </div>
 
@@ -457,55 +559,55 @@ export default function HomePage() {
         {/* ══════════════════════════════════════════════════════════════
             ENTERPRISE IMPACT & TRUST STATS STRIP
            ══════════════════════════════════════════════════════════════ */}
-        <section className="border-y border-slate-100 bg-white py-6 sm:py-8 select-none relative z-10" aria-label="Key Performance Indicators">
-          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 items-center divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+        <section className="border-y border-slate-100 bg-white/95 py-6 sm:py-8 select-none relative z-10" aria-label="Key Performance Indicators">
+          <div className="max-w-[1440px] 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-0 lg:divide-x divide-slate-100 items-center justify-center">
 
               {/* Stat 1: Spend Managed */}
-              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8 first:pl-0">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#E0F2FE] text-[#0284C7]">
-                  <ShoppingCart size={26} strokeWidth={2.2} />
+              <div className="flex items-center justify-start lg:justify-center gap-4 py-2 px-4 sm:px-6 lg:px-4 xl:px-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-[#E0F2FE] text-[#0284C7] shadow-xs">
+                  <ShoppingCart size={22} strokeWidth={2.2} />
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none">$24M+</span>
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none">₹24M+</span>
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Spend Managed</span>
                   <span className="text-xs text-slate-400 truncate mt-0.5">Across 10,000+ purchase orders</span>
                 </div>
               </div>
 
               {/* Stat 2: Cycle Time */}
-              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#FFEDD5] text-[#EA580C]">
-                  <Zap size={26} strokeWidth={2.2} />
+              <div className="flex items-center justify-start lg:justify-center gap-4 py-2 px-4 sm:px-6 lg:px-4 xl:px-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-[#FFEDD5] text-[#EA580C] shadow-xs">
+                  <Zap size={22} strokeWidth={2.2} />
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-2xl sm:text-3xl font-black text-blue-600 tracking-tight leading-none">75% Faster</span>
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Cycle Time</span>
-                  <span className="text-xs text-slate-400 truncate mt-0.5">From request submission to PO dispatch</span>
+                  <span className="text-xs text-slate-400 truncate mt-0.5">Requisition to PO dispatch</span>
                 </div>
               </div>
 
               {/* Stat 3: 3-Way Match */}
-              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#DCFCE7] text-[#16A34A]">
-                  <ShieldCheck size={26} strokeWidth={2.2} />
+              <div className="flex items-center justify-start lg:justify-center gap-4 py-2 px-4 sm:px-6 lg:px-4 xl:px-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-[#DCFCE7] text-[#16A34A] shadow-xs">
+                  <ShieldCheck size={22} strokeWidth={2.2} />
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none">100%</span>
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">3-Way Match</span>
-                  <span className="text-xs text-slate-400 truncate mt-0.5">Zero audit discrepancies & rogue spend</span>
+                  <span className="text-xs text-slate-400 truncate mt-0.5">Zero audit discrepancies</span>
                 </div>
               </div>
 
               {/* Stat 4: Uptime SLA */}
-              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8 last:pr-0">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#F3E8FF] text-[#9333EA]">
-                  <BarChart3 size={26} strokeWidth={2.2} />
+              <div className="flex items-center justify-start lg:justify-center gap-4 py-2 px-4 sm:px-6 lg:px-4 xl:px-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-[#F3E8FF] text-[#9333EA] shadow-xs">
+                  <BarChart3 size={22} strokeWidth={2.2} />
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-2xl sm:text-3xl font-black text-blue-600 tracking-tight leading-none">99.99%</span>
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Uptime SLA</span>
-                  <span className="text-xs text-slate-400 truncate mt-0.5">Enterprise-grade cloud infrastructure</span>
+                  <span className="text-xs text-slate-400 truncate mt-0.5">Enterprise-grade cloud</span>
                 </div>
               </div>
 
@@ -537,7 +639,7 @@ export default function HomePage() {
             </svg>
           </div>
 
-          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="max-w-[1440px] 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 relative z-10">
 
             {/* Section Header */}
             <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-12">

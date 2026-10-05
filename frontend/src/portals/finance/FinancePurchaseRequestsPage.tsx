@@ -140,8 +140,8 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
       if (sortField === 'amount') {
         return sortAsc ? a.amount - b.amount : b.amount - a.amount
       } else {
-        const timeA = new Date((a as any).createdAt || a.date || 0).getTime()
-        const timeB = new Date((b as any).createdAt || b.date || 0).getTime()
+        const timeA = new Date((a as any).createdAt || (a as any).created_at || a.date || 0).getTime()
+        const timeB = new Date((b as any).createdAt || (b as any).created_at || b.date || 0).getTime()
         if (timeB !== timeA) return sortAsc ? timeA - timeB : timeB - timeA
         return String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
       }

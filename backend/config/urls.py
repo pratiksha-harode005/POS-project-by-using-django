@@ -50,6 +50,7 @@ urlpatterns = [
     path('api/admin/requests/', include('apps.request_management.admin_urls')),
     path('api/vendors/', include('apps.vendor_management.urls')),
     path('api/rfq/', include('apps.rfq_management.urls')),
+    path('api/quotations/', include(quotations_alias_router.urls)),
     path('api/rfq-quotations/', include(quotations_alias_router.urls)),
     path('api/procurement/', include('apps.procurement.urls')),
     path('api/invoices/', include('apps.invoice_management.urls')),

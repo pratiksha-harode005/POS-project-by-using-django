@@ -106,49 +106,54 @@ export default function AboutPage() {
             HERO SECTION (Clean, Modern SaaS Hero with Ambient Soft Glow)
            ══════════════════════════════════════════════════════════════ */}
         <section
-          className="relative overflow-hidden bg-gradient-to-b from-[#F0F7FE] via-[#F8FAFC] to-[#FFFFFF] pt-[84px] pb-12 sm:pt-[92px] sm:pb-16 lg:pt-[100px] lg:pb-20 select-none"
+          className="relative overflow-hidden bg-gradient-to-b from-[#F0F7FE] via-[#F8FAFC] to-[#FFFFFF] py-12 sm:py-16 lg:py-20 select-none border-b border-blue-50/80"
           aria-labelledby="about-hero-heading"
         >
-          {/* Subtle Ambient Background Mesh */}
+          {/* Subtle Ambient Background Mesh & Atmospheric Illumination */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-            <div className="absolute top-10 left-1/4 w-[500px] h-[350px] bg-blue-200/25 rounded-full blur-3xl" />
-            <div className="absolute top-20 right-10 w-[450px] h-[400px] bg-indigo-200/20 rounded-full blur-3xl" />
+            <div className="absolute top-10 left-1/4 w-[500px] h-[350px] bg-blue-200/30 rounded-full blur-3xl transform-gpu" />
+            <div className="absolute top-20 right-10 w-[450px] h-[400px] bg-indigo-200/25 rounded-full blur-3xl transform-gpu" />
           </div>
 
-          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="grid lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+          <div className="max-w-[1440px] 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 relative z-10">
+            <div className="grid lg:grid-cols-12 gap-8 lg:gap-10 xl:gap-14 items-center">
               
-              {/* Left Column: Mission Story & Typography */}
-              <div className="lg:col-span-6 flex flex-col items-start text-left">
+              {/* Left Column: Mission Story & Typography (Shifted to RHS for optimal balance) */}
+              <div className="lg:col-span-6 xl:col-span-6 flex flex-col items-start text-left z-10 lg:pl-10 xl:pl-16 2xl:pl-20">
                 {/* Eyebrow Pill Badge */}
-                <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-100/70 border border-blue-200/80 text-blue-700 text-xs font-semibold mb-4 shadow-2xs">
-                  <Sparkles size={13} className="text-blue-600" />
-                  <span>About Procurement OS</span>
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-blue-200/90 text-blue-700 text-xs font-semibold mb-5 shadow-xs">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600" />
+                  </span>
+                  <span className="tracking-wide">About Procurement OS</span>
                 </div>
 
                 {/* H1 Main Heading */}
                 <h1
                   id="about-hero-heading"
-                  className="text-3xl sm:text-4xl lg:text-[44px] xl:text-[48px] font-black tracking-tight leading-[1.12] mb-4 text-[#0F172A] w-full"
+                  className="text-3xl sm:text-4xl md:text-5xl lg:text-[44px] xl:text-[48px] font-black tracking-tight text-[#0F172A] leading-[1.18] sm:leading-[1.15] mb-5 w-full max-w-[540px]"
                 >
-                  <span className="block">Smarter Procurement.</span>
-                  <span className="block text-[#2563EB]">Built for IT Teams.</span>
+                  <span className="block text-slate-900">Smarter Procurement.</span>
+                  <span className="block mt-1 sm:mt-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 bg-clip-text text-transparent pb-1">
+                    Built for IT Teams.
+                  </span>
                 </h1>
 
-                {/* Subtitle Description */}
-                <p className="text-slate-600 text-sm sm:text-base leading-relaxed mb-4">
+                {/* Subtitle Descriptions */}
+                <p className="text-slate-600 text-sm sm:text-base lg:text-[16px] leading-relaxed max-w-[520px] mb-4 font-normal">
                   Procurement OS is a centralized enterprise platform engineered for IT organizations to manage purchasing, multi-tier approvals, certified vendors, department budgets, and invoice reconciliation in one unified workspace.
                 </p>
 
-                <p className="text-slate-600 text-sm sm:text-base leading-relaxed mb-6">
+                <p className="text-slate-600 text-sm sm:text-base lg:text-[16px] leading-relaxed max-w-[520px] mb-7 font-normal">
                   We built Procurement OS to eliminate the chaos of scattered spreadsheets, delayed approvals, and untracked SaaS renewals — giving finance and engineering leaders complete fiscal clarity and control.
                 </p>
 
-                {/* Action Buttons Row */}
-                <div className="flex flex-wrap items-center gap-3.5">
+                {/* Action CTA Button */}
+                <div className="flex flex-wrap items-center gap-4">
                   <Link
                     to="/features"
-                    className="bg-[#2563EB] hover:bg-blue-700 text-white font-semibold text-sm sm:text-base px-6 sm:px-7 py-3 rounded-full inline-flex items-center gap-2 shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 transition-all active:scale-95 cursor-pointer"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm sm:text-base px-7 py-3.5 rounded-full inline-flex items-center gap-2.5 shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer"
                   >
                     <Layers size={16} strokeWidth={2.2} />
                     <span>Explore Features</span>
@@ -157,84 +162,84 @@ export default function AboutPage() {
                 </div>
               </div>
 
-              {/* Right Column: High-Fidelity Enterprise Architecture Card */}
-              <div className="lg:col-span-6 flex justify-center lg:justify-end w-full">
-                <div className="relative w-full max-w-lg">
-                  {/* Subtle ambient blur ring */}
+              {/* Right Column: High-Fidelity Enterprise Architecture Card (Arranged & Centered) */}
+              <div className="lg:col-span-6 xl:col-span-6 flex items-center justify-center lg:justify-start xl:justify-start w-full lg:pr-6 xl:pr-10">
+                <div className="relative w-full max-w-[520px] xl:max-w-[540px]">
+                  {/* Ambient blur ring */}
                   <div className="absolute -inset-2 bg-gradient-to-r from-blue-400/20 via-indigo-400/20 to-blue-500/20 rounded-3xl blur-xl" />
 
                   {/* Main Visual Glass Card */}
-                  <div className="relative bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+                  <div className="relative bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-[0_20px_50px_rgba(37,99,235,0.09)] hover:shadow-[0_24px_60px_rgba(37,99,235,0.13)] transition-all duration-300 space-y-4">
                     
                     {/* Top Header Row of Card */}
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
-                          <ShoppingCart size={16} strokeWidth={2.4} />
+                    <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
+                          <ShoppingCart size={17} strokeWidth={2.4} />
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-900">Procurement OS Ecosystem</div>
-                          <div className="text-[10px] text-slate-500">Connected Enterprise Stack</div>
+                          <div className="text-sm font-bold text-slate-900 leading-tight">Procurement OS Ecosystem</div>
+                          <div className="text-[11px] text-slate-500">Connected Enterprise Stack</div>
                         </div>
                       </div>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         99.99% Operational
                       </span>
                     </div>
 
                     {/* Step 1: Requisition to Approval */}
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 hover:border-blue-300 transition-colors flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                          <Zap size={18} strokeWidth={2.2} />
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/70 hover:border-blue-300 hover:bg-blue-50/20 transition-all flex items-center justify-between group">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                          <Zap size={19} strokeWidth={2.2} />
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-900">Multi-Tier Approval Matrix</div>
-                          <div className="text-[10px] text-slate-500">Team Lead → Finance → Admin Thresholds</div>
+                          <div className="text-xs sm:text-[13px] font-bold text-slate-900 group-hover:text-blue-600 transition-colors">Multi-Tier Approval Matrix</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">Team Lead → Finance → Admin Thresholds</div>
                         </div>
                       </div>
-                      <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                      <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/60 shrink-0">
                         75% Faster
                       </span>
                     </div>
 
                     {/* Step 2: 3-Way Match & Compliance */}
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 hover:border-emerald-300 transition-colors flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-                          <ShieldCheck size={18} strokeWidth={2.2} />
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/70 hover:border-emerald-300 hover:bg-emerald-50/20 transition-all flex items-center justify-between group">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                          <ShieldCheck size={19} strokeWidth={2.2} />
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-900">Automated 3-Way Match</div>
-                          <div className="text-[10px] text-slate-500">PO #PO-2026-045 matched with GRN & Invoice</div>
+                          <div className="text-xs sm:text-[13px] font-bold text-slate-900 group-hover:text-emerald-600 transition-colors">Automated 3-Way Match</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">PO #PO-2026-045 matched with GRN & Invoice</div>
                         </div>
                       </div>
-                      <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+                      <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200/60 shrink-0">
                         100% Match
                       </span>
                     </div>
 
                     {/* Step 3: Real-Time Spend Intelligence */}
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 hover:border-purple-300 transition-colors flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center shrink-0">
-                          <BarChart3 size={18} strokeWidth={2.2} />
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/70 hover:border-purple-300 hover:bg-purple-50/20 transition-all flex items-center justify-between group">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                          <BarChart3 size={19} strokeWidth={2.2} />
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-900">Spend Analytics & Intelligence</div>
-                          <div className="text-[10px] text-slate-500">Side-by-side vendor quotation comparison</div>
+                          <div className="text-xs sm:text-[13px] font-bold text-slate-900 group-hover:text-purple-600 transition-colors">Spend Analytics & Intelligence</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">Side-by-side vendor quotation comparison</div>
                         </div>
                       </div>
-                      <span className="text-[11px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md">
+                      <span className="text-[11px] font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200/60 shrink-0">
                         ₹ 4.2M YTD
                       </span>
                     </div>
 
                     {/* Bottom Trust Stamp */}
-                    <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400">
+                    <div className="pt-2 flex items-center justify-between text-xs text-slate-400">
                       <span className="flex items-center gap-1.5">
-                        <Lock size={12} className="text-slate-400" />
+                        <Lock size={13} className="text-slate-400" />
                         AES-256 Bit Encryption
                       </span>
                       <span className="font-semibold text-slate-600">Enterprise Cloud Ready</span>
@@ -252,26 +257,26 @@ export default function AboutPage() {
         {/* ══════════════════════════════════════════════════════════════
             IMPACT METRICS STRIP (4 Distinct Icon Columns)
            ══════════════════════════════════════════════════════════════ */}
-        <section className="border-y border-slate-100 bg-white py-6 sm:py-8 select-none" aria-label="Key Performance Indicators">
-          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 items-center divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+        <section className="border-y border-slate-100 bg-white/95 py-6 sm:py-8 select-none relative z-10" aria-label="Key Performance Indicators">
+          <div className="max-w-[1440px] 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-0 lg:divide-x divide-slate-100 items-center justify-center">
               
               {/* Stat 1: Spend Managed */}
-              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8 first:pl-0">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#E0F2FE] text-[#0284C7]">
-                  <ShoppingCart size={26} strokeWidth={2.2} />
+              <div className="flex items-center justify-start lg:justify-center gap-4 py-2 px-4 sm:px-6 lg:px-4 xl:px-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-[#E0F2FE] text-[#0284C7] shadow-xs">
+                  <ShoppingCart size={22} strokeWidth={2.2} />
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none">$24M+</span>
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none">₹24M+</span>
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Spend Managed</span>
                   <span className="text-xs text-slate-400 truncate mt-0.5">Across 10,000+ purchase orders</span>
                 </div>
               </div>
 
               {/* Stat 2: Cycle Time */}
-              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#FFEDD5] text-[#EA580C]">
-                  <Zap size={26} strokeWidth={2.2} />
+              <div className="flex items-center justify-start lg:justify-center gap-4 py-2 px-4 sm:px-6 lg:px-4 xl:px-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-[#FFEDD5] text-[#EA580C] shadow-xs">
+                  <Zap size={22} strokeWidth={2.2} />
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-2xl sm:text-3xl font-black text-blue-600 tracking-tight leading-none">75% Faster</span>
@@ -281,9 +286,9 @@ export default function AboutPage() {
               </div>
 
               {/* Stat 3: 3-Way Match */}
-              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#DCFCE7] text-[#16A34A]">
-                  <ShieldCheck size={26} strokeWidth={2.2} />
+              <div className="flex items-center justify-start lg:justify-center gap-4 py-2 px-4 sm:px-6 lg:px-4 xl:px-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-[#DCFCE7] text-[#16A34A] shadow-xs">
+                  <ShieldCheck size={22} strokeWidth={2.2} />
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-none">100%</span>
@@ -293,9 +298,9 @@ export default function AboutPage() {
               </div>
 
               {/* Stat 4: Uptime SLA */}
-              <div className="flex items-center gap-4 py-3 sm:py-2 px-4 sm:px-6 lg:px-8 last:pr-0">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-[#F3E8FF] text-[#9333EA]">
-                  <BarChart3 size={26} strokeWidth={2.2} />
+              <div className="flex items-center justify-start lg:justify-center gap-4 py-2 px-4 sm:px-6 lg:px-4 xl:px-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-[#F3E8FF] text-[#9333EA] shadow-xs">
+                  <BarChart3 size={22} strokeWidth={2.2} />
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-2xl sm:text-3xl font-black text-blue-600 tracking-tight leading-none">99.99%</span>
@@ -313,7 +318,7 @@ export default function AboutPage() {
             CORE VALUES SECTION (6 Balanced Cards Grid)
            ══════════════════════════════════════════════════════════════ */}
         <section className="py-14 sm:py-18 bg-[#F8FAFC]" aria-labelledby="core-values-heading">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-[1440px] 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
             
             {/* Header */}
             <div className="text-center max-w-2xl mx-auto mb-12">

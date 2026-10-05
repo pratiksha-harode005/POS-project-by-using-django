@@ -5,7 +5,7 @@ import {
   CheckSquare, CheckCircle, Landmark, FileCheck, Layers, Users,
   ShieldAlert, Building, Sliders, Truck, FileSpreadsheet, Package,
   FolderOpen, ShoppingCart, LucideIcon, XCircle, Inbox, Ticket, ArrowUpRight,
-  BarChart2, GitCompare, ShoppingBag, AlertTriangle, HelpCircle, Tag, Scale,
+  BarChart2, GitCompare, ShoppingBag, HelpCircle, Tag, Scale,
   LogOut, Grid, RefreshCw
 } from 'lucide-react'
 import { UserRole, useAuth } from '../../context/AuthContext'
@@ -40,11 +40,9 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
       return [
         { label: 'Dashboard', path: `${basePath}/dashboard`, icon: LayoutDashboard },
         { label: 'Purchase Requests', path: `${basePath}/purchase-requests`, icon: Layers },
-        { label: 'Purchase Orders', path: `${basePath}/purchase-orders`, icon: Package },
         { label: 'Manager Approval', path: `${basePath}/pending-approvals`, icon: CheckSquare },
         { label: 'Finance Review', path: `${basePath}/finance-review`, icon: Landmark },
         { label: 'Raise Ticket', path: `${basePath}/raise-ticket`, icon: Ticket },
-        { label: 'Raise Complaint', path: `${basePath}/raise-complaint`, icon: AlertTriangle },
         { label: 'Recommended to Finance', path: `${basePath}/recommended-finance`, icon: ArrowUpRight },
         { label: 'Payment', path: `${basePath}/payments`, icon: CreditCard },
         { label: 'Received Reports', path: `${basePath}/received-reports`, icon: FileCheck },
@@ -64,7 +62,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
         { label: 'Finance Approval', path: `${basePath}/pending-approvals`, icon: CheckSquare },
         { label: 'Recommend to Admin', path: `${basePath}/recommended-admin`, icon: ArrowUpRight },
         { label: 'Raise Ticket', path: `${basePath}/raise-ticket`, icon: Ticket },
-        { label: 'Raise Complaint', path: `${basePath}/raise-complaint`, icon: AlertTriangle },
         { label: 'Payments', path: `${basePath}/payments`, icon: CreditCard },
         { label: 'Received Reports', path: `${basePath}/received-reports`, icon: FileCheck },
         { label: 'Financial Reports', path: `${basePath}/financial-reports`, icon: FileSpreadsheet },
@@ -78,7 +75,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
         { label: 'Requests', path: `${basePath}/requests`, icon: FileText },
         { label: 'Vendors', path: `${basePath}/vendors`, icon: Truck },
         { label: 'Raise Ticket', path: `${basePath}/raise-ticket`, icon: Ticket },
-        { label: 'Raise Complaint', path: `${basePath}/raise-complaint`, icon: AlertTriangle },
         { label: 'RFQs', path: `${basePath}/rfqs`, icon: FileSpreadsheet },
         { label: 'Vendor Quotations', path: `${basePath}/vendor-quotations`, icon: Scale },
         { label: 'Purchase Orders', path: `${basePath}/purchase-orders`, icon: Package },
@@ -184,12 +180,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
             <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">
               Contact Procurement Support
             </p>
-            <Link
-              to={`/portal/${role.toLowerCase()}/raise-complaint`}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-400 hover:text-blue-300 mt-1.5 transition-colors"
-            >
-              Get Support &rarr;
-            </Link>
+            {role !== 'MANAGER' && role !== 'FINANCE' && role !== 'ADMIN' && (
+              <Link
+                to={`/portal/${role.toLowerCase()}/raise-complaint`}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-400 hover:text-blue-300 mt-1.5 transition-colors"
+              >
+                Get Support &rarr;
+              </Link>
+            )}
           </div>
         </div>
       </div>

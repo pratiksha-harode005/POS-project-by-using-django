@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useManagerData, GoodsReceiptItem } from '../../context/ManagerDataContext'
 import { UnifiedReceiptModal } from '../../components/portal/UnifiedReceiptModal'
+import { findDisbursedAmount } from '../../utils/receiptUtils'
 
 export const AdminReceiptsPage: React.FC = () => {
   const { receipts, verifyReceipt, purchaseOrders } = useManagerData()
@@ -26,6 +27,19 @@ export const AdminReceiptsPage: React.FC = () => {
   }
 
   const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+
+  const formatINR = (amount: number) => new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(amount)
+
+  // GoodsReceipt has no disbursed-amount field. Only a settled linked payment
+  // is evidence of a disbursed amount; never substitute a fixed value.
+  const getDisbursedAmount = (receipt: GoodsReceiptItem): string => {
+    const amount = findDisbursedAmount(receipt.requestId, payments)
+    return amount === null ? 'Not recorded' : formatINR(amount)
+  }
 
   // Categorize receipts into software and hardware
   const isSoftwareReceipt = (r: GoodsReceiptItem) => {
@@ -411,7 +425,7 @@ export const AdminReceiptsPage: React.FC = () => {
                     </td>
                     <td className="p-3.5 whitespace-nowrap">
                       <span className="font-black text-slate-900 text-xs">
-                        {r.amount ? fmt(r.amount) : '₹48,000'}
+                        {getDisbursedAmount(r)}
                       </span>
                     </td>
                     <td className="p-3.5 whitespace-nowrap text-slate-600">
@@ -621,7 +635,7 @@ export const AdminReceiptsPage: React.FC = () => {
                       <td className="p-3.5 whitespace-nowrap">
                         {isSw ? (
                           <div>
-                            <span className="font-bold text-slate-900">{r.amount ? fmt(r.amount) : '₹48,000'}</span>
+                            <span className="font-bold text-slate-900">{getDisbursedAmount(r)}</span>
                             <span className="text-[10px] text-slate-400 block">{r.orderedQuantity || 1} Seat(s)</span>
                           </div>
                         ) : (

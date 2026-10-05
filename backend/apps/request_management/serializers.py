@@ -80,13 +80,7 @@ def determine_final_approval_by(obj, histories=None):
     """
     extra = obj.extra_fields if isinstance(obj.extra_fields, dict) else {}
     if extra.get('final_approval_by') in ['MANAGER', 'FINANCE', 'ADMIN']:
-        # But if it's a renewal/upgrade, manager cannot be final approver
-        if extra['final_approval_by'] == 'MANAGER' and obj.request_operation in ['RENEWAL', 'UPGRADE']:
-            return 'FINANCE'
         return extra['final_approval_by']
-
-    if obj.request_operation in ['RENEWAL', 'UPGRADE']:
-        return 'FINANCE'
 
     # Use pre-cached histories list if provided, otherwise fetch once.
     # Using list() on the prefetch cache avoids duplicate DB hits.
@@ -178,6 +172,9 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
         cost = float(obj.total_estimated_cost or 0.0)
         if cost > 0:
             return cost
+        requested = float(obj.requested_amount or 0.0)
+        if requested > 0:
+            return requested
         appr = extra.get('approved_amount') or obj.approved_amount
         if appr is not None:
             try:
@@ -309,13 +306,23 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
                     self._root_pj_cache[root.id] = PaymentJustificationSerializer(root.payment_justification).data
                 orig_pj_data = self._root_pj_cache[root.id]
                 ret['original_payment_justification'] = orig_pj_data
-                if not ret.get('payment_justification_detail'):
-                    ret['payment_justification_detail'] = orig_pj_data
             elif isinstance(ret.get('extra_fields'), dict) and ret['extra_fields'].get('payment_justification'):
                 ret['original_payment_justification'] = ret['extra_fields']['payment_justification']
-                if not ret.get('payment_justification_detail'):
-                    ret['payment_justification_detail'] = ret['extra_fields']['payment_justification']
         return ret
+
+    def _get_cached_rfqs(self, obj):
+        """Returns prefetched RFQ list, cached on the instance."""
+        cache_attr = '_serializer_rfqs_cache'
+        if not hasattr(obj, cache_attr):
+            setattr(obj, cache_attr, list(obj.rfqs.all()) if hasattr(obj, 'rfqs') else [])
+        return getattr(obj, cache_attr)
+
+    def _get_cached_pos(self, obj):
+        """Returns prefetched purchase orders list, cached on the instance."""
+        cache_attr = '_serializer_pos_cache'
+        if not hasattr(obj, cache_attr):
+            setattr(obj, cache_attr, list(obj.purchase_orders.all()) if hasattr(obj, 'purchase_orders') else [])
+        return getattr(obj, cache_attr)
 
     def _get_cached_histories(self, obj):
         """
@@ -445,6 +452,8 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
         if st in ['COMPLETED', 'REQUEST_COMPLETED']:
             return 'Completed & Archived'
         if obj.is_software:
+            if obj.request_operation in ['RENEWAL', 'UPGRADE'] and st == 'MANAGER_APPROVED':
+                return 'Team Lead -- Pay Now (Mock) Ready'
             if st in ['MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'PAYMENT_JUSTIFIED', 'MANAGER_VERIFIED']:
                 return 'Team Lead -- Final Acknowledgment Required'
             if st == 'PAYMENT_JUSTIFICATION_SUBMITTED':
@@ -464,21 +473,27 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
             if st in ['ADMIN_APPROVED', 'PAYMENT_APPROVED', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'APPROVED']:
                 return 'Team Lead -- Pay Now (Mock) Ready'
             if st in ['MANAGER_REVIEW', 'PENDING', 'TEAM_LEAD_SUBMITTED', 'DRAFT', 'CREATED']:
-                return 'Project Manager -- Sarah Manager'
+                return 'Manager — Sarah Manager'
             return 'Team Lead / Requester'
         else:
-            if st in ['PENDING', 'MANAGER_REVIEW', 'TEAM_LEAD_SUBMITTED', 'DRAFT']:
-                return 'Project Manager -- Sarah Manager'
-            if st in ['APPROVED', 'IN PROCUREMENT', 'IN_PROCUREMENT', 'RFQ_SENT']:
-                return 'Sourcing Team (RFQ Sent)'
-            if st in ['FINANCE_REVIEW', 'SENT_TO_FINANCE', 'RECOMMENDED_TO_FINANCE']:
-                return 'Finance -- Mark Finance Officer'
-            if st in ['DELIVERED', 'DELIVERY']:
-                return 'Accounts & Dock (Invoice & GRN Verification)'
-            if st in ['INVOICED', 'INVOICE']:
-                return 'Procurement Audit & Raise Ticket Verification'
-            if st in ['PAYMENT_COMPLETED']:
-                return 'Team Lead -- Awaiting Confirmation'
+            if st in ['PENDING', 'MANAGER_REVIEW', 'TEAM_LEAD_SUBMITTED', 'DRAFT', 'CREATED']:
+                return 'Manager — Sarah Manager'
+            if st in ['FINANCE_REVIEW', 'SENT_TO_FINANCE', 'RECOMMENDED_TO_FINANCE', 'MANAGER_RECOMMENDED_TO_FINANCE', 'FINANCE_RECOMMENDED']:
+                return 'Finance — Mark Finance Officer'
+            if st in ['RECOMMENDED_TO_ADMIN', 'FINANCE_RECOMMENDED_TO_ADMIN', 'ADMIN_REVIEW']:
+                return 'Executive Administrator'
+            if st in ['APPROVED', 'MANAGER_APPROVED', 'IN PROCUREMENT', 'IN_PROCUREMENT', 'RFQ_SENT']:
+                return 'Procurement Sourcing Desk'
+            if st in ['QUOTES_RECEIVED', 'UNDER_EVALUATION', 'ASSIGNED_TO_VENDOR', 'VENDOR_ASSIGNED']:
+                return 'Selected Vendor (Awaiting Acceptance)'
+            if st in ['PRODUCT_ORDER', 'PO_RELEASED', 'PO_CREATED']:
+                return 'Procurement Operations'
+            if st in ['DELIVERED', 'DELIVERY', 'DISPATCHED', 'GOODS_RECEIVED']:
+                return 'Logistics & Receiving Dock'
+            if st in ['INVOICED', 'INVOICE', 'VERIFIED', 'ORDER_COMPLETE', 'DOCUMENTS_VERIFIED']:
+                return 'Procurement Audit & 3-Way Match'
+            if st in ['PAYMENT_COMPLETED', 'PAID', 'PAYMENT_PROCESSED']:
+                return 'Finance Treasury & Disbursement'
             return 'Procurement Team'
 
     def get_timeline(self, obj):
@@ -508,14 +523,22 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
         h_complete = find_h(['REQUEST_COMPLETED', 'COMPLETED'])
 
         st = (obj.status or '').upper()
-
-        cat_lower = (obj.category or '').lower()
-        title_lower = (obj.title or '').lower()
-        is_software = (
-            any(k in cat_lower for k in ['software', 'saas', 'cloud', 'license', 'subscription', 'digital', 'it services', 'cybersecurity']) or
-            any(k in title_lower for k in ['software', 'saas', 'cloud', 'license', 'subscription', 'jira', 'slack', 'aws', 'azure']) or
-            getattr(obj, 'flow_type', '') == 'B' or
-            bool(getattr(obj, 'software_name', ''))
+        is_software = obj.is_software
+        h_renewal_manager_approval = next(
+            (
+                h for h in histories
+                if h.action in ['APPROVE', 'MANAGER_APPROVE']
+                and (h.user_role or '').upper() == 'MANAGER'
+            ),
+            None
+        )
+        h_renewal_finance_approval = next(
+            (
+                h for h in histories
+                if h.action in ['APPROVE', 'FINANCE_APPROVE']
+                and (h.user_role or '').upper() == 'FINANCE'
+            ),
+            None
         )
 
         has_mock_payment = (
@@ -529,10 +552,11 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
         if is_software:
             # Pass cached histories to avoid a 5th DB call per record
             path = determine_final_approval_by(obj, self._get_cached_histories(obj))
+            first_stage_title = 'Renewal Request' if obj.request_operation == 'RENEWAL' else 'Request Created'
             if path == 'MANAGER':
-                # PATH A -- MANAGER FINAL APPROVAL (8 Stages):
+                # PATH A -- MANAGER FINAL APPROVAL (8 Stages - PM Budget Available):
                 stages_info = [
-                    (1, 'Request Created', 'Team Lead / Requester', h_create),
+                    (1, first_stage_title, 'Team Lead / Requester', h_create),
                     (2, 'Manager Review', 'Project Manager', find_h(['MANAGER_REVIEW', 'REVIEW', 'APPROVE', 'MANAGER_APPROVE']) or h_mgr_appr),
                     (3, 'Manager Approval', 'Project Manager', h_mgr_appr or find_h(['APPROVE', 'MANAGER_APPROVE'])),
                     (4, 'Payment Processed', 'System / Team Lead', h_mock_pay),
@@ -546,12 +570,14 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
                 elif st in ['MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'PAYMENT_JUSTIFIED', 'MANAGER_VERIFIED']:
                     completed_stage_threshold = 6
                 elif st == 'PAYMENT_JUSTIFICATION_SUBMITTED':
-                    completed_stage_threshold = 4
+                    completed_stage_threshold = 5
                 elif st == 'PAYMENT_PROCESSED':
-                    completed_stage_threshold = 3
+                    completed_stage_threshold = 4
                 elif st in ['MANAGER_APPROVED', 'PAYMENT_APPROVED', 'APPROVED']:
+                    completed_stage_threshold = 3
+                elif st in ['MANAGER_REVIEW', 'MANAGER_RESEARCHING', 'PRE_ESTIMATION_COMPLETED']:
                     completed_stage_threshold = 2
-                elif st in ['MANAGER_REVIEW', 'TEAM_LEAD_SUBMITTED', 'PENDING', 'Pending', 'MANAGER_RESEARCHING', 'PRE_ESTIMATION_COMPLETED']:
+                elif st in ['TEAM_LEAD_SUBMITTED', 'PENDING', 'Pending']:
                     completed_stage_threshold = 1
                 elif st in ['CREATED', 'TEAM_LEAD_REVIEW', 'DRAFT']:
                     completed_stage_threshold = 0
@@ -559,9 +585,9 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
                     completed_stage_threshold = 1
 
             elif path == 'FINANCE':
-                # PATH B -- FINANCE FINAL APPROVAL (10 Stages):
+                # PATH B -- FINANCE FINAL APPROVAL (10 Stages - PM Budget Not Available):
                 stages_info = [
-                    (1, 'Request Created', 'Team Lead / Requester', h_create),
+                    (1, first_stage_title, 'Team Lead / Requester', h_create),
                     (2, 'Manager Review', 'Project Manager', h_rec_fin or find_h(['MANAGER_REVIEW', 'REVIEW', 'APPROVE'])),
                     (3, 'Recommended to Finance', 'Project Manager', h_rec_fin),
                     (4, 'Finance Review', 'Finance Team', h_fin_rev or h_fin_appr),
@@ -577,16 +603,18 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
                 elif st in ['MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'PAYMENT_JUSTIFIED', 'MANAGER_VERIFIED']:
                     completed_stage_threshold = 8
                 elif st == 'PAYMENT_JUSTIFICATION_SUBMITTED':
-                    completed_stage_threshold = 6
+                    completed_stage_threshold = 7
                 elif st == 'PAYMENT_PROCESSED':
-                    completed_stage_threshold = 5
+                    completed_stage_threshold = 6
                 elif st in ['FINANCE_APPROVED', 'PAYMENT_APPROVED', 'APPROVED']:
-                    completed_stage_threshold = 4
+                    completed_stage_threshold = 5
                 elif st in ['FINANCE_REVIEW', 'FINANCE_RESEARCH', 'COST_ESTIMATION', 'FINANCE_REPORT', 'PRE_ESTIMATION_COMPLETED']:
-                    completed_stage_threshold = 3
+                    completed_stage_threshold = 4
                 elif st in ['RECOMMENDED_TO_FINANCE', 'MANAGER_RECOMMENDED_TO_FINANCE', 'FINANCE_RECOMMENDED', 'SENT_TO_FINANCE']:
+                    completed_stage_threshold = 3
+                elif st in ['MANAGER_REVIEW']:
                     completed_stage_threshold = 2
-                elif st in ['MANAGER_REVIEW', 'TEAM_LEAD_SUBMITTED', 'PENDING', 'Pending']:
+                elif st in ['TEAM_LEAD_SUBMITTED', 'PENDING', 'Pending']:
                     completed_stage_threshold = 1
                 elif st in ['CREATED', 'TEAM_LEAD_REVIEW', 'DRAFT']:
                     completed_stage_threshold = 0
@@ -635,43 +663,160 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
                     completed_stage_threshold = 1
 
         else:
-            # Hardware stages (10 Stages)
-            h_research = find_h(['RESEARCH_SAVED', 'MANAGER_RESEARCH'])
-            h_estimation = find_h(['PRE_ESTIMATION_COMPLETED', 'COST_ESTIMATION'])
+            # Hardware / IT Services stages (Dynamic based on whether Finance or Admin participated)
+            h_rec_fin = find_h(['RECOMMEND_FINANCE', 'MANAGER_RECOMMEND_FINANCE', 'RECOMMEND'])
+            h_fin_rev = find_h(['FINANCE_REVIEW', 'FINANCE_RECOMMEND_ADMIN', 'RECOMMEND_ADMIN'])
             h_fin_appr = find_h(['FINANCE_APPROVE'])
-            h_payment = find_h(['PAYMENT_COMPLETED'])
-            h_tl_conf = find_h(['TEAM_LEAD_CONFIRMED', 'COMPLETED', 'TEAM_LEAD_CONFIRM'])
+            h_admin_appr = find_h(['ADMIN_APPROVE'])
+            h_rfq = find_h(['RFQ_SENT', 'CREATE_RFQ', 'SEND_RFQ', 'IN_PROCUREMENT'])
+            h_quotes = find_h(['QUOTES_RECEIVED', 'QUOTE_SUBMITTED', 'VENDOR_QUOTE'])
+            h_po = find_h(['PURCHASE_ORDER_CREATED', 'PO_CREATED', 'PO_RELEASED', 'PRODUCT_ORDER'])
+            h_delivery = find_h(['DELIVERY', 'DELIVERED', 'GOODS_RECEIVED', 'GRN_CREATED'])
+            h_verify = find_h(['VERIFIED', 'VERIFICATION_COMPLETED', 'DOCUMENTS_VERIFIED', 'INVOICE_VERIFIED', '3WAY_MATCH_COMPLETED'])
+            h_payment = find_h(['PAYMENT_COMPLETED', 'PAYMENT_PROCESSED', 'PAYMENT'])
+            h_tl_conf = find_h(['TEAM_LEAD_CONFIRMED', 'COMPLETED', 'TEAM_LEAD_CONFIRM', 'REQUEST_COMPLETED'])
 
-            stages_info = [
-                (1, 'Request Created', 'Team Lead', h_create),
-                (2, 'Manager Review', 'Manager', None),
-                (3, 'Manager Research', 'Manager', h_research),
-                (4, 'Pre-Estimation Completed', 'Manager', h_estimation),
-                (5, 'Manager Approved', 'Manager', h_mgr_appr),
-                (6, 'Finance Review', 'Finance', None),
-                (7, 'Finance Approved', 'Finance', h_fin_appr),
-                (8, 'Payment Completed', 'Finance / Accounts', h_payment),
-                (9, 'Team Lead Confirmation', 'Team Lead', h_tl_conf),
-                (10, 'Request Completed', 'Procurement System', h_tl_conf if st in ['COMPLETED', 'REQUEST_COMPLETED'] else None),
+            # Real database artifact lookups (using prefetched in-memory objects to eliminate N+1 queries)
+            has_db_rfq = False
+            rfq_obj = None
+            rfqs_list = self._get_cached_rfqs(obj)
+            if rfqs_list:
+                rfq_obj = rfqs_list[0]
+                has_db_rfq = True
+            if not has_db_rfq:
+                has_db_rfq = bool(h_rfq) or (st in ['RFQ_SENT', 'IN_PROCUREMENT', 'IN PROCUREMENT', 'QUOTES_RECEIVED', 'UNDER_EVALUATION', 'ASSIGNED_TO_VENDOR', 'PRODUCT_ORDER', 'PO_RELEASED', 'DELIVERED', 'VERIFIED', 'PAYMENT_COMPLETED', 'COMPLETED'])
+
+            has_db_quotes = False
+            quotes_count = 0
+            if rfqs_list:
+                for r in rfqs_list:
+                    quotes = list(r.quotations.all()) if hasattr(r, 'quotations') else []
+                    quotes_count += len(quotes)
+            if quotes_count > 0 or (rfq_obj and getattr(rfq_obj, 'status', '') in ['Quotes Received', 'Under Evaluation', 'Closed', 'Awarded']):
+                has_db_quotes = True
+            if not has_db_quotes:
+                has_db_quotes = bool(h_quotes) or (st in ['QUOTES_RECEIVED', 'UNDER_EVALUATION', 'ASSIGNED_TO_VENDOR', 'VENDOR_ASSIGNED', 'PRODUCT_ORDER', 'PO_RELEASED', 'DELIVERED', 'VERIFIED', 'PAYMENT_COMPLETED', 'COMPLETED'])
+
+            has_db_po = False
+            po_obj = None
+            pos_list = self._get_cached_pos(obj)
+            if pos_list:
+                po_obj = pos_list[0]
+                has_db_po = True
+            if not has_db_po:
+                has_db_po = bool(h_po) or (st in ['PRODUCT_ORDER', 'PO_RELEASED', 'PO_CREATED', 'DELIVERED', 'DELIVERY', 'VERIFIED', 'PAYMENT_COMPLETED', 'COMPLETED'])
+
+            has_db_grn = False
+            grn_obj = None
+            if po_obj and hasattr(po_obj, 'goods_receipts'):
+                grns = list(po_obj.goods_receipts.all())
+                for g in grns:
+                    g_status = getattr(g, 'status', '')
+                    if g_status in ['Received', 'Verified', 'Partial', 'Delivered']:
+                        grn_obj = g
+                        has_db_grn = True
+                        break
+            if not has_db_grn and po_obj and getattr(po_obj, 'status', '') in ['Delivered', 'Fulfilled', 'Completed']:
+                has_db_grn = True
+            if not has_db_grn:
+                # Only use history action or explicit delivery statuses as fallback.
+                has_db_grn = bool(h_delivery) or (st in ['DELIVERED', 'GOODS_RECEIVED'])
+
+            has_db_verify = False
+            inv_obj = None
+            if po_obj and hasattr(po_obj, 'invoices'):
+                invs = list(po_obj.invoices.all())
+                for inv in invs:
+                    if getattr(inv, 'is_manager_verified', False) or getattr(inv, 'status', '') in ['Matched', 'Approved', 'Paid']:
+                        inv_obj = inv
+                        has_db_verify = True
+                        break
+            if not has_db_verify and grn_obj and getattr(grn_obj, 'status', '') == 'Verified':
+                has_db_verify = True
+            if not has_db_verify:
+                # Only use history action or explicit verify statuses as fallback.
+                has_db_verify = bool(h_verify) or (st in ['VERIFIED', 'ORDER_COMPLETE', 'DOCUMENTS_VERIFIED'])
+
+            has_db_payment = False
+            payments_list = self._get_cached_payments(obj)
+            pay_obj = next((p for p in payments_list if (getattr(p, 'status', '') or '').upper() in ['PAID', 'SUCCESS', 'PAYMENT SUCCESS', 'PAYMENT_COMPLETED']), None)
+            if pay_obj:
+                has_db_payment = True
+            if not has_db_payment:
+                has_db_payment = bool(h_payment) or (st in ['PAYMENT_COMPLETED', 'PAID', 'COMPLETED', 'REQUEST_COMPLETED', 'TEAM_LEAD_CONFIRMED'])
+
+            # Finance is involved only when there is actual evidence: recommendation actions/metadata,
+            # a Finance-bearing status string, or explicit finance review/approval.
+            has_admin = bool(
+                h_admin_appr or find_h(['ADMIN_REVIEW', 'RECOMMEND_ADMIN', 'FINANCE_RECOMMEND_ADMIN', 'ADMIN_APPROVE']) or
+                st in ['RECOMMENDED_TO_ADMIN', 'FINANCE_RECOMMENDED_TO_ADMIN', 'ADMIN_REVIEW', 'ADMIN_RESEARCH', 'ADMIN_APPROVED'] or
+                (isinstance(obj.extra_fields, dict) and obj.extra_fields.get('final_approval_by') == 'ADMIN') or
+                (isinstance(obj.extra_fields, dict) and bool(obj.extra_fields.get('admin_approved')))
+            )
+            has_finance = bool(
+                has_admin or
+                h_rec_fin or h_fin_rev or h_fin_appr or
+                st in ['RECOMMENDED_TO_FINANCE', 'MANAGER_RECOMMENDED_TO_FINANCE',
+                        'FINANCE_REVIEW', 'FINANCE_RESEARCH', 'COST_ESTIMATION',
+                        'FINANCE_REPORT', 'FINANCE_APPROVED', 'FINANCE_RECOMMENDED'] or
+                (isinstance(obj.extra_fields, dict) and obj.extra_fields.get('final_approval_by') in ['FINANCE', 'ADMIN']) or
+                (isinstance(obj.extra_fields, dict) and bool(obj.extra_fields.get('finance_status') and obj.extra_fields.get('finance_status') not in ['Not Escalated', 'Pending Manager Approval']))
+            )
+
+            raw_stages = [
+                ('Create Request', 'Team Lead / Requester', h_create),
+                ('Manager Approval', 'Project Manager', h_mgr_appr),
             ]
+            if has_finance:
+                raw_stages.append(('Finance Approval', 'Finance Team', h_fin_appr or h_fin_rev))
+            if has_admin:
+                raw_stages.append(('Admin Approval', 'Executive Administrator', h_admin_appr))
 
-            completed_stage_threshold = 1
-            if st in ['COMPLETED', 'REQUEST_COMPLETED']:
-                completed_stage_threshold = 10
-            elif st in ['PAYMENT_COMPLETED', 'TEAM_LEAD_CONFIRMED']:
-                completed_stage_threshold = 8
-            elif st in ['FINANCE_APPROVED']:
-                completed_stage_threshold = 7
-            elif st in ['FINANCE_REVIEW', 'FINANCE_RECOMMENDED', 'RECOMMENDED_TO_FINANCE']:
-                completed_stage_threshold = 5
-            elif st in ['MANAGER_APPROVED']:
-                completed_stage_threshold = 5
-            elif st in ['PRE_ESTIMATION_COMPLETED', 'COST_ESTIMATION']:
-                completed_stage_threshold = 4
-            elif st in ['MANAGER_RESEARCHING', 'FINANCE_RESEARCH']:
-                completed_stage_threshold = 3
-            elif st in ['MANAGER_REVIEW', 'TEAM_LEAD_SUBMITTED', 'PENDING']:
-                completed_stage_threshold = 1
+            raw_stages.extend([
+                ('RFQ Sent', 'Procurement Sourcing Desk', h_rfq),
+                ('Vendor Quotes Received', 'Vendor / Sourcing Team', h_quotes),
+                ('Product Order', 'Procurement Operations', h_po),
+                ('Delivery', 'Vendor / Receiving Dock', h_delivery),
+                ('Verification and Order Complete', 'Procurement Audit & 3-Way Match', h_verify),
+                ('Payment', 'Finance Treasury & Disbursement', h_payment or h_tl_conf),
+            ])
+
+            stages_info = [(idx + 1, title, role, hist) for idx, (title, role, hist) in enumerate(raw_stages)]
+            total_stages = len(stages_info)
+
+            def get_stage_num(name):
+                return next((s[0] for s in stages_info if s[1] == name), 0)
+
+            if st in ['COMPLETED', 'REQUEST_COMPLETED', 'TEAM_LEAD_CONFIRMED']:
+                completed_stage_threshold = total_stages
+            elif has_db_payment:
+                completed_stage_threshold = get_stage_num('Payment')
+            elif has_db_verify:
+                completed_stage_threshold = get_stage_num('Verification and Order Complete')
+            elif has_db_grn:
+                completed_stage_threshold = get_stage_num('Delivery')
+            elif has_db_po:
+                completed_stage_threshold = get_stage_num('Product Order')
+            elif has_db_quotes:
+                completed_stage_threshold = get_stage_num('Vendor Quotes Received')
+            elif has_db_rfq:
+                completed_stage_threshold = get_stage_num('RFQ Sent')
+            elif st in ['ADMIN_APPROVED'] or (has_admin and st in ['APPROVED']):
+                completed_stage_threshold = get_stage_num('Admin Approval')
+            elif st in ['FINANCE_APPROVED'] or (has_finance and st in ['APPROVED'] and not has_admin):
+                completed_stage_threshold = get_stage_num('Finance Approval')
+            elif st in ['MANAGER_APPROVED'] or (st in ['APPROVED'] and not has_finance and not has_admin):
+                completed_stage_threshold = get_stage_num('Manager Approval')
+            elif st in ['ADMIN_REVIEW', 'ADMIN_RESEARCH', 'RECOMMENDED_TO_ADMIN', 'FINANCE_RECOMMENDED_TO_ADMIN']:
+                completed_stage_threshold = get_stage_num('Finance Approval') or get_stage_num('Manager Approval')
+            elif st in ['FINANCE_REVIEW', 'FINANCE_RECOMMENDED', 'RECOMMENDED_TO_FINANCE', 'SENT_TO_FINANCE', 'MANAGER_RECOMMENDED_TO_FINANCE']:
+                completed_stage_threshold = get_stage_num('Manager Approval')
+            elif st in ['MANAGER_REVIEW', 'TEAM_LEAD_SUBMITTED', 'PENDING', 'Pending']:
+                completed_stage_threshold = get_stage_num('Create Request')
+            elif st in ['CREATED', 'TEAM_LEAD_REVIEW', 'DRAFT']:
+                completed_stage_threshold = 0
+            else:
+                completed_stage_threshold = get_stage_num('Create Request')
 
         timeline_result = []
         for s_num, title, role, hist in stages_info:
@@ -713,6 +858,48 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
             elif title == 'Awaiting Team Lead Acknowledgement' and s_state == 'current' and is_software:
                 actor_name = f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() if obj.created_by else 'Team Lead'
                 comments = 'Payment justification verified by Manager. Awaiting Team Lead final acknowledgment.'
+            elif title == 'RFQ Sent' and (rfq_obj or has_db_rfq):
+                if rfq_obj:
+                    actor_name = 'Procurement Sourcing Desk'
+                    timestamp = rfq_obj.created_at.isoformat() if getattr(rfq_obj, 'created_at', None) else ''
+                    invited_cnt = len(list(rfq_obj.invited_vendors.all())) if hasattr(rfq_obj, 'invited_vendors') else 0
+                    comments = f"RFQ {getattr(rfq_obj, 'rfq_id', '')} published ({invited_cnt} invited vendors)."
+                else:
+                    actor_name = 'Procurement Sourcing Desk'
+                    comments = 'Request published to invited vendors.'
+            elif title == 'Vendor Quotes Received' and (quotes_count > 0 or has_db_quotes):
+                actor_name = 'Vendor Partners / Sourcing Team'
+                comments = f"{quotes_count if quotes_count > 0 else 'Multiple'} vendor quotations received and evaluated."
+            elif title == 'Product Order' and (po_obj or has_db_po):
+                if po_obj:
+                    actor_name = 'Procurement Operations'
+                    timestamp = po_obj.created_at.isoformat() if getattr(po_obj, 'created_at', None) else ''
+                    vendor_name = po_obj.vendor.name if getattr(po_obj, 'vendor', None) else 'Vendor'
+                    comments = f"Purchase Order {getattr(po_obj, 'po_id', '')} issued to {vendor_name}."
+                else:
+                    actor_name = 'Procurement Operations'
+                    comments = 'Purchase Order released to vendor.'
+            elif title == 'Delivery' and (grn_obj or has_db_grn):
+                if grn_obj:
+                    received_by = getattr(grn_obj, 'received_by', None)
+                    actor_name = f"{received_by.first_name} {received_by.last_name}".strip() if received_by else 'Logistics & Receiving Dock'
+                    timestamp = grn_obj.created_at.isoformat() if getattr(grn_obj, 'created_at', None) else ''
+                    comments = f"Goods Receipt Note {getattr(grn_obj, 'receipt_id', '')} confirmed at {getattr(grn_obj, 'delivery_location', 'Logistics Dock')}."
+                else:
+                    actor_name = 'Logistics & Receiving Dock'
+                    comments = 'Shipment received and logged at receiving dock.'
+            elif title == 'Verification and Order Complete' and (inv_obj or has_db_verify):
+                actor_name = getattr(inv_obj, 'verified_by_name', None) or 'Procurement Audit'
+                timestamp = inv_obj.verified_at.isoformat() if getattr(inv_obj, 'verified_at', None) else (inv_obj.created_at.isoformat() if getattr(inv_obj, 'created_at', None) else '')
+                comments = '3-Way Matching verified (PO, GRN, & Invoice reconciled).'
+            elif title == 'Payment' and (pay_obj or has_db_payment):
+                if pay_obj:
+                    actor_name = 'Finance Treasury & Disbursement'
+                    timestamp = pay_obj.created_at.isoformat() if getattr(pay_obj, 'created_at', None) else ''
+                    comments = f"Payment {getattr(pay_obj, 'payment_id', '')} completed via {getattr(pay_obj, 'payment_method', 'Bank Transfer')}. Ref: {getattr(pay_obj, 'reference_number', '')}."
+                else:
+                    actor_name = 'Finance Treasury & Disbursement'
+                    comments = 'Payment settlement completed.'
 
             timeline_result.append({
                 'stage': s_num,
@@ -863,16 +1050,12 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
             self._descendants_cache = {}
 
         if root_id not in self._descendants_cache:
-            if hasattr(root, '_prefetched_objects_cache') and 'all_descendants' in root._prefetched_objects_cache:
-                children = list(root.all_descendants.all())
-            elif hasattr(obj, '_prefetched_objects_cache') and 'all_descendants' in obj._prefetched_objects_cache and obj.id == root_id:
+            if hasattr(obj, '_prefetched_objects_cache') and 'all_descendants' in obj._prefetched_objects_cache:
                 children = list(obj.all_descendants.all())
+            elif hasattr(root, '_prefetched_objects_cache') and 'all_descendants' in root._prefetched_objects_cache:
+                children = list(root.all_descendants.all())
             else:
-                children = list(
-                    PurchaseRequest.objects.filter(original_request_id=root_id)
-                    .only('id', 'request_id', 'status', 'request_operation', 'renewal_sequence')
-                    .order_by('renewal_sequence')
-                )
+                children = []
             self._descendants_cache[root_id] = children
         else:
             children = self._descendants_cache[root_id]
@@ -882,7 +1065,8 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
             'MANAGER_APPROVED', 'FINANCE_APPROVED', 'ADMIN_APPROVED',
             'PAYMENT_APPROVED', 'PAYMENT_PROCESSED', 'PAYMENT_JUSTIFICATION_SUBMITTED',
             'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'PAYMENT_JUSTIFIED',
-            'MANAGER_VERIFIED', 'TEAM_LEAD_REVIEW', 'PENDING', 'DRAFT', 'SUBMITTED'
+            'MANAGER_VERIFIED', 'TEAM_LEAD_REVIEW', 'TEAM_LEAD_SUBMITTED', 'RECOMMENDED_TO_FINANCE',
+            'FINANCE_RESEARCH', 'COST_ESTIMATION', 'FINANCE_REPORT', 'PENDING', 'DRAFT', 'SUBMITTED'
         }
 
         latest_child = children[-1] if children else None
@@ -941,6 +1125,9 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
         return ''
 
 
+_DEPT_ID_CACHE = {}
+
+
 class CreatePurchaseRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseRequest
@@ -965,14 +1152,20 @@ class CreatePurchaseRequestSerializer(serializers.ModelSerializer):
             if str(dept_val).isdigit():
                 data['department'] = int(dept_val)
             else:
-                from apps.users.models import Department
                 dept_str = str(dept_val).strip()
-                dept = (
-                    Department.objects.filter(name__iexact=dept_str).first() or
-                    Department.objects.filter(name__icontains=dept_str.replace('&', '').strip().split()[0]).first() or
-                    Department.objects.first()
-                )
-                data['department'] = dept.id if dept else None
+                if dept_str in _DEPT_ID_CACHE:
+                    data['department'] = _DEPT_ID_CACHE[dept_str]
+                else:
+                    from apps.users.models import Department
+                    dept = (
+                        Department.objects.filter(name__iexact=dept_str).first() or
+                        Department.objects.filter(name__icontains=dept_str.replace('&', '').strip().split()[0]).first() or
+                        Department.objects.first()
+                    )
+                    dept_id = dept.id if dept else None
+                    if dept_id:
+                        _DEPT_ID_CACHE[dept_str] = dept_id
+                    data['department'] = dept_id
         return super().to_internal_value(data)
 
     def validate_requested_amount(self, value):
@@ -1037,7 +1230,7 @@ class ProcessPaymentActionSerializer(serializers.Serializer):
     approved_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     final_payable_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=True)
     payment_method = serializers.CharField(required=False, default='Bank Transfer')
-    payment_reference = serializers.CharField(required=True, min_length=3)
+    payment_reference = serializers.CharField(required=True, min_length=3, max_length=15)
     payment_date = serializers.DateField(required=False)
     payment_status = serializers.CharField(required=False, default='Paid')
     payment_remarks = serializers.CharField(required=False, allow_blank=True, default='')
@@ -1079,8 +1272,16 @@ class ResubmitRequestSerializer(serializers.Serializer):
     description = serializers.CharField(required=False)
     quantity = serializers.IntegerField(required=False, min_value=1)
     requested_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    total_estimated_cost = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    estimated_cost = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     delivery_location = serializers.CharField(required=False, allow_blank=True)
+    category = serializers.CharField(required=False, allow_blank=True)
+    subcategory = serializers.CharField(required=False, allow_blank=True)
+    priority = serializers.CharField(required=False, allow_blank=True)
+    required_by = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    preferred_vendor = serializers.CharField(required=False, allow_blank=True)
     justification = serializers.CharField(required=False, allow_blank=True)
+    extra_fields = serializers.JSONField(required=False)
     comments = serializers.CharField(required=False, allow_blank=True, default='Request updated and resubmitted for review.')
 
 
@@ -1115,4 +1316,3 @@ class ApproveRejectActionSerializer(serializers.Serializer):
             elif not notes:
                 raise serializers.ValidationError({"notes": f"Comments or reason required when action is {action}."})
         return data
-

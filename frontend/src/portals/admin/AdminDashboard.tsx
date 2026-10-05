@@ -18,6 +18,7 @@ import { RequestDetailsModal } from '../../components/portal/RequestDetailsModal
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
 import { PROCUREMENT_CATEGORIES } from './AdminDepartmentsPage'
 import { formatDate } from '../../utils/formatDate'
+import { sortRequestsNewestFirst } from '../../utils/workflowUtils'
 
 const priorityStyles: Record<string, string> = {
   Critical: 'bg-rose-100 text-rose-900 border-rose-300 font-bold',
@@ -98,9 +99,7 @@ export const AdminDashboard: React.FC = () => {
 
   // 3-4 Recent Requests from real backend data, sorted by creation/update date descending
   const recentRequests = useMemo(() => {
-    return [...allRequests]
-      .sort((a, b) => new Date(b.date || '2026-09-01').getTime() - new Date(a.date || '2026-09-01').getTime())
-      .slice(0, 4)
+    return sortRequestsNewestFirst(allRequests).slice(0, 4)
   }, [allRequests])
 
   // Products belonging to the current tracking request

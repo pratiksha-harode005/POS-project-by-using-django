@@ -5,10 +5,11 @@ import {
   IndianRupee, FileText, AlertCircle, Award, Check, Eye,
   BarChart3, Layers, UserCheck, ThumbsUp, Wrench, Calendar, Gift
 } from 'lucide-react'
-import { useManagerData, resolveVendorId, isMockRfq } from '../../context/ManagerDataContext'
+import { useManagerData, resolveVendorId, isMockRfq, isFinanceRelevantRequest } from '../../context/ManagerDataContext'
 import type { QuotationItem } from '../../context/ManagerDataContext'
 import { QuotationCommercialModal } from '../../components/portal/QuotationCommercialModal'
 import { formatDate } from '../../utils/formatDate'
+import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -30,7 +31,10 @@ interface ProductGroup {
 }
 
 export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role = 'MANAGER' }) => {
-  const { quotations, rfqs, selectVendorQuotation, assignVendorToRequest } = useManagerData()
+  const { user } = useAuth()
+  const effectiveRole = role || (user?.role as any) || 'MANAGER'
+  const isFinance = (effectiveRole || '').toUpperCase() === 'FINANCE'
+  const { quotations, rfqs, allRequests, selectVendorQuotation, assignVendorToRequest } = useManagerData()
 
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('All')
@@ -51,9 +55,10 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
 
   // Group quotations by RFQ ID
   const productGroups = useMemo<ProductGroup[]>(() => {
-    const map = new Map<string, ProductGroup>();
+    const map = new Map<string, ProductGroup>()
+    const aliasToKeyMap = new Map<string, string>()
 
-    // Helper to extract clean alphanumeric identifiers
+    // Helper to extract clean alphanumeric identifiers (for exact comparison)
     const cleanStr = (s?: any): string => {
       if (s === null || s === undefined) return ''
       if (typeof s === 'object') {
@@ -63,10 +68,57 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
       return String(s).replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
     }
 
+    // Vendor submissions persist detailed commercial fields in extra_fields.
+    // Read both API aliases and the JSON payload so every portal renders the
+    // same submitted quotation details regardless of which endpoint supplied it.
+    const quoteField = (quote: any, ...keys: string[]): any => {
+      const extra = quote?.extra_fields && typeof quote.extra_fields === 'object' ? quote.extra_fields : {}
+      for (const key of keys) {
+        for (const source of [quote, extra]) {
+          const value = source?.[key]
+          if (value !== undefined && value !== null && String(value).trim() !== '') return value
+        }
+      }
+      return undefined
+    }
+
+    // Helper to check if RFQ is accessible in current role view
+    const isRfqAllowedForRole = (r: any): boolean => {
+      if (!isFinance) return true
+      if (Array.isArray(r.quotations) && r.quotations.length > 0) return true
+      const rawStatus = (r.status || '').toUpperCase()
+      if (rawStatus === 'OPEN' || rawStatus === 'QUOTES_RECEIVED' || rawStatus === 'SENT' || rawStatus === 'AWARDED') return true
+      const prDetail = r.purchase_request_detail
+      if (!prDetail) return true
+      const stage = Number(prDetail.current_stage || r.current_stage || 0)
+      if (stage >= 3) return true
+      const matchedReq = (allRequests || []).find(req =>
+        req.id === r.purchase_request ||
+        req.id === prDetail?.request_id ||
+        (req as any).rawRequest?.id === r.purchase_request ||
+        (req as any).rawRequest?.request_id === prDetail?.request_id
+      )
+      if (matchedReq) {
+        if ((matchedReq.currentStage || 0) >= 3) return true
+        return isFinanceRelevantRequest(matchedReq)
+      }
+      if (prDetail) {
+        if (prDetail.flow_type === 'B') return true
+        if (prDetail.created_by_detail?.role === 'FINANCE') return true
+        if (prDetail.is_forwarded_to_finance) return true
+        const st = (prDetail.status || '').toUpperCase()
+        if (st.includes('FINANCE') || st.includes('PROCUREMENT') || st === 'RECOMMENDED_TO_FINANCE' || st === 'MANAGER_RECOMMENDED_TO_FINANCE' || st === 'RECOMMENDED_TO_ADMIN' || st === 'APPROVED') {
+          return true
+        }
+      }
+      return true
+    }
+
     // 1. Initialize cards for active RFQs in rfqs context
     (rfqs || []).forEach((r: any) => {
       const rId = (r.rfq_id || r.id || '').toString()
       if (!rId || isMockRfq(rId)) return
+      if (!isRfqAllowedForRole(r)) return
       const normRfqId = rId.startsWith('RFQ-') ? rId.toUpperCase() : `RFQ-${rId.toUpperCase()}`
       const title = r.title || r.purchase_request_detail?.title || r.purchase_request_detail?.subcategory || 'Procurement Request'
 
@@ -84,10 +136,111 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
           highestPrice: 0
         })
       }
+
+      // Register all exact aliases for this RFQ to point directly to normRfqId
+      const aliases = [
+        normRfqId,
+        rId,
+        cleanStr(normRfqId),
+        cleanStr(rId),
+        r.id ? String(r.id) : '',
+        r.pk ? String(r.pk) : '',
+        cleanStr(r.pk),
+        r.purchase_request ? String(r.purchase_request) : '',
+        cleanStr(r.purchase_request),
+        r.purchase_request_detail?.request_id ? String(r.purchase_request_detail.request_id) : '',
+        cleanStr(r.purchase_request_detail?.request_id)
+      ].filter(Boolean)
+
+      aliases.forEach(a => {
+        aliasToKeyMap.set(a.toUpperCase(), normRfqId)
+        aliasToKeyMap.set(cleanStr(a), normRfqId)
+      })
+
+      // If this RFQ object already contains nested quotations from backend, populate them
+      if (Array.isArray(r.quotations) && r.quotations.length > 0) {
+        const group = map.get(normRfqId)!
+        r.quotations.forEach((nq: any) => {
+          const qId = nq.quotation_id || (nq.id ? (String(nq.id).startsWith('QUO-') ? String(nq.id) : `QUO-${nq.id}`) : '')
+          const vObj = nq.vendor_detail || (typeof nq.vendor === 'object' ? nq.vendor : null)
+          const vName = vObj?.name || (typeof nq.vendor === 'string' && isNaN(Number(nq.vendor)) ? nq.vendor : '') || (nq.vendor_name || 'Vendor Partner')
+          const p = Number(nq.price) || Number(nq.total_amount) || Number(nq.totalAmount) || 0
+          const qItem: QuotationItem = {
+            id: qId,
+            rfqId: normRfqId,
+            rfqTitle: title,
+            vendor: vName,
+            vendorId: vObj?.unique_vendor_id || nq.vendor_id || String(nq.vendor || ''),
+            product: title,
+            specification: quoteField(nq, 'specification', 'terms_conditions', 'product_description') || '',
+            quoteDate: String(quoteField(nq, 'issue_date', 'issueDate', 'created_at') || new Date().toISOString()).split('T')[0],
+            validUntil: quoteField(nq, 'valid_until', 'validUntil', 'expiry_date', 'expiryDate') || r.deadline || '',
+            unitPrice: Number(nq.unit_price) || Number(nq.unitPrice) || (group.quantity > 0 ? Math.round(p / group.quantity) : p),
+            unitLandedPrice: Number(nq.unit_landed_price) || Number(nq.unitLandedPrice) || (group.quantity > 0 ? Math.round(p / group.quantity) : p),
+            baseAmount: p,
+            price: p,
+            quantity: group.quantity || 1,
+            gstRate: Number(nq.gst_rate) || 18,
+            gstPercent: Number(nq.gst_rate) || 18,
+            gstAmount: Number(nq.tax_amount) || Math.round(p * 0.18),
+            taxAmount: Number(nq.tax_amount) || Math.round(p * 0.18),
+            shippingCost: 0,
+            discountAmount: 0,
+            totalAmount: Number(nq.total_amount) || Number(nq.totalAmount) || p,
+            deliveryDays: Number(nq.delivery_days) || 7,
+            warranty: quoteField(nq, 'warranty', 'warranty_duration', 'warrantyDuration') || (nq.warranty_months ? `${nq.warranty_months} Months` : '12 Months'),
+            warrantyType: quoteField(nq, 'warranty_type', 'warrantyType'),
+            paymentTerms: quoteField(nq, 'payment_terms', 'paymentTerms', 'terms_conditions') || 'Standard',
+            complianceRating: 'Verified',
+            performanceScore: vObj?.performance_score ? parseFloat(vObj.performance_score) : 95,
+            vendorRating: vObj?.rating ? parseFloat(vObj.rating) : 4.8,
+            status: (nq.status === 'Selected' || nq.status === 'Shortlisted' || nq.status === 'Rejected') ? nq.status : 'Under Evaluation',
+            notes: quoteField(nq, 'notes', 'terms_conditions') || '',
+            techSupportDuration: quoteField(nq, 'tech_support_duration', 'techSupportDuration'),
+            freeServiceCount: quoteField(nq, 'free_service_count', 'freeServiceCount'),
+            installationType: quoteField(nq, 'installation_type', 'installationType'),
+            replacementPolicy: quoteField(nq, 'replacement_policy', 'replacementPolicy'),
+            accessoriesIncluded: quoteField(nq, 'accessories_included', 'accessoriesIncluded'),
+            expectedDeliveryDate: quoteField(nq, 'expected_delivery_date', 'expectedDeliveryDate'),
+            technicalCompliance: 'Compliant',
+            commercialCompliance: 'Approved',
+            submittedAt: (nq.created_at || '').split('T')[0]
+          }
+          const exists = group.quotes.find(eq => eq.id === qId || (eq.vendor.toLowerCase() === vName.toLowerCase() && (eq.totalAmount || eq.price) === p))
+          if (!exists) {
+            group.quotes.push(qItem)
+            if (qItem.status === 'Selected') group.selectedQuote = qItem
+          }
+        })
+
+        // Immediately compute price range in step 1 so cards always have correct price range & quotes
+        const validAmounts = group.quotes
+          .map((item: any) => Number(item.totalAmount) || Number(item.unitPrice) || Number(item.price) || 0)
+          .filter((amt: number) => amt > 0)
+        if (validAmounts.length > 0) {
+          group.lowestPrice = Math.min(...validAmounts)
+          group.highestPrice = Math.max(...validAmounts)
+        }
+      }
     })
 
-    // 2. Map and group all submitted quotations into matching RFQ cards
-    quotations.forEach(qItem => {
+    // 2. Map and group all submitted quotations (from backend and local browser submissions) into matching RFQ cards
+    const localQuotesList: any[] = []
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k && (k.startsWith('kss_vendor_quotes_') || k === 'kss_vendor_quotes')) {
+          const val = JSON.parse(localStorage.getItem(k) || '[]')
+          if (Array.isArray(val)) {
+            localQuotesList.push(...val)
+          }
+        }
+      }
+    } catch (e) {}
+
+    const allQuotesToProcess: any[] = [...(quotations || []), ...localQuotesList]
+
+    allQuotesToProcess.forEach(qItem => {
       const q = qItem as any
       const rawRfq = (q.rfqId || q.rfqRef || q.rfq_id || q.rfq || '').toString().trim()
       if (!rawRfq || isMockRfq(rawRfq)) return
@@ -96,40 +249,56 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
       const cleanQRfq = cleanStr(rawRfq)
       const cleanQReq = cleanStr(q.request_id || q.requestId)
 
-      // Find matching RFQ object in rfqs list
-      const matchingRfq = (rfqs || []).find((r: any) => {
-        const rId = (r.rfq_id || r.id || '').toString().toUpperCase()
-        const rPk = (r.pk || r.id || '').toString().toUpperCase()
-        const prId = (r.purchase_request_detail?.request_id || '').toString().toUpperCase()
-        const cleanRId = cleanStr(r.rfq_id || r.id)
-        const cleanPrId = cleanStr(r.purchase_request_detail?.request_id)
-        const cleanRPk = cleanStr(r.pk)
+      // Exact lookup using alias map
+      let targetKey: string | undefined =
+        aliasToKeyMap.get(normRfqId) ||
+        aliasToKeyMap.get(rawRfq.toUpperCase()) ||
+        aliasToKeyMap.get(cleanQRfq) ||
+        (cleanQReq ? aliasToKeyMap.get(cleanQReq) : undefined)
 
-        return (
-          rId === normRfqId ||
-          `RFQ-${rId}` === normRfqId ||
-          rId === normRfqId.replace('RFQ-', '') ||
-          rPk === rawRfq ||
-          prId === rawRfq ||
-          `RFQ-${prId}` === normRfqId ||
-          (cleanQRfq && (cleanQRfq === cleanRId || cleanQRfq === cleanRPk || cleanQRfq.includes(cleanRId) || cleanRId.includes(cleanQRfq))) ||
-          (cleanQReq && cleanPrId && (cleanQReq === cleanPrId || cleanQReq.includes(cleanPrId) || cleanPrId.includes(cleanQReq)))
-        )
-      })
+      // If not in alias map, look for exact match in rfqs list
+      let mRfq: any = null
+      if (!targetKey) {
+        const matchingRfq = (rfqs || []).find((r: any) => {
+          const rId = (r.rfq_id || r.id || '').toString().toUpperCase()
+          const rPk = (r.pk || r.id || '').toString().toUpperCase()
+          const prId = (r.purchase_request_detail?.request_id || '').toString().toUpperCase()
+          const cleanRId = cleanStr(r.rfq_id || r.id)
+          const cleanPrId = cleanStr(r.purchase_request_detail?.request_id)
+          const cleanRPk = cleanStr(r.pk)
 
-      const mRfq = matchingRfq as any
-      const targetRfqId = mRfq ? (mRfq.rfq_id || (mRfq.id ? (String(mRfq.id).startsWith('RFQ-') ? String(mRfq.id) : `RFQ-${mRfq.id}`) : normRfqId)) : normRfqId
+          return (
+            rId === normRfqId ||
+            `RFQ-${rId}` === normRfqId ||
+            (cleanRId && cleanQRfq && cleanRId === cleanQRfq) ||
+            (cleanRPk && cleanQRfq && cleanRPk === cleanQRfq) ||
+            (cleanPrId && cleanQReq && cleanPrId === cleanQReq)
+          )
+        })
 
-      // Find target key in map
-      let targetKey = targetRfqId
-      for (const k of map.keys()) {
-        const cleanK = cleanStr(k)
-        if (
-          k.toUpperCase() === targetRfqId.toUpperCase() ||
-          (cleanK && cleanQRfq && (cleanK === cleanQRfq || cleanK.includes(cleanQRfq) || cleanQRfq.includes(cleanK)))
-        ) {
-          targetKey = k
-          break
+        if (matchingRfq) {
+          mRfq = matchingRfq
+          const rfqIdStr = (matchingRfq.rfq_id || matchingRfq.id || '').toString()
+          targetKey = rfqIdStr.startsWith('RFQ-') ? rfqIdStr.toUpperCase() : `RFQ-${rfqIdStr.toUpperCase()}`
+        }
+      } else {
+        mRfq = (rfqs || []).find((r: any) => {
+          const rId = (r.rfq_id || r.id || '').toString().toUpperCase()
+          return rId === targetKey || `RFQ-${rId}` === targetKey
+        })
+      }
+
+      const finalKey: string = targetKey || normRfqId
+
+      if (isFinance) {
+        if (mRfq && !isRfqAllowedForRole(mRfq)) return
+        if (!mRfq) {
+          const matchedReq = (allRequests || []).find(req =>
+            cleanStr(req.id) === cleanQReq ||
+            cleanStr((req as any).rfqId) === cleanQRfq ||
+            cleanStr(req.poNumber) === cleanQRfq
+          )
+          if (matchedReq && !isFinanceRelevantRequest(matchedReq)) return
         }
       }
 
@@ -140,13 +309,13 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
         q.product ||
         'Procurement Request'
 
-      const quotePrice = Number(q.totalAmount) || Number(q.unitPrice) || Number(q.price) || 0
+      const quotePrice = Number(q.totalAmount) || Number(q.total_amount) || Number(q.unitPrice) || Number(q.price) || 0
 
-      if (!map.has(targetKey)) {
-        map.set(targetKey, {
-          key: targetKey,
+      if (!map.has(finalKey)) {
+        map.set(finalKey, {
+          key: finalKey,
           product: realRfqTitle,
-          rfqId: targetKey,
+          rfqId: finalKey,
           rfqTitle: realRfqTitle,
           category: mRfq?.purchase_request_detail?.category || mRfq?.category || q.category || 'General',
           quantity: q.quantity || mRfq?.purchase_request_detail?.quantity || mRfq?.qty || 1,
@@ -157,20 +326,68 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
         })
       }
 
-      const group = map.get(targetKey)!
+      const group = map.get(finalKey)!
+
+      const vName = (q.vendor || q.vendorName || q.vendor_detail?.name || (typeof q.vendor === 'string' && isNaN(Number(q.vendor)) ? q.vendor : '') || 'Vendor Partner').trim()
+      const vId = q.vendorId || q.vendor_detail?.unique_vendor_id || String(q.vendor || '')
+
+      const normalizedQuote: QuotationItem = {
+        id: q.quotation_id || (q.id ? String(q.id) : `QUO-${finalKey.replace('RFQ-', '')}-${vName.slice(0, 3).toUpperCase()}`),
+        rfqId: finalKey,
+        rfqTitle: realRfqTitle,
+        vendor: vName,
+        vendorId: vId,
+        product: realRfqTitle,
+        specification: quoteField(q, 'specification', 'terms_conditions', 'product_description') || '',
+        quoteDate: String(quoteField(q, 'submittedDate', 'quoteDate', 'issue_date', 'issueDate', 'created_at') || new Date().toISOString()).split('T')[0],
+        validUntil: quoteField(q, 'valid_until', 'validUntil', 'expiry_date', 'expiryDate', 'quoteValidity') || '',
+        unitPrice: Number(q.unitPrice) || Number(q.unit_price) || (group.quantity > 0 ? Math.round(quotePrice / group.quantity) : quotePrice),
+        unitLandedPrice: Number(q.unitLandedPrice) || Number(q.unit_landed_price) || (group.quantity > 0 ? Math.round(quotePrice / group.quantity) : quotePrice),
+        baseAmount: Number(q.baseAmount) || Number(q.base_amount) || Number(q.price) || quotePrice,
+        price: quotePrice,
+        quantity: group.quantity || q.quantity || 1,
+        gstRate: Number(q.gstRate) || Number(q.gstPercent) || Number(q.gst_rate) || 18,
+        gstPercent: Number(q.gstPercent) || Number(q.gstRate) || Number(q.gst_rate) || 18,
+        gstAmount: Number(q.gstAmount) || Number(q.taxAmount) || Number(q.tax_amount) || Math.round(quotePrice * 0.18),
+        taxAmount: Number(q.taxAmount) || Number(q.tax_amount) || Math.round(quotePrice * 0.18),
+        shippingCost: 0,
+        discountAmount: 0,
+        totalAmount: quotePrice,
+        deliveryDays: Number(q.deliveryDays) || Number(q.delivery_days) || parseInt(q.leadTime) || 7,
+        warranty: quoteField(q, 'warranty', 'warranty_duration', 'warrantyDuration') || (q.warranty_months ? `${q.warranty_months} Months` : '12 Months'),
+        warrantyType: quoteField(q, 'warranty_type', 'warrantyType'),
+        paymentTerms: quoteField(q, 'payment_terms', 'paymentTerms', 'terms_conditions') || 'Standard',
+        complianceRating: 'Verified',
+        performanceScore: q.performanceScore || (q.vendor_detail?.performance_score ? parseFloat(q.vendor_detail.performance_score) : 95),
+        vendorRating: q.vendorRating || (q.vendor_detail?.rating ? parseFloat(q.vendor_detail.rating) : 4.8),
+        status: (q.status === 'Selected' || q.status === 'Shortlisted' || q.status === 'Rejected') ? q.status : 'Under Evaluation',
+        notes: quoteField(q, 'notes', 'terms_conditions') || '',
+        techSupportDuration: quoteField(q, 'tech_support_duration', 'techSupportDuration'),
+        freeServiceCount: quoteField(q, 'free_service_count', 'freeServiceCount'),
+        installationType: quoteField(q, 'installation_type', 'installationType'),
+        replacementPolicy: quoteField(q, 'replacement_policy', 'replacementPolicy'),
+        accessoriesIncluded: quoteField(q, 'accessories_included', 'accessoriesIncluded'),
+        expectedDeliveryDate: quoteField(q, 'expected_delivery_date', 'expectedDeliveryDate'),
+        technicalCompliance: 'Compliant',
+        commercialCompliance: 'Approved',
+        submittedAt: (q.submittedDate || q.created_at || '').split('T')[0]
+      }
 
       const existingIdx = group.quotes.findIndex((existing: any) => {
-        return existing.id && q.id && existing.id === q.id
+        const vA = (existing.vendor || existing.vendorName || '').toLowerCase()
+        const vB = normalizedQuote.vendor.toLowerCase()
+        return (existing.id && normalizedQuote.id && existing.id === normalizedQuote.id) ||
+               (vA && vB && (vA === vB || vA.includes(vB) || vB.includes(vA)))
       })
 
       if (existingIdx >= 0) {
-        group.quotes[existingIdx] = { ...group.quotes[existingIdx], ...q }
+        group.quotes[existingIdx] = { ...group.quotes[existingIdx], ...normalizedQuote }
       } else {
-        group.quotes.push(q)
+        group.quotes.push(normalizedQuote)
       }
 
-      if (q.status === 'Selected') {
-        group.selectedQuote = q
+      if (normalizedQuote.status === 'Selected') {
+        group.selectedQuote = normalizedQuote
       }
 
       const validAmounts = group.quotes
@@ -191,7 +408,19 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
         if (timeA !== timeB) return timeB - timeA
         return Number(a.totalAmount || (a as any).price || 0) - Number(b.totalAmount || (b as any).price || 0)
       })
+      const validAmounts = g.quotes
+        .map((item: any) => Number(item.totalAmount) || Number(item.unitPrice) || Number(item.price) || 0)
+        .filter((amt: number) => amt > 0)
+      if (validAmounts.length > 0) {
+        g.lowestPrice = Math.min(...validAmounts)
+        g.highestPrice = Math.max(...validAmounts)
+      }
+      if (!g.selectedQuote) {
+        const sel = g.quotes.find(q => q.status === 'Selected')
+        if (sel) g.selectedQuote = sel
+      }
     })
+
     result.sort((a: ProductGroup, b: ProductGroup) => {
       const rfqA = (rfqs || []).find((r: any) => 
         (r.rfq_id && r.rfq_id.toUpperCase() === a.rfqId.toUpperCase()) || 
@@ -210,7 +439,7 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
       return b.rfqId.localeCompare(a.rfqId)
     })
     return result
-  }, [quotations, rfqs])
+  }, [quotations, rfqs, allRequests, isFinance])
 
   // Filtered product groups
   const filteredGroups = useMemo(() => {
@@ -276,7 +505,7 @@ export const VendorQuotationsPage: React.FC<VendorQuotationsPageProps> = ({ role
   const totalProducts = productGroups.length
   const selectedCount = productGroups.filter(g => !!g.selectedQuote).length
   const pendingCount = totalProducts - selectedCount
-  const totalQuotesReceived = quotations.length
+  const totalQuotesReceived = productGroups.reduce((acc, g) => acc + g.quotes.length, 0)
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-14">

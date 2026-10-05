@@ -57,6 +57,10 @@ export const ProcessPaymentModal: React.FC<ProcessPaymentModalProps> = ({
       setError('Payment Reference / UTR Number is required for statutory banking reconciliation.')
       return
     }
+    if (paymentReference.trim().length > 15) {
+      setError('Payment Reference / UTR Number must have a maximum limit of 15 characters.')
+      return
+    }
 
     setLoading(true)
     setError('')
@@ -166,16 +170,20 @@ export const ProcessPaymentModal: React.FC<ProcessPaymentModalProps> = ({
           {/* Payment Reference & Payment Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Payment Reference / UTR # *
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-slate-700">
+                  Payment Reference / UTR # *
+                </label>
+                <span className="text-[10px] text-slate-400 font-mono">{paymentReference.length}/15</span>
+              </div>
               <div className="relative">
                 <input
                   type="text"
+                  maxLength={15}
                   value={paymentReference}
-                  onChange={(e) => setPaymentReference(e.target.value)}
+                  onChange={(e) => setPaymentReference(e.target.value.replace(/[^A-Za-z0-9\-_]/g, '').slice(0, 15))}
                   className="w-full p-2.5 border rounded-xl bg-slate-50 border-slate-300 font-mono font-bold text-indigo-700 focus:bg-white focus:border-indigo-600 outline-none"
-                  placeholder="e.g. UTR-HDFC-9823419082"
+                  placeholder="e.g. UTR-HDFC-98234"
                   required
                 />
                 <Hash size={14} className="absolute right-3 top-3 text-slate-400" />

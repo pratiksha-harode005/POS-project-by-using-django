@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { apiClient } from '../../api/client'
+import { apiClient, invalidateApiCache } from '../../api/client'
 import { useProcurement } from '../../context/ProcurementContext'
 import { isFlowBCategory } from '../../components/portal/TrackingStepper'
 import { rankVendorsForCategory } from '../../components/portal/VendorRecommendationPanel'
 import { formatDate, formatDateTime } from '../../utils/formatDate'
+import { sortRequestsNewestFirst } from '../../utils/workflowUtils'
 import {
   Truck,
   FileSpreadsheet,
@@ -398,7 +399,8 @@ export function saveVendorRfqAction(vendorId: string, rfqId: string, actionStatu
 export function getVerifiedInvoiceRefs(): string[] {
   try {
     const saved = localStorage.getItem('kss_manager_verified_invoices')
-    return saved ? JSON.parse(saved) : []
+    const list = saved ? JSON.parse(saved) : []
+    return Array.isArray(list) ? list.filter((x: any) => typeof x === 'string' && x.startsWith('INV-')) : []
   } catch {
     return []
   }
@@ -407,22 +409,19 @@ export function getVerifiedInvoiceRefs(): string[] {
 export function isInvoiceVerifiedInSystem(refOrId?: string): boolean {
   if (!refOrId) return false
   const verifiedList = getVerifiedInvoiceRefs()
-  const cleanTarget = refOrId.replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
-  if (!cleanTarget) return false
-  return verifiedList.some((v) => {
-    const cleanV = v.replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
-    return cleanV === cleanTarget || v === refOrId
-  })
+  const target = String(refOrId).trim().toUpperCase()
+  if (!target) return false
+  return verifiedList.some((v) => String(v).trim().toUpperCase() === target)
 }
 
 export function markVendorInvoiceVerified(poRefOrInvId: string, verifiedBy: string = 'Sarah Manager') {
   if (!poRefOrInvId) return
-  const cleanKey = poRefOrInvId.replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
+  const idToSave = String(poRefOrInvId).trim()
 
   // 1. Add to global verified invoices list
   try {
     const currentList = getVerifiedInvoiceRefs()
-    const updated = Array.from(new Set([...currentList, poRefOrInvId, cleanKey]))
+    const updated = Array.from(new Set([...currentList, idToSave]))
     localStorage.setItem('kss_manager_verified_invoices', JSON.stringify(updated))
   } catch (e) {}
 
@@ -437,8 +436,7 @@ export function markVendorInvoiceVerified(poRefOrInvId: string, verifiedBy: stri
           if (Array.isArray(invList)) {
             let changed = false
             const updatedInvList = invList.map((inv: any) => {
-              const invClean = (inv.id || inv.invoiceNumber || inv.invoice_number || '').replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
-              if (invClean === cleanKey || inv.id === poRefOrInvId || inv.invoiceNumber === poRefOrInvId || inv.invoice_number === poRefOrInvId) {
+              if (inv.id === idToSave || inv.invoiceNumber === idToSave || inv.invoice_number === idToSave) {
                 changed = true
                 return {
                   ...inv,
@@ -457,7 +455,7 @@ export function markVendorInvoiceVerified(poRefOrInvId: string, verifiedBy: stri
         }
       }
     }
-  } catch (e) {}
+} catch (e) {}
 
   // 3. Dispatch broadcast sync events across all open tabs/portals
   try {
@@ -466,15 +464,32 @@ export function markVendorInvoiceVerified(poRefOrInvId: string, verifiedBy: stri
   } catch (e) {}
 }
 
+export function getVerifiedGrnRefs(): string[] {
+  try {
+    const saved = localStorage.getItem('kss_manager_verified_grns')
+    const list = saved ? JSON.parse(saved) : []
+    return Array.isArray(list) ? list.filter((x: any) => typeof x === 'string' && (x.startsWith('REC-') || x.startsWith('GRN-'))) : []
+  } catch {
+    return []
+  }
+}
+
+export function isGrnVerifiedInSystem(refOrId?: string): boolean {
+  if (!refOrId) return false
+  const verifiedList = getVerifiedGrnRefs()
+  const target = String(refOrId).trim().toUpperCase()
+  if (!target) return false
+  return verifiedList.some((v) => String(v).trim().toUpperCase() === target)
+}
+
 export function markVendorDeliveryVerified(poRefOrGrnId: string, verifiedBy: string = 'Sarah Manager') {
   if (!poRefOrGrnId) return
-  const cleanKey = poRefOrGrnId.replace(/^(REC-[A-Z0-9]+-|REC-|GRN-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
+  const idToSave = String(poRefOrGrnId).trim()
 
   // 1. Add to global verified GRNs list
   try {
-    const saved = localStorage.getItem('kss_manager_verified_grns')
-    const currentList = saved ? JSON.parse(saved) : []
-    const updated = Array.from(new Set([...currentList, poRefOrGrnId, cleanKey]))
+    const currentList = getVerifiedGrnRefs()
+    const updated = Array.from(new Set([...currentList, idToSave]))
     localStorage.setItem('kss_manager_verified_grns', JSON.stringify(updated))
   } catch (e) {}
 
@@ -487,8 +502,7 @@ export function markVendorDeliveryVerified(poRefOrGrnId: string, verifiedBy: str
         if (raw) {
           const doc = JSON.parse(raw)
           if (doc) {
-            const docClean = (doc.poRef || doc.deliveryId || doc.requestRef || '').replace(/^(REC-[A-Z0-9]+-|REC-|GRN-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
-            if (docClean === cleanKey || (cleanKey.length >= 4 && docClean.includes(cleanKey)) || (docClean.length >= 4 && cleanKey.includes(docClean))) {
+            if (doc.deliveryId === idToSave || doc.poRef === idToSave || doc.requestRef === idToSave) {
               doc.verified = true
               doc.status = 'Verified'
               doc.verifiedBy = verifiedBy
@@ -856,12 +870,73 @@ export function getScopedVendorData(vendorId: string) {
   const quotations = [...userQuotes, ...defaultQuotations]
 
   // POs scoped to this vendorId (merged with user & system POs)
+  const cleanVCode = vendorId.replace(/[^A-Z0-9]/g, '').toUpperCase()
   const userPOs = getStoredVendorPOs(vendorId)
-  const defaultPOs: any[] = []
+  const defaultPOs: any[] = userPOs.length > 0 ? [] : [
+    {
+      id: `PO-${cleanVCode}-001`,
+      poNumber: `PO-${cleanVCode}-001`,
+      requestRef: `REQ-43466CB4`,
+      rfqRef: `RFQ-43466CB4`,
+      title: `${vendor.name} - Enterprise High-Performance Hardware`,
+      quantity: 20,
+      unit: 'Units',
+      amount: 40000,
+      totalAmount: 40000,
+      baseAmount: 33898,
+      gstPercent: 18,
+      taxAmount: 6102,
+      status: 'In Transit',
+      payment_status: 'Pending',
+      paymentStatus: 'Pending',
+      issueDate: '2026-09-18',
+      deliveryDate: '2026-10-17',
+      vendorId: vendorId,
+      vendorName: vendor.name,
+      document_verification_status: 'Verification Pending'
+    },
+    {
+      id: `PO-${cleanVCode}-002`,
+      poNumber: `PO-${cleanVCode}-002`,
+      requestRef: `REQ-7621D185`,
+      rfqRef: `RFQ-7621D185`,
+      title: `${vendor.name} - Enterprise Server Equipment & Workstations`,
+      quantity: 1,
+      unit: 'Units',
+      amount: 85000,
+      totalAmount: 85000,
+      baseAmount: 72034,
+      gstPercent: 18,
+      taxAmount: 12966,
+      status: 'Delivered',
+      payment_status: 'Paid',
+      paymentStatus: 'Paid',
+      issueDate: '2026-09-15',
+      deliveryDate: '2026-10-10',
+      vendorId: vendorId,
+      vendorName: vendor.name,
+      document_verification_status: 'Verification Pending'
+    }
+  ]
   const pos = [...userPOs, ...defaultPOs]
 
-  // Deliveries scoped to this vendorId
-  const deliveries: any[] = []
+  // Deliveries scoped to this vendorId (derived from POs)
+  const deliveries: any[] = pos.map((p: any) => {
+    const cleanRef = (p.id || '').replace(/^PO-/, '')
+    const isDelivered = p.status === 'Delivered' || p.status === 'Fulfilled' || isPODelivered(p.id)
+    return {
+      id: `TRK-${cleanRef}`,
+      poRef: p.id,
+      item: p.title || 'Enterprise Procurement Equipment',
+      courier: 'Blue Dart Logistics / FastTrack Express',
+      expectedDate: p.deliveryDate || '2026-10-15',
+      destination: 'Warehouse Block A, Sector 62, Noida',
+      status: isDelivered ? 'Delivered' : (p.status || 'In Transit'),
+      amount: p.amount || 50000,
+      quantity: p.quantity || 15,
+      unit: p.unit || 'Units'
+    }
+  })
 
   // Receipts scoped to this vendorId (merged with user-added receipts & derived from POs)
   const userReceipts = getStoredVendorReceipts(vendorId)
@@ -878,7 +953,7 @@ export function getScopedVendorData(vendorId: string) {
       const itemCategory = p.category || vendor.category || 'IT Hardware'
       const rawDate = delDoc?.deliveryDate || p.deliveryDate || p.issueDate || '2026-09-24'
       const uploadDate = rawDate && rawDate !== 'None' && rawDate !== 'null' ? rawDate : '2026-09-24'
-      const isVerified = p.document_verification_status === 'Documents Verified' || p.document_verification?.is_goods_receipt_verified || isInvoiceVerifiedInSystem(p.id)
+      const isVerified = p.document_verification?.is_goods_receipt_verified || isGrnVerifiedInSystem(p.id) || isGrnVerifiedInSystem(rcpId)
 
       derivedReceiptsFromPOs.push({
         id: rcpId,
@@ -1407,11 +1482,11 @@ export const VendorDashboard: React.FC = () => {
   const [quotePrice, setQuotePrice] = useState('')
   const [leadTimeDays, setLeadTimeDays] = useState('7')
   const [quoteSuccessMsg, setQuoteSuccessMsg] = useState('')
-  const [localRfqs, setLocalRfqs] = useState<any[]>([])
-  const [localQuotes, setLocalQuotes] = useState<any[]>([])
-  const [localPos, setLocalPos] = useState<any[]>([])
-  const [localInvoices, setLocalInvoices] = useState<any[]>([])
-  const [localNotifications, setLocalNotifications] = useState<any[]>([])
+  const [localRfqs, setLocalRfqs] = useState<any[]>(() => rfqs)
+  const [localQuotes, setLocalQuotes] = useState<any[]>(() => quotations)
+  const [localPos, setLocalPos] = useState<any[]>(() => pos)
+  const [localInvoices, setLocalInvoices] = useState<any[]>(() => invoices)
+  const [localNotifications, setLocalNotifications] = useState<any[]>(() => notifications)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const fetchDashboardData = useCallback(async () => {
@@ -1434,6 +1509,8 @@ export const VendorDashboard: React.FC = () => {
       // 1. Map & Filter RFQs (with deduplication by formattedId)
       const backendRfqs = Array.isArray(rfqRes.data) ? rfqRes.data : rfqRes.data?.results || []
       const rMap = new Map<string, any>()
+      rfqs.forEach(r => { if (r && r.id) rMap.set(r.id, r) })
+
       backendRfqs.forEach((r: any) => {
         const rfqCat = (r.purchase_request_detail?.category || r.category || '').toLowerCase().trim()
         const isCatMatch = Boolean(rfqCat && vCat && (rfqCat.includes(vCat) || vCat.includes(rfqCat)))
@@ -1448,20 +1525,18 @@ export const VendorDashboard: React.FC = () => {
         if (isCatMatch || isExplicitlyInvited) {
           const cleanId = (r.rfq_id || r.id || '').toString().replace(/^RFQ-/i, '')
           const formattedId = `RFQ-${cleanId}`
-          if (!rMap.has(formattedId)) {
-            const budget = Number(r.budgetEst) || Number(r.purchase_request_detail?.total_estimated_cost) || Number(r.purchase_request_detail?.amount) || Number(r.purchase_request_detail?.estimated_cost) || Number(r.estimatedAmount) || Number(r.estimated_amount) || Number(r.budget_est) || 0
-            rMap.set(formattedId, {
-              ...r,
-              id: formattedId,
-              rfq_id: formattedId,
-              title: r.title,
-              status: r.status || 'Open',
-              category: r.purchase_request_detail?.category || r.category || currentVendor?.category || 'IT Hardware',
-              budgetEst: budget,
-              deadline: r.deadline || '2026-10-15',
-              deliveryLocation: r.purchase_request_detail?.delivery_location || r.deliveryLocation || 'Pune HQ',
-            })
-          }
+          const budget = Number(r.budgetEst) || Number(r.purchase_request_detail?.total_estimated_cost) || Number(r.purchase_request_detail?.amount) || Number(r.purchase_request_detail?.estimated_cost) || Number(r.estimatedAmount) || Number(r.estimated_amount) || Number(r.budget_est) || 0
+          rMap.set(formattedId, {
+            ...r,
+            id: formattedId,
+            rfq_id: formattedId,
+            title: r.title,
+            status: r.status || 'Open',
+            category: r.purchase_request_detail?.category || r.category || currentVendor?.category || 'IT Hardware',
+            budgetEst: budget,
+            deadline: r.deadline || '2026-10-25',
+            deliveryLocation: r.purchase_request_detail?.delivery_location || r.deliveryLocation || 'Pune HQ',
+          })
         }
       })
       setLocalRfqs(Array.from(rMap.values()))
@@ -1469,6 +1544,8 @@ export const VendorDashboard: React.FC = () => {
       // 2. Map & Filter Quotations (with deduplication)
       const backendQ = Array.isArray(quoRes.data) ? quoRes.data : quoRes.data?.results || []
       const qMap = new Map<string, any>()
+      quotations.forEach(q => { if (q && (q.id || q.quotation_id)) qMap.set(q.quotation_id || q.id, q) })
+
       backendQ.forEach((bq: any) => {
         const bqVId = (bq.vendor_detail?.unique_vendor_id || (typeof bq.vendor === 'string' ? bq.vendor : '')).toString().toLowerCase().trim()
         const bqVName = (bq.vendor_detail?.name || '').toString().toLowerCase().trim()
@@ -1483,16 +1560,14 @@ export const VendorDashboard: React.FC = () => {
         )
         if (isMatch) {
           const qId = bq.quotation_id || (typeof bq.id === 'string' ? bq.id : `QUO-${bq.id}`)
-          if (!qMap.has(qId)) {
-            qMap.set(qId, {
-              id: qId,
-              quotation_id: qId,
-              status: bq.status || 'Submitted',
-              price: Number(bq.price) || 0,
-              rfqRef: bq.rfq_id || bq.rfq_detail?.rfq_id || (typeof bq.rfq === 'string' ? bq.rfq : `RFQ-${bq.rfq}`),
-              created_at: bq.created_at
-            })
-          }
+          qMap.set(qId, {
+            id: qId,
+            quotation_id: qId,
+            status: bq.status || 'Submitted',
+            price: Number(bq.price) || 0,
+            rfqRef: bq.rfq_id || bq.rfq_detail?.rfq_id || (typeof bq.rfq === 'string' ? bq.rfq : `RFQ-${bq.rfq}`),
+            created_at: bq.created_at
+          })
         }
       })
       setLocalQuotes(Array.from(qMap.values()))
@@ -1500,6 +1575,8 @@ export const VendorDashboard: React.FC = () => {
       // 3. Map & Filter POs (with deduplication)
       const backendPOs = Array.isArray(poRes.data) ? poRes.data : poRes.data?.results || []
       const poMap = new Map<string, any>()
+      pos.forEach(p => { if (p && (p.id || p.po_id)) poMap.set(p.po_id || p.id, p) })
+
       backendPOs.forEach((p: any) => {
         const pvId = (p.vendor_detail?.unique_vendor_id || p.vendor?.unique_vendor_id || p.vendor_id || (typeof p.vendor === 'string' ? p.vendor : '')).toString().toLowerCase().trim()
         const pvName = (p.vendor_detail?.name || p.vendor?.name || '').toString().toLowerCase().trim()
@@ -1514,18 +1591,16 @@ export const VendorDashboard: React.FC = () => {
         )
         if (isMatch) {
           const poId = p.po_id || (p.id ? `PO-${p.id}` : 'PO-UNKNOWN')
-          if (!poMap.has(poId)) {
-            const pr = p.purchase_request_detail || (typeof p.purchase_request === 'object' ? p.purchase_request : null)
-            poMap.set(poId, {
-              id: poId,
-              title: pr?.title || p.title || 'Procurement Order',
-              amount: Number(p.total_amount) || Number(pr?.total_estimated_cost) || 0,
-              status: p.status === 'Issued' ? 'Pending Confirmation' : p.status,
-              payment_status: p.payment_status || 'Pending',
-              issueDate: (p.created_at || '').split('T')[0] || p.order_date || '2026-09-10',
-              deliveryDueDate: p.expected_delivery || '2026-10-15',
-            })
-          }
+          const pr = p.purchase_request_detail || (typeof p.purchase_request === 'object' ? p.purchase_request : null)
+          poMap.set(poId, {
+            id: poId,
+            title: pr?.title || p.title || 'Procurement Order',
+            amount: Number(p.total_amount) || Number(pr?.total_estimated_cost) || 0,
+            status: p.status === 'Issued' ? 'Pending Confirmation' : p.status,
+            payment_status: p.payment_status || 'Pending',
+            issueDate: (p.created_at || '').split('T')[0] || p.order_date || '2026-09-10',
+            deliveryDueDate: p.expected_delivery || '2026-10-15',
+          })
         }
       })
       setLocalPos(Array.from(poMap.values()))
@@ -1533,6 +1608,8 @@ export const VendorDashboard: React.FC = () => {
       // 4. Map & Filter Invoices (with deduplication)
       const backendInvs = Array.isArray(invRes.data) ? invRes.data : invRes.data?.results || []
       const invMap = new Map<string, any>()
+      invoices.forEach(inv => { if (inv && inv.id) invMap.set(inv.id, inv) })
+
       backendInvs.forEach((inv: any) => {
         const ivId = (inv.vendor_detail?.unique_vendor_id || inv.vendor_id || (typeof inv.vendor === 'string' ? inv.vendor : '')).toString().toLowerCase().trim()
         const ivName = (inv.vendor_detail?.name || '').toString().toLowerCase().trim()
@@ -1547,36 +1624,36 @@ export const VendorDashboard: React.FC = () => {
         )
         if (isMatch) {
           const invId = inv.invoice_id || `INV-${inv.id}`
-          if (!invMap.has(invId)) {
-            invMap.set(invId, {
-              id: invId,
-              amount: Number(inv.amount) || 0,
-              status: inv.status || 'Submitted',
-              invoiceDate: inv.invoice_date,
-              dueDate: inv.due_date,
-            })
-          }
+          invMap.set(invId, {
+            id: invId,
+            amount: Number(inv.amount) || 0,
+            status: inv.status || 'Submitted',
+            invoiceDate: inv.invoice_date,
+            dueDate: inv.due_date,
+          })
         }
       })
       setLocalInvoices(Array.from(invMap.values()))
 
       // 5. Map Vendor Notifications from Backend
       const backendNotifs = Array.isArray(notifRes.data) ? notifRes.data : notifRes.data?.results || []
-      setLocalNotifications(backendNotifs.map((n: any) => ({
-        id: n.id,
-        title: n.title,
-        message: n.message,
-        timestamp: n.timestamp || 'Just now',
-        date: n.date || n.created_at,
-        isRead: Boolean(n.is_read || n.isRead),
-        requestId: n.request_id || n.requestId
-      })))
+      if (backendNotifs.length > 0) {
+        setLocalNotifications(backendNotifs.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          timestamp: n.timestamp || 'Just now',
+          date: n.date || n.created_at,
+          isRead: Boolean(n.is_read || n.isRead),
+          requestId: n.request_id || n.requestId
+        })))
+      }
     } catch (err) {
       console.warn('Dashboard fetch error:', err)
     } finally {
       setIsRefreshing(false)
     }
-  }, [vendorId])
+  }, [vendorId, rfqs, quotations, pos, invoices, notifications, vendor.name, vendor.category])
 
   useEffect(() => {
     fetchDashboardData()
@@ -2092,18 +2169,20 @@ export const SubmitQuotationModal: React.FC<{
   onClose: () => void
   vendorId: string
   vendorName: string
-  rfqs: Array<{ id: string; title: string; deadline: string; status: string }>
+  rfqs?: Array<{ id: string; title: string; deadline: string; status: string }>
+  availableRfqs?: Array<{ id: string; title: string; deadline: string; status: string }>
   initialRfqId?: string
   onQuoteSubmitted?: (newQuote: any) => void
-}> = ({ isOpen, onClose, vendorId, vendorName, rfqs, initialRfqId, onQuoteSubmitted }) => {
+}> = ({ isOpen, onClose, vendorId, vendorName, rfqs, availableRfqs: propAvailableRfqs, initialRfqId, onQuoteSubmitted }) => {
+  const rfqSource = rfqs || propAvailableRfqs || []
   const availableRfqs = useMemo(() => {
     const map = new Map<string, any>()
-    rfqs.forEach((r) => { if (r && r.id) map.set(r.id, r) })
+    ;(rfqSource || []).forEach((r) => { if (r && r.id) map.set(r.id, r) })
     if (initialRfqId && !map.has(initialRfqId)) {
       map.set(initialRfqId, { id: initialRfqId, title: `RFQ ${initialRfqId}`, status: 'Open', deadline: '2026-12-31' })
     }
     return Array.from(map.values())
-  }, [rfqs, initialRfqId])
+  }, [rfqSource, initialRfqId])
 
   const [selectedRfqId, setSelectedRfqId] = useState(initialRfqId || availableRfqs[0]?.id || '')
 
@@ -2209,6 +2288,7 @@ export const SubmitQuotationModal: React.FC<{
       id: `QUO-${cleanVndCode}-${Date.now().toString().slice(-4)}`,
       vendorId,
       vendorName,
+      vendor: vendorName,
       rfqRef: effectiveRfqId,
       rfqId: effectiveRfqId,
       rfqTitle: effectiveRfqTitle,
@@ -2259,7 +2339,7 @@ export const SubmitQuotationModal: React.FC<{
     // Post to Django backend REST API
     apiClient.post('/rfq/quotations/', {
       rfq: effectiveRfqId,
-      vendor: vendorName,
+      vendor: vendorId, // Sending vendorId instead of generic vendorName string to fix resolution in backend
       price: parsedBase,
       gst_rate: parsedGstPct,
       tax_amount: calculatedGstAmt,
@@ -2286,10 +2366,19 @@ export const SubmitQuotationModal: React.FC<{
         expiry_date: expiryDate,
       }
     }).then(() => {
+      invalidateApiCache()
       window.dispatchEvent(new Event('kss_backend_updated'))
+      window.dispatchEvent(new Event('storage'))
+      // Also sync specific RFQ again
+      if (effectiveRfqId) {
+        const cleanId = effectiveRfqId.replace(/^RFQ-/i, '')
+        apiClient.get(`/rfq/${cleanId}/`).catch(() => {})
+      }
     }).catch(err => {
-      console.warn('Backend quotation post fallback:', err)
+      console.error('Backend quotation post error:', err)
+      invalidateApiCache()
       window.dispatchEvent(new Event('kss_backend_updated'))
+      window.dispatchEvent(new Event('storage'))
     })
     
     if (onQuoteSubmitted) {
@@ -2815,47 +2904,311 @@ export const DeclineRfqModal: React.FC<{
   )
 }
 
+// Base candidate RFQs for all standard categories
+const BASE_SYSTEM_RFQS: any[] = [
+  // IT Hardware
+  {
+    id: 'RFQ-43466CB4',
+    rfq_id: 'RFQ-43466CB4',
+    title: 'RFQ for Test Request 23 IT PH',
+    category: 'IT Hardware',
+    subcategory: 'Laptops',
+    description: 'Enterprise High-Performance Workstation Laptops with Core i7/i9 processors, 32GB RAM, 1TB NVMe SSD, and 3-Year On-Site OEM ProSupport warranty.',
+    qty: 20,
+    budgetEst: 40000,
+    deadline: '2026-10-17',
+    status: 'Open',
+    requiredBy: '2026-10-25',
+    deliveryLocation: 'Pune HQ, 4th Floor',
+    originator: 'Sarah Manager',
+    vendors: ['Dell Technologies Inc.', 'Apple Enterprise', 'HP Enterprise', 'Lenovo Group', 'VND-HW-001', 'VND-HW-002', 'VND-HW-003', 'VND-HW-004'],
+    invited_vendors_detail: [
+      { name: 'Dell Technologies Inc.', unique_vendor_id: 'VND-HW-001' },
+      { name: 'Apple Enterprise', unique_vendor_id: 'VND-HW-004' },
+      { name: 'HP Enterprise', unique_vendor_id: 'VND-HW-002' },
+      { name: 'Lenovo Group', unique_vendor_id: 'VND-HW-003' },
+    ]
+  },
+  {
+    id: 'RFQ-7621D185',
+    rfq_id: 'RFQ-7621D185',
+    title: 'Test Standalone RFQ',
+    category: 'IT Hardware',
+    subcategory: 'General',
+    description: 'Enterprise Compute Servers, Rack Infrastructure & High-Speed Network Interfaces.',
+    qty: 1,
+    budgetEst: 85000,
+    deadline: '2026-10-25',
+    status: 'Open',
+    requiredBy: '2026-10-30',
+    deliveryLocation: 'HQ Server Room',
+    originator: 'IT Infrastructure Lead',
+    vendors: ['Dell Technologies Inc.', 'Apple Enterprise', 'HP Enterprise', 'Lenovo Group', 'VND-HW-001', 'VND-HW-002', 'VND-HW-003', 'VND-HW-004'],
+    invited_vendors_detail: [
+      { name: 'Dell Technologies Inc.', unique_vendor_id: 'VND-HW-001' },
+      { name: 'Apple Enterprise', unique_vendor_id: 'VND-HW-004' },
+      { name: 'HP Enterprise', unique_vendor_id: 'VND-HW-002' },
+      { name: 'Lenovo Group', unique_vendor_id: 'VND-HW-003' },
+    ]
+  },
+  {
+    id: 'RFQ-2026-001',
+    rfq_id: 'RFQ-2026-001',
+    title: 'Enterprise Workstation Laptops & Docks',
+    category: 'IT Hardware',
+    subcategory: 'Laptops',
+    description: '15 units Dell Latitude / ThinkPad Core i7 Laptops, USB-C Docking Stations, 27-inch Dual Monitor Setup.',
+    qty: 15,
+    budgetEst: 94400,
+    deadline: '2026-10-28',
+    status: 'Open',
+    requiredBy: '2026-11-05',
+    deliveryLocation: 'Warehouse Block A, Sector 62, Noida',
+    originator: 'Sarah Manager',
+    vendors: ['Dell Technologies Inc.', 'HP Enterprise', 'Lenovo Group', 'Apple Enterprise', 'VND-HW-001', 'VND-HW-002', 'VND-HW-003', 'VND-HW-004'],
+    invited_vendors_detail: [
+      { name: 'Dell Technologies Inc.', unique_vendor_id: 'VND-HW-001' },
+      { name: 'HP Enterprise', unique_vendor_id: 'VND-HW-002' },
+      { name: 'Lenovo Group', unique_vendor_id: 'VND-HW-003' },
+      { name: 'Apple Enterprise', unique_vendor_id: 'VND-HW-004' }
+    ]
+  },
+  {
+    id: 'RFQ-2026-002',
+    rfq_id: 'RFQ-2026-002',
+    title: 'Primary Data Center Rack Servers',
+    category: 'IT Hardware',
+    subcategory: 'Servers',
+    description: 'High-density 2U dual-socket Xeon rackmount compute nodes with redundant 1000W PSUs.',
+    qty: 6,
+    budgetEst: 1800000,
+    deadline: '2026-11-10',
+    status: 'Open',
+    requiredBy: '2026-11-20',
+    deliveryLocation: 'Data Center Suite 3',
+    originator: 'IT Infra Lead',
+    vendors: ['Dell Technologies Inc.', 'HP Enterprise', 'Lenovo Group', 'VND-HW-001', 'VND-HW-002', 'VND-HW-003'],
+    invited_vendors_detail: [
+      { name: 'Dell Technologies Inc.', unique_vendor_id: 'VND-HW-001' },
+      { name: 'HP Enterprise', unique_vendor_id: 'VND-HW-002' },
+      { name: 'Lenovo Group', unique_vendor_id: 'VND-HW-003' }
+    ]
+  },
+  {
+    id: 'RFQ-2026-003',
+    rfq_id: 'RFQ-2026-003',
+    title: 'Core 10G/40G Network Switching Layer',
+    category: 'IT Hardware',
+    subcategory: 'Networking',
+    description: '48-Port Managed PoE+ Enterprise Switches with redundant fiber uplinks and layer 3 routing.',
+    qty: 8,
+    budgetEst: 720000,
+    deadline: '2026-10-31',
+    status: 'Open',
+    requiredBy: '2026-11-10',
+    deliveryLocation: 'Pune NOC Floor',
+    originator: 'Network Architect',
+    vendors: ['Cisco Systems', 'Dell Technologies Inc.', 'HP Enterprise', 'VND-NET-001', 'VND-HW-001', 'VND-HW-002'],
+    invited_vendors_detail: [
+      { name: 'Cisco Systems', unique_vendor_id: 'VND-NET-001' },
+      { name: 'Dell Technologies Inc.', unique_vendor_id: 'VND-HW-001' }
+    ]
+  },
+  {
+    id: 'RFQ-2026-004',
+    rfq_id: 'RFQ-2026-004',
+    title: 'Ergonomic 4K Ultra-Wide Displays',
+    category: 'IT Hardware',
+    subcategory: 'Peripherals',
+    description: '34-inch Curved IPS 4K Displays with 90W USB-C Power Delivery and daisy-chaining support.',
+    qty: 30,
+    budgetEst: 640000,
+    deadline: '2026-11-05',
+    status: 'Open',
+    requiredBy: '2026-11-15',
+    deliveryLocation: 'Noida Tech Center',
+    originator: 'Procurement Specialist',
+    vendors: ['Dell Technologies Inc.', 'Apple Enterprise', 'HP Enterprise', 'Samsung Electronics', 'VND-HW-001', 'VND-HW-004', 'VND-OFF-001'],
+    invited_vendors_detail: [
+      { name: 'Dell Technologies Inc.', unique_vendor_id: 'VND-HW-001' },
+      { name: 'Apple Enterprise', unique_vendor_id: 'VND-HW-004' }
+    ]
+  },
+
+  // Cybersecurity
+  {
+    id: 'RFQ-SEC-001',
+    rfq_id: 'RFQ-SEC-001',
+    title: 'Next-Gen Perimeter Firewall Appliances',
+    category: 'Cybersecurity',
+    subcategory: 'Firewalls',
+    description: 'High-throughput enterprise hardware firewall cluster with integrated IPS, URL filtering, and SSL decryption.',
+    qty: 4,
+    budgetEst: 850000,
+    deadline: '2026-10-25',
+    status: 'Open',
+    requiredBy: '2026-11-05',
+    deliveryLocation: 'SOC Perimeter Rack',
+    originator: 'CISO Office',
+    vendors: ['Palo Alto Networks', 'CrowdStrike', 'VND-SEC-001', 'VND-SEC-002'],
+    invited_vendors_detail: [
+      { name: 'Palo Alto Networks', unique_vendor_id: 'VND-SEC-001' },
+      { name: 'CrowdStrike', unique_vendor_id: 'VND-SEC-002' }
+    ]
+  },
+  {
+    id: 'RFQ-SEC-002',
+    rfq_id: 'RFQ-SEC-002',
+    title: 'Endpoint Detection & Response (EDR) Enterprise Suite',
+    category: 'Cybersecurity',
+    subcategory: 'Endpoint Security',
+    description: 'Unified agent deployment for 500 endpoints, automated remediation playbooks, and 24/7 MDR threat monitoring.',
+    qty: 500,
+    budgetEst: 1400000,
+    deadline: '2026-11-08',
+    status: 'Open',
+    requiredBy: '2026-11-15',
+    deliveryLocation: 'Cloud Tenant Deployment',
+    originator: 'Security Operations Lead',
+    vendors: ['CrowdStrike', 'Palo Alto Networks', 'VND-SEC-001', 'VND-SEC-002'],
+    invited_vendors_detail: [
+      { name: 'CrowdStrike', unique_vendor_id: 'VND-SEC-002' },
+      { name: 'Palo Alto Networks', unique_vendor_id: 'VND-SEC-001' }
+    ]
+  },
+
+  // Office & Facilities
+  {
+    id: 'RFQ-FUR-001',
+    rfq_id: 'RFQ-FUR-001',
+    title: 'Ergonomic Task Chairs & Height-Adjustable Desks',
+    category: 'Office & Facilities',
+    subcategory: 'Furniture',
+    description: 'Commercial grade posture-fit ergonomic task seating and dual-motor electric sit-stand workstations.',
+    qty: 50,
+    budgetEst: 750000,
+    deadline: '2026-10-29',
+    status: 'Open',
+    requiredBy: '2026-11-10',
+    deliveryLocation: 'Corporate HQ Floor 2',
+    originator: 'Facilities Lead',
+    vendors: ['Herman Miller', 'Steelcase', 'VND-FUR-001', 'VND-FUR-002'],
+    invited_vendors_detail: [
+      { name: 'Herman Miller', unique_vendor_id: 'VND-FUR-001' },
+      { name: 'Steelcase', unique_vendor_id: 'VND-FUR-002' }
+    ]
+  }
+]
+
 // ─── 4. DYNAMIC VENDOR RFQs PAGE ──────────────────────────────────────────────
-export function getVendorScopedRfqs(vendorId: string, vendorName: string, vendorCategory: string): any[] {
-  let combined: any[] = []
-
-
-
+export function checkVendorMatchesRFQ(r: any, vendorId: string, vendorName: string, vendorCategory: string): boolean {
+  if (!r) return false
+  const vId = (vendorId || '').toLowerCase().trim()
   const vName = (vendorName || '').toLowerCase().trim()
   const vCat = (vendorCategory || '').toLowerCase().trim()
 
+  // 1. Check direct vendor invitation
+  const rawInvited = r.vendors || r.invited_vendors_detail || r.invited_vendors || []
+  if (Array.isArray(rawInvited) && rawInvited.length > 0) {
+    const isInvited = rawInvited.some((v: any) => {
+      if (!v) return false
+      if (typeof v === 'number') {
+        if (vId.includes('001') && (v === 1 || v === 5)) return true
+        if (vId.includes('002') && (v === 2 || v === 6)) return true
+        if (vId.includes('003') && (v === 3 || v === 7)) return true
+        if (vId.includes('004') && (v === 4 || v === 8)) return true
+        return String(v) === vId
+      }
+      if (typeof v === 'string') {
+        const str = v.toLowerCase().trim()
+        if (str === vId || str === vName) return true
+        if (vId && (str.includes(vId) || vId.includes(str))) return true
+        if (vName && (str.includes(vName) || vName.includes(str))) return true
+        if (vId.includes('001') && (str.includes('001') || str.includes('dell'))) return true
+        if (vId.includes('002') && (str.includes('002') || str.includes('hp'))) return true
+        if (vId.includes('003') && (str.includes('003') || str.includes('lenovo'))) return true
+        if (vId.includes('004') && (str.includes('004') || str.includes('apple'))) return true
+        return false
+      }
+      if (typeof v === 'object') {
+        const itemUid = (v.unique_vendor_id || v.id || '').toString().toLowerCase().trim()
+        const itemName = (v.name || '').toLowerCase().trim()
+        if (itemUid && (itemUid === vId || itemUid.includes(vId) || vId.includes(itemUid))) return true
+        if (itemName && (itemName === vName || itemName.includes(vName) || vName.includes(itemName))) return true
+        if (vId.includes('001') && (itemUid.includes('001') || itemName.includes('dell'))) return true
+        if (vId.includes('002') && (itemUid.includes('002') || itemName.includes('hp'))) return true
+        if (vId.includes('003') && (itemUid.includes('003') || itemName.includes('lenovo'))) return true
+        if (vId.includes('004') && (itemUid.includes('004') || itemName.includes('apple'))) return true
+        return false
+      }
+      return false
+    })
+    if (isInvited) return true
+  }
+
+  // 2. Check category match
+  const rfqCat = (r.category || r.purchase_request_detail?.category || '').toLowerCase().trim()
+  const rfqSubCat = (r.subcategory || r.purchase_request_detail?.subcategory || '').toLowerCase().trim()
+
+  if (vCat) {
+    if (rfqCat && (rfqCat.includes(vCat) || vCat.includes(rfqCat))) return true
+    if (vCat.includes('hardware') && (rfqCat.includes('laptop') || rfqCat.includes('hardware') || rfqCat.includes('compute') || rfqCat.includes('server') || rfqSubCat.includes('laptop') || rfqSubCat.includes('compute'))) return true
+    if (vCat.includes('software') && (rfqCat.includes('software') || rfqCat.includes('saas') || rfqCat.includes('license') || rfqSubCat.includes('software'))) return true
+    if (vCat.includes('security') && (rfqCat.includes('security') || rfqCat.includes('cyber') || rfqSubCat.includes('security'))) return true
+    if (vCat.includes('cloud') && (rfqCat.includes('cloud') || rfqCat.includes('infra') || rfqSubCat.includes('cloud'))) return true
+    if (vCat.includes('service') && (rfqCat.includes('service') || rfqCat.includes('consulting') || rfqSubCat.includes('service'))) return true
+    if (vCat.includes('office') || vCat.includes('furniture')) {
+      if (rfqCat.includes('office') || rfqCat.includes('furniture') || rfqCat.includes('chair') || rfqCat.includes('desk')) return true
+    }
+  }
+
+  // 3. Fallback: if no specific invited vendors list was set, allow general domain
+  if (!rawInvited || rawInvited.length === 0) return true
+
+  return false
+}
+
+export function getVendorScopedRfqs(vendorId: string, vendorName: string, vendorCategory: string): any[] {
+  let combined: any[] = [...BASE_SYSTEM_RFQS]
+
+  try {
+    const storedRfqs = localStorage.getItem('kss_manager_rfqs') || localStorage.getItem('kss_all_rfqs')
+    if (storedRfqs) {
+      const parsed = JSON.parse(storedRfqs)
+      if (Array.isArray(parsed)) {
+        combined.push(...parsed)
+      }
+    }
+  } catch {}
+
   const mapAndFilter = (r: any) => {
     if (!r) return null
-    const invitedVendors = r.vendors || r.invited_vendors_detail || []
-    const invitedNames = Array.isArray(invitedVendors)
-      ? invitedVendors.map((v: any) => (typeof v === 'string' ? v : v.name || '').toLowerCase().trim())
-      : []
-
-    const rfqCat = (r.category || r.purchase_request_detail?.category || '').toLowerCase().trim()
-    const isCatMatch = Boolean(rfqCat && vCat && (rfqCat.includes(vCat) || vCat.includes(rfqCat)))
-
-    const isExplicitlyInvited = invitedNames.some((n: string) => n && (n.includes(vName) || vName.includes(n) || (vendorId && n.includes(vendorId.toLowerCase()))))
-
-    const isMatch = isCatMatch || isExplicitlyInvited
-
+    const isMatch = checkVendorMatchesRFQ(r, vendorId, vendorName, vendorCategory)
     if (!isMatch) return null
 
     const items = r.items || []
     const firstItem = items[0] || {}
+    const cleanId = (r.rfq_id || r.id || 'RFQ-2026-001').toString().replace(/^RFQ-/i, '')
+    const formattedId = `RFQ-${cleanId}`
 
     return {
-      id: r.id || r.rfq_id || `RFQ-2026-001`,
+      id: formattedId,
+      rfq_id: formattedId,
+      prKey: r.purchase_request_detail?.request_id || r.purchase_request || (r.remarks?.includes('Mapped from Approved PR: ') ? r.remarks.split('Mapped from Approved PR: ')[1]?.trim() : null),
       title: r.title || 'Procurement RFQ',
       category: r.category || r.purchase_request_detail?.category || vendorCategory,
       subcategory: r.subcategory || r.purchase_request_detail?.subcategory || 'Laptops & Compute',
       description: firstItem.specification || r.description || r.terms || r.remarks || 'Standard enterprise technical specifications',
-      qty: firstItem.quantity || r.qty || r.purchase_request_detail?.quantity || 46,
+      qty: firstItem.quantity || r.qty || r.purchase_request_detail?.quantity || 20,
       budgetEst: r.estimatedAmount || r.budgetEst || parseFloat(r.purchase_request_detail?.total_estimated_cost || '94400'),
-      deadline: r.deadline || '2026-10-15',
+      deadline: r.deadline || '2026-10-25',
       status: r.status || 'Open',
-      requiredBy: firstItem.requiredBy || r.requiredBy || '2026-10-15',
+      requiredBy: firstItem.requiredBy || r.requiredBy || '2026-10-30',
       deliveryLocation: r.deliveryLocation || r.purchase_request_detail?.delivery_location || 'HQ',
-      originator: r.createdBy || r.originator || 'Sarah Manager'
+      originator: r.createdBy || r.originator || 'Sarah Manager',
+      quotations: r.quotations || [],
+      document_verification: r.document_verification,
+      document_verification_status: r.document_verification_status
     }
   }
 
@@ -2874,7 +3227,7 @@ export const VendorRfqsPage: React.FC = () => {
   const { vendorId = 'VND-HW-001' } = useParams<{ vendorId: string }>()
   const { vendor } = getScopedVendorData(vendorId)
   const [subTab, setSubTab] = useState<'open' | 'expired'>('open')
-  const [localRfqsList, setLocalRfqsList] = useState<any[]>([])
+  const [localRfqsList, setLocalRfqsList] = useState<any[]>(() => sortRequestsNewestFirst(getScopedVendorData(vendorId).rfqs))
   const [rfqActions, setRfqActions] = useState<Record<string, VendorRfqAction>>({})
   const [expandedRfqIds, setExpandedRfqIds] = useState<Record<string, boolean>>({})
   const [declineModalRfq, setDeclineModalRfq] = useState<any | null>(null)
@@ -2882,7 +3235,7 @@ export const VendorRfqsPage: React.FC = () => {
   const [selectedRfqId, setSelectedRfqId] = useState('')
   const [toastMsg, setToastMsg] = useState('')
   const [, setTick] = useState(0)
-  const [vendorQuotes, setVendorQuotes] = useState<any[]>([])
+  const [vendorQuotes, setVendorQuotes] = useState<any[]>(() => getStoredVendorQuotes(vendorId))
   const [viewingGrnDoc, setViewingGrnDoc] = useState<any | null>(null)
   const [selectedPoForGrn, setSelectedPoForGrn] = useState<any | null>(null)
   const [showCreateGrnModal, setShowCreateGrnModal] = useState(false)
@@ -2969,18 +3322,19 @@ export const VendorRfqsPage: React.FC = () => {
     setViewingGrnDoc(docObj)
   }
 
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
 
   const loadData = useCallback(async (isInitial = false) => {
     const localQ = getStoredVendorQuotes(vendorId)
     const allLocalQ = getAllStoredVendorQuotes()
     try {
-      if (isInitial) {
+      if (isInitial && localRfqsList.length === 0) {
         setLoading(true)
       }
-      const [quoRes, rfqRes] = await Promise.all([
+      const [quoRes, rfqRes, allRfqRes] = await Promise.all([
         apiClient.get('/rfq/quotations/', { params: { vendor: vendorId } }).catch(() => ({ data: [] })),
-        apiClient.get('/rfq/', { params: { page_size: 50, vendor: vendor.id || vendorId } }).catch(() => ({ data: [] }))
+        apiClient.get('/rfq/', { params: { page_size: 50, vendor: vendor.id || vendorId } }).catch(() => ({ data: [] })),
+        apiClient.get('/rfq/', { params: { page_size: 50 } }).catch(() => ({ data: [] }))
       ])
 
       // 1. Process Quotations
@@ -3045,60 +3399,99 @@ export const VendorRfqsPage: React.FC = () => {
       })
       setVendorQuotes(Array.from(qMap.values()))
 
-      // 2. Process RFQs
-      const backendRfqs = Array.isArray(rfqRes.data) ? rfqRes.data : rfqRes.data?.results || []
-      if (Array.isArray(backendRfqs)) {
-        const rMap = new Map<string, any>()
-        const prKeyMap = new Map<string, string>()
-        backendRfqs.forEach((r: any) => {
-          const prKey = r.purchase_request_detail?.request_id || r.purchase_request
-          const cleanId = (r.rfq_id || r.id || '').toString().replace(/^RFQ-/i, '')
-          const formattedId = `RFQ-${cleanId}`
-          const budget = parseFloat(r.purchase_request_detail?.total_estimated_cost || r.estimated_amount || r.budgetEst || '0')
-          const mapped = {
-            id: formattedId,
-            rfq_id: formattedId,
-            prKey: prKey,
-            title: r.title,
-            category: r.purchase_request_detail?.category || r.category || vendor.category,
-            subcategory: r.purchase_request_detail?.subcategory || 'General',
-            description: r.purchase_request_detail?.description || r.terms,
-            qty: r.purchase_request_detail?.quantity || 1,
-            budgetEst: budget,
-            deadline: r.deadline,
-            status: r.status,
-            requiredBy: r.purchase_request_detail?.required_by || 'N/A',
-            deliveryLocation: r.purchase_request_detail?.delivery_location || 'HQ',
-            originator: r.purchase_request_detail?.created_by_detail?.username || 'System',
-            quotations: r.quotations || [],
-            document_verification: r.document_verification,
-            document_verification_status: r.document_verification_status || (r.document_verification?.is_both_verified ? 'Documents Verified' : 'Verification Pending')
-          }
+      // 2. Process RFQs - Merge Scoped Seed RFQs + Backend RFQs without dropping
+      // Deduplicate backend results (rfqRes + allRfqRes may both return same records)
+      const rawBackend = [
+        ...(Array.isArray(rfqRes.data) ? rfqRes.data : rfqRes.data?.results || []),
+        ...(Array.isArray(allRfqRes.data) ? allRfqRes.data : allRfqRes.data?.results || [])
+      ]
+      const seenRfqIds = new Set<string>()
+      const backendRfqs = rawBackend.filter((r: any) => {
+        const rid = (r.rfq_id || r.id || '').toString()
+        if (seenRfqIds.has(rid)) return false
+        seenRfqIds.add(rid)
+        return true
+      })
 
-          if (prKey && prKeyMap.has(String(prKey))) {
-            const existingId = prKeyMap.get(String(prKey))!
-            const existing = rMap.get(existingId)
-            const existingQuotes = existing?.quotations?.length || 0
-            const currentQuotes = mapped.quotations?.length || 0
-            if (currentQuotes > existingQuotes) {
-              rMap.delete(existingId)
-              rMap.set(mapped.id, mapped)
-              prKeyMap.set(String(prKey), mapped.id)
-            }
-            return
-          }
+      const baseRfqs = getScopedVendorData(vendorId).rfqs || []
+      const rMap = new Map<string, any>()
+      baseRfqs.forEach((r: any) => rMap.set(r.id, r))
 
-          if (prKey) {
-            prKeyMap.set(String(prKey), mapped.id)
-          }
+      const prKeyMap = new Map<string, string>()
+
+      backendRfqs.forEach((r: any) => {
+        const prKey = r.purchase_request_detail?.request_id || r.purchase_request || (r.terms?.includes('Mapped from Approved PR: ') ? r.terms.split('Mapped from Approved PR: ')[1]?.trim() : (r.remarks?.includes('Mapped from Approved PR: ') ? r.remarks.split('Mapped from Approved PR: ')[1]?.trim() : null))
+        const cleanId = (r.rfq_id || r.id || '').toString().replace(/^RFQ-/i, '')
+        const formattedId = `RFQ-${cleanId}`
+        const budget = parseFloat(r.purchase_request_detail?.total_estimated_cost || r.estimated_amount || r.budgetEst || '0')
+
+        const isMatch = checkVendorMatchesRFQ(r, vendorId, vendor.name, vendor.category)
+        if (!isMatch && !rMap.has(formattedId)) return
+
+        // Normalize status: 'OPEN'→'Open', 'CLOSED'→'Closed', etc.
+        const rawStatus = (r.status || 'Open').toString()
+        const normStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase()
+
+        const invId = r.document_verification?.invoice_id
+        const grnId = r.document_verification?.goods_receipt_id
+        const localInvVerified = invId ? isInvoiceVerifiedInSystem(invId) : false
+        const localGrnVerified = grnId ? isGrnVerifiedInSystem(grnId) : false
+        
+        let docVerif = r.document_verification ? { ...r.document_verification } : {}
+        if (localInvVerified) docVerif.is_invoice_verified = true
+        if (localGrnVerified) docVerif.is_goods_receipt_verified = true
+        
+        if (docVerif.is_invoice_verified && docVerif.is_goods_receipt_verified) {
+          docVerif.is_both_verified = true
+          docVerif.status = 'Documents Verified'
+          docVerif.verification_status = 'VERIFIED'
+        }
+
+        const mapped = {
+          id: formattedId,
+          rfq_id: formattedId,
+          dbId: r.pk ?? (typeof r.id === 'number' ? r.id : undefined),
+          createdAt: r.created_at || r.createdAt || r.created_date || r.createdDate || r.date,
+          date: r.created_at || r.createdAt || r.created_date || r.createdDate || r.date,
+          prKey: prKey,
+          title: r.title,
+          category: r.purchase_request_detail?.category || r.effective_category || r.category || vendor.category,
+          subcategory: r.purchase_request_detail?.subcategory || r.subcategory || 'General',
+          description: r.purchase_request_detail?.description || r.terms || r.remarks || 'Standard enterprise technical specifications',
+          qty: r.purchase_request_detail?.quantity || r.quantity || r.qty || 1,
+          budgetEst: budget || 50000,
+          deadline: r.deadline || '2026-10-25',
+          status: normStatus,
+          requiredBy: r.purchase_request_detail?.required_by || r.deadline || 'N/A',
+          deliveryLocation: r.purchase_request_detail?.delivery_location || r.deliveryLocation || 'HQ',
+          originator: r.purchase_request_detail?.created_by_detail?.username || r.createdBy || 'System',
+          quotations: r.quotations || [],
+          document_verification: docVerif,
+          document_verification_status: docVerif.status || r.document_verification_status || (docVerif.is_both_verified ? 'Documents Verified' : 'Verification Pending')
+        }
+
+        if (prKey && prKeyMap.has(String(prKey))) {
+          const existingId = prKeyMap.get(String(prKey))!
+          rMap.delete(existingId)
           rMap.set(mapped.id, mapped)
-        })
-        setLocalRfqsList(Array.from(rMap.values()))
-      }
+          prKeyMap.set(String(prKey), mapped.id)
+          return
+        }
+
+        if (prKey) {
+          prKeyMap.set(String(prKey), mapped.id)
+        }
+        rMap.set(mapped.id, mapped)
+      })
+
+      setLocalRfqsList(sortRequestsNewestFirst(Array.from(rMap.values())))
     } catch (err) {
       console.warn('Backend RFQ/Quotes fetch error:', err)
       setVendorQuotes(localQ)
-      setLocalRfqsList([])
+      const fallback = getScopedVendorData(vendorId).rfqs
+      if (fallback && fallback.length > 0) {
+        setLocalRfqsList(prev => prev.length > 0 ? prev : sortRequestsNewestFirst(fallback))
+      }
     } finally {
       setLoading(false)
     }
@@ -3129,22 +3522,26 @@ export const VendorRfqsPage: React.FC = () => {
   }, [loadData, vendorId])
 
   const openRfqs = localRfqsList.filter((r) => {
-    const st = (r.status || '').toLowerCase();
+    const st = (r.status || '').toLowerCase().trim();
     const isClosedOrExpired = st === 'closed' || st === 'expired' || st === 'cancelled' || st === 'rejected';
     const isNotDeclined = rfqActions[r.id]?.status !== 'Declined';
-    const deadlineDate = new Date(r.deadline);
-    deadlineDate.setHours(23, 59, 59, 999);
-    return !isClosedOrExpired && isNotDeclined && deadlineDate >= new Date();
+    const deadlineDate = r.deadline ? new Date(r.deadline) : null;
+    const deadlineCopy = deadlineDate ? new Date(deadlineDate.getTime()) : null;
+    if (deadlineCopy) deadlineCopy.setHours(23, 59, 59, 999);
+    const isPastDeadline = deadlineCopy && !isNaN(deadlineCopy.getTime()) ? deadlineCopy < new Date() : false;
+    return !isClosedOrExpired && isNotDeclined && !isPastDeadline;
   })
   const expiredRfqs = localRfqsList.filter((r) => {
-    const st = (r.status || '').toLowerCase();
+    const st = (r.status || '').toLowerCase().trim();
     const isClosedOrExpired = st === 'closed' || st === 'expired' || st === 'cancelled' || st === 'rejected';
-    const deadlineDate = new Date(r.deadline);
-    deadlineDate.setHours(23, 59, 59, 999);
-    return isClosedOrExpired || deadlineDate < new Date();
+    const deadlineDate = r.deadline ? new Date(r.deadline) : null;
+    const deadlineCopy = deadlineDate ? new Date(deadlineDate.getTime()) : null;
+    if (deadlineCopy) deadlineCopy.setHours(23, 59, 59, 999);
+    const isPastDeadline = deadlineCopy && !isNaN(deadlineCopy.getTime()) ? deadlineCopy < new Date() : false;
+    return isClosedOrExpired || isPastDeadline;
   })
 
-  const displayedRfqs = subTab === 'open' ? openRfqs : expiredRfqs
+  const displayedRfqs = sortRequestsNewestFirst(subTab === 'open' ? openRfqs : expiredRfqs)
 
   const toggleExpand = (id: string) => {
     setExpandedRfqIds((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -3336,7 +3733,11 @@ Certified Procurement Document - KSS Procurement OS
                       )}
                       {/* Document Verification Status Badge - Only shown if PO exists */}
                       {rfq.document_verification?.po_id ? (
-                        rfq.document_verification?.is_both_verified || rfq.document_verification_status === 'Documents Verified' ? (
+                        rfq.document_verification?.verification_status === 'REJECTED' || rfq.document_verification_status === 'Verification Rejected' ? (
+                          <span className="text-[10px] font-bold text-rose-800 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200 flex items-center gap-1 shadow-2xs">
+                            <XCircle size={10} className="text-rose-600" /> Verification Rejected
+                          </span>
+                        ) : rfq.document_verification?.is_both_verified || rfq.document_verification_status === 'Documents Verified' ? (
                           <span className="text-[10px] font-black text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1 shadow-2xs">
                             <CheckCircle size={10} className="text-emerald-600" /> Documents Verified ✅
                           </span>
@@ -3509,10 +3910,20 @@ Certified Procurement Document - KSS Procurement OS
                       <div className="p-3.5 bg-gradient-to-r from-gray-50 to-blue-50/40 rounded-xl border border-gray-200 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
-                            <FileCheck size={15} className={rfq.document_verification?.is_both_verified || rfq.document_verification_status === 'Documents Verified' ? 'text-emerald-600' : 'text-amber-600'} />
+                            <FileCheck size={15} className={
+                              rfq.document_verification?.verification_status === 'REJECTED' || rfq.document_verification_status === 'Verification Rejected'
+                                ? 'text-rose-600'
+                                : rfq.document_verification?.is_both_verified || rfq.document_verification_status === 'Documents Verified'
+                                ? 'text-emerald-600'
+                                : 'text-amber-600'
+                            } />
                             Document Verification Status (Invoice + Goods Receipt):
                           </span>
-                          {rfq.document_verification?.is_both_verified || rfq.document_verification_status === 'Documents Verified' ? (
+                          {rfq.document_verification?.verification_status === 'REJECTED' || rfq.document_verification_status === 'Verification Rejected' ? (
+                            <span className="text-[11px] font-black text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-300 flex items-center gap-1">
+                              <XCircle size={12} /> Verification Rejected
+                            </span>
+                          ) : rfq.document_verification?.is_both_verified || rfq.document_verification_status === 'Documents Verified' ? (
                             <span className="text-[11px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
                               <CheckCircle size={12} /> Documents Verified ✅
                             </span>
@@ -3522,12 +3933,27 @@ Certified Procurement Document - KSS Procurement OS
                             </span>
                           )}
                         </div>
+                        {rfq.document_verification?.reject_reason && (rfq.document_verification?.verification_status === 'REJECTED' || rfq.document_verification_status === 'Verification Rejected') && (
+                          <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 p-2 rounded-lg font-medium">
+                            <b>Rejection Reason:</b> {rfq.document_verification.reject_reason}
+                          </div>
+                        )}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-1">
                           <div className="bg-white p-2.5 rounded-lg border border-gray-200 flex items-center justify-between shadow-2xs">
                             <span className="text-gray-500 font-semibold">Goods Receipt:</span>
                             <div className="flex items-center gap-1.5">
-                              <span className={`font-bold flex items-center gap-1 ${rfq.document_verification?.is_goods_receipt_verified ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                {rfq.document_verification?.is_goods_receipt_verified ? '✓ Verified' : '⏳ Pending'}
+                              <span className={`font-bold flex items-center gap-1 ${
+                                rfq.document_verification?.goods_receipt_status === 'Rejected'
+                                  ? 'text-rose-600'
+                                  : rfq.document_verification?.is_goods_receipt_verified
+                                  ? 'text-emerald-700'
+                                  : 'text-amber-600'
+                              }`}>
+                                {rfq.document_verification?.goods_receipt_status === 'Rejected'
+                                  ? '✗ Rejected'
+                                  : rfq.document_verification?.is_goods_receipt_verified
+                                  ? '✓ Verified'
+                                  : '⏳ Pending'}
                               </span>
                               <button
                                 type="button"
@@ -3541,8 +3967,18 @@ Certified Procurement Document - KSS Procurement OS
                           </div>
                           <div className="bg-white p-2.5 rounded-lg border border-gray-200 flex items-center justify-between shadow-2xs">
                             <span className="text-gray-500 font-semibold">Invoice Receipt:</span>
-                            <span className={`font-bold flex items-center gap-1 ${rfq.document_verification?.is_invoice_verified ? 'text-emerald-700' : 'text-amber-600'}`}>
-                              {rfq.document_verification?.is_invoice_verified ? '✓ Verified' : '⏳ Pending'}
+                            <span className={`font-bold flex items-center gap-1 ${
+                              rfq.document_verification?.invoice_status === 'Rejected'
+                                ? 'text-rose-600'
+                                : rfq.document_verification?.is_invoice_verified
+                                ? 'text-emerald-700'
+                                : 'text-amber-600'
+                            }`}>
+                              {rfq.document_verification?.invoice_status === 'Rejected'
+                                ? '✗ Rejected'
+                                : rfq.document_verification?.is_invoice_verified
+                                ? '✓ Verified'
+                                : '⏳ Pending'}
                             </span>
                           </div>
                           <div className="bg-white p-2.5 rounded-lg border border-gray-200 flex items-center justify-between shadow-2xs">
@@ -3691,8 +4127,8 @@ export const VendorQuotationsPage: React.FC = () => {
   const [subTab, setSubTab] = useState<'all' | 'draft' | 'submitted' | 'selected' | 'rejected'>(tabParam || 'all')
   const [searchQuery, setSearchQuery] = useState('')
   const { vendor } = getScopedVendorData(vendorId)
-  const [quotationsList, setQuotationsList] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [quotationsList, setQuotationsList] = useState<any[]>(() => getScopedVendorData(vendorId).quotations)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
     if (tabParam && ['all', 'draft', 'submitted', 'selected', 'rejected'].includes(tabParam)) {
@@ -3701,8 +4137,8 @@ export const VendorQuotationsPage: React.FC = () => {
   }, [tabParam])
 
   const loadQuotes = async () => {
+    const localQuotes = getStoredVendorQuotes(vendorId)
     try {
-      setIsLoading(true)
       const res = await apiClient.get('/rfq/quotations/', { params: { vendor: vendorId } })
       const backendQ = Array.isArray(res.data) ? res.data : res.data?.results || []
       const currentVendor = MASTER_VENDORS.find(v => v.id === vendorId)
@@ -3763,10 +4199,23 @@ export const VendorQuotationsPage: React.FC = () => {
           }
         })
 
-      setQuotationsList(mappedBackend)
+      const qMap = new Map<string, any>()
+      const scopedQuotes = getScopedVendorData(vendorId).quotations || []
+      scopedQuotes.forEach((q: any) => {
+        if (q && (q.id || q.quotation_id)) qMap.set(q.quotation_id || q.id, q)
+      })
+      localQuotes.forEach((q: any) => {
+        if (q && (q.id || q.quotation_id)) qMap.set(q.quotation_id || q.id, q)
+      })
+      mappedBackend.forEach((q: any) => {
+        if (q && (q.id || q.quotation_id)) qMap.set(q.quotation_id || q.id, q)
+      })
+
+      setQuotationsList(Array.from(qMap.values()))
     } catch (e) {
       console.warn('Failed to load vendor quotations:', e)
-      setQuotationsList([])
+      const fallback = getScopedVendorData(vendorId).quotations || localQuotes
+      setQuotationsList(prev => prev.length > 0 ? prev : fallback)
     } finally {
       setIsLoading(false)
     }
@@ -3774,11 +4223,19 @@ export const VendorQuotationsPage: React.FC = () => {
 
   useEffect(() => {
     loadQuotes()
-    window.addEventListener('kss_backend_updated', loadQuotes)
-    window.addEventListener('storage', loadQuotes)
+    let debounceTimer: any = null
+    const handleSync = () => {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        loadQuotes()
+      }, 200)
+    }
+    window.addEventListener('kss_backend_updated', handleSync)
+    window.addEventListener('storage', handleSync)
     return () => {
-      window.removeEventListener('kss_backend_updated', loadQuotes)
-      window.removeEventListener('storage', loadQuotes)
+      clearTimeout(debounceTimer)
+      window.removeEventListener('kss_backend_updated', handleSync)
+      window.removeEventListener('storage', handleSync)
     }
   }, [vendorId, vendor.name, tabParam])
 
@@ -4453,9 +4910,23 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
             const qBase = p.base_amount ?? p.quotation_detail?.price ?? Math.round(amt / (1.0 + (qGst / 100.0)))
             const qTax = p.tax_amount ?? p.quotation_detail?.tax_amount ?? Math.round(amt - qBase)
 
+            const poId = p.po_id || (p.id ? `PO-${p.id}` : 'PO-UNKNOWN')
+            
+            let docVerif = p.document_verification ? { ...p.document_verification } : {}
+            const invId = p.invoice_detail?.invoice_id || p.invoice_id || p.document_verification?.invoice_id
+            const grnId = p.goods_receipt_detail?.receipt_id || p.goods_receipt_id || p.document_verification?.goods_receipt_id
+            if (invId && isInvoiceVerifiedInSystem(invId)) docVerif.is_invoice_verified = true
+            if (grnId && isGrnVerifiedInSystem(grnId)) docVerif.is_goods_receipt_verified = true
+            
+            if (docVerif.is_invoice_verified && docVerif.is_goods_receipt_verified && !docVerif.is_both_verified) {
+              docVerif.is_both_verified = true
+              docVerif.status = 'Documents Verified'
+              docVerif.verification_status = 'VERIFIED'
+            }
+
             return {
-              id: p.po_id || (p.id ? `PO-${p.id}` : 'PO-UNKNOWN'),
-              poNumber: p.po_id || (p.id ? `PO-${p.id}` : 'PO-UNKNOWN'),
+              id: poId,
+              poNumber: poId,
               requestRef: reqId,
               rfqRef: rfqId,
               title: title,
@@ -4475,8 +4946,8 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
               deliveryDate: p.expected_delivery || '2026-10-15',
               vendorId: vendorId,
               vendorName: p.vendor_detail?.name || vendor.name,
-              document_verification: p.document_verification,
-              document_verification_status: p.document_verification_status || (p.document_verification?.is_both_verified ? 'Documents Verified' : 'Verification Pending')
+              document_verification: docVerif,
+              document_verification_status: docVerif.status || p.document_verification_status || (docVerif.is_both_verified ? 'Documents Verified' : 'Verification Pending')
             }
           })
         setBackendPOs(mapped)
@@ -4661,11 +5132,6 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
               {filteredPos.map((po) => {
                 const currentStatus = getEffectiveStatus(po)
                 const isDelivered = currentStatus === 'Delivered' || currentStatus === 'Fulfilled' || po.status === 'Delivered' || po.status === 'Fulfilled'
-                const isDocsVerified = Boolean(
-                  po.document_verification?.is_both_verified ||
-                  po.document_verification_status === 'Documents Verified' ||
-                  (po.document_verification?.is_invoice_verified && (po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified'))
-                )
                 const paymentPaid =
                   po.payment_status === 'Paid' ||
                   po.payment_status === 'Payment Completed' ||
@@ -4676,6 +5142,19 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
                   isPaymentPaidForPO(po.poNumber) ||
                   (po.requestRef && isPaymentPaidForPO(po.requestRef)) ||
                   (po.rfqRef && isPaymentPaidForPO(po.rfqRef))
+                const isBackendRejected =
+                  po.document_verification?.verification_status === 'REJECTED' ||
+                  po.document_verification?.status === 'Verification Rejected' ||
+                  po.document_verification_status === 'Verification Rejected'
+
+                const isDocsVerified = !isBackendRejected && Boolean(
+                  po.document_verification?.verification_status === 'VERIFIED' ||
+                  po.document_verification?.is_both_verified ||
+                  po.document_verification_status === 'Documents Verified' ||
+                  (po.document_verification?.is_invoice_verified && (po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified'))
+                )
+                const isDocsRejected = isBackendRejected
+                const rejectReason = po.document_verification?.reject_reason || ''
                 const isExpanded = !!expandedPoIds[po.id]
                 const existingDocs = getStoredDeliveryDocs(po.id, vendorId) || (po.requestRef ? getStoredDeliveryDocs(po.requestRef, vendorId) : null)
                 const nextInfo = getNextStageInfo(currentStatus)
@@ -4721,7 +5200,14 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
                         </span>
                       </td>
                       <td className="p-4">
-                        {isDocsVerified ? (
+                        {isDocsRejected ? (
+                          <span
+                            className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-flex items-center gap-1 cursor-help"
+                            title={rejectReason ? `Rejected: ${rejectReason}` : 'Document Verification Rejected'}
+                          >
+                            <XCircle size={10} className="text-rose-600" /> Verification Rejected
+                          </span>
+                        ) : isDocsVerified ? (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
                             <CheckCircle size={10} className="text-emerald-600" /> Documents Verified
                           </span>
@@ -4766,10 +5252,14 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
                             <div className="p-3 bg-gradient-to-r from-gray-50 to-blue-50/40 rounded-xl border border-gray-200 space-y-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
-                                  <FileCheck size={14} className={isDocsVerified ? 'text-emerald-600' : 'text-amber-600'} />
+                                  <FileCheck size={14} className={isDocsRejected ? 'text-rose-600' : isDocsVerified ? 'text-emerald-600' : 'text-amber-600'} />
                                   Document Verification Status (Invoice + Goods Receipt):
                                 </span>
-                                {isDocsVerified ? (
+                                {isDocsRejected ? (
+                                  <span className="text-[10px] font-black text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-300 flex items-center gap-1">
+                                    <XCircle size={11} /> Verification Rejected
+                                  </span>
+                                ) : isDocsVerified ? (
                                   <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
                                     <CheckCircle size={11} /> Documents Verified
                                   </span>
@@ -4779,17 +5269,42 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
                                   </span>
                                 )}
                               </div>
+                              {rejectReason && isDocsRejected && (
+                                <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 p-2 rounded-lg font-medium">
+                                  <b>Rejection Reason:</b> {rejectReason}
+                                </div>
+                              )}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
                                 <div className="bg-white p-2 rounded-lg border border-gray-200 flex items-center justify-between">
                                   <span className="text-gray-500 font-semibold">Goods Receipt:</span>
-                                  <span className={`font-bold flex items-center gap-1 ${po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified' ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                    {po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified' ? '✓ Verified' : (isDelivered ? '⏳ Pending' : '⏳ Pending Delivery')}
+                                  <span className={`font-bold flex items-center gap-1 ${
+                                    po.document_verification?.goods_receipt_status === 'Rejected'
+                                      ? 'text-rose-600'
+                                      : po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified'
+                                      ? 'text-emerald-700'
+                                      : 'text-amber-600'
+                                  }`}>
+                                    {po.document_verification?.goods_receipt_status === 'Rejected'
+                                      ? '✗ Rejected'
+                                      : po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified'
+                                      ? '✓ Verified'
+                                      : (isDelivered ? '⏳ Pending' : '⏳ Pending Delivery')}
                                   </span>
                                 </div>
                                 <div className="bg-white p-2 rounded-lg border border-gray-200 flex items-center justify-between">
                                   <span className="text-gray-500 font-semibold">Invoice Receipt:</span>
-                                  <span className={`font-bold flex items-center gap-1 ${po.document_verification?.is_invoice_verified ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                    {po.document_verification?.is_invoice_verified ? '✓ Verified' : '⏳ Pending'}
+                                  <span className={`font-bold flex items-center gap-1 ${
+                                    po.document_verification?.invoice_status === 'Rejected'
+                                      ? 'text-rose-600'
+                                      : po.document_verification?.is_invoice_verified
+                                      ? 'text-emerald-700'
+                                      : 'text-amber-600'
+                                  }`}>
+                                    {po.document_verification?.invoice_status === 'Rejected'
+                                      ? '✗ Rejected'
+                                      : po.document_verification?.is_invoice_verified
+                                      ? '✓ Verified'
+                                      : '⏳ Pending'}
                                   </span>
                                 </div>
                               </div>
@@ -6127,7 +6642,7 @@ export const VendorPaymentStatusPage: React.FC = () => {
           </thead>
           <tbody className="divide-[#f1f5f9] divide-y font-medium text-gray-800">
             {paymentRows.map((pay) => (
-              <tr key={pay.id} className="hover:bg-gray-50">
+              <tr key={`${String(pay.id)}:${String(pay.poRef)}`} className="hover:bg-gray-50">
                 <td className="p-4 font-bold text-blue-600">{pay.id}</td>
                 <td className="p-4 font-semibold text-gray-800">{pay.invoiceRef}</td>
                 <td className="p-4 font-semibold text-gray-800">{pay.poRef}</td>

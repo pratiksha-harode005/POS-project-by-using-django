@@ -24,15 +24,14 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   portalType = 'MANAGER',
   approverName,
 }) => {
-  if (!isOpen || !request) return null
-
   // Check if request is Software & SaaS
-  const isSoftwareSaas =
-    request.category === 'Software & SaaS' ||
-    request.category?.toLowerCase() === 'software & saas' ||
-    request.category?.toLowerCase().includes('software') ||
-    request.category?.toLowerCase().includes('saas') ||
-    request.flowType === 'B'
+  const isSoftwareSaas = Boolean(
+    request?.category === 'Software & SaaS' ||
+    request?.category?.toLowerCase() === 'software & saas' ||
+    request?.category?.toLowerCase().includes('software') ||
+    request?.category?.toLowerCase().includes('saas') ||
+    request?.flowType === 'B'
+  )
 
   // Dynamic field numbering
   const numJustification = isSoftwareSaas ? 5 : 7
@@ -41,25 +40,46 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
   const numComments = isSoftwareSaas ? 8 : 10
 
   // 1. Requested Amount (read-only)
-  const requestedAmount = Number(request.amount ?? (request as any).total_estimated_cost ?? (request as any).estimated_cost ?? (request as any).estimatedCost ?? 0) || 0
+  const rawReqAmt = Number(
+    request?.amount ??
+    (request as any)?.total_estimated_cost ??
+    (request as any)?.estimated_cost ??
+    (request as any)?.estimatedCost ??
+    (request as any)?.requested_amount ??
+    0
+  ) || 0
+  const requestedAmount = rawReqAmt > 0 ? rawReqAmt : 0
 
   // 2. Approved Amount (editable, capped at 50,000 for Manager, 1,00,000 for Finance)
-  const initialApproved = portalType === 'MANAGER' && requestedAmount > 50000
-    ? 50000
-    : portalType === 'FINANCE' && requestedAmount > 100000
-    ? 100000
-    : requestedAmount
+  const calcInitialApproved = (amt: number, portal: string) => {
+    if (portal === 'MANAGER') {
+      return amt > 0 ? Math.min(amt, 50000) : 50000
+    }
+    if (portal === 'FINANCE') {
+      return amt > 0 ? Math.min(amt, 100000) : 50000
+    }
+    return amt > 0 ? amt : 50000
+  }
+
+  const initialApproved = calcInitialApproved(requestedAmount, portalType)
   const [approvedAmount, setApprovedAmount] = useState<number | string>(initialApproved || '')
 
   // 3. Budget Available
   const [budgetAvailable, setBudgetAvailable] = useState<'Yes' | 'No'>('Yes')
 
   // 4. Cost Center
-  const defaultCostCenter = request.costCenter || `CC-${(request.department || 'ENG').toUpperCase().slice(0, 3)}-2026-Q3`
+  const defaultCostCenter = request?.costCenter || `CC-${(request?.department || 'ENG').toUpperCase().slice(0, 3)}-2026-Q3`
   const [costCenter, setCostCenter] = useState<string>(defaultCostCenter)
 
   // 5. Vendor
-  const defaultVendor = request.vendor || ''
+  const defaultVendor =
+    request?.vendor ||
+    (request as any)?.preferred_vendor ||
+    (request as any)?.preferredVendor ||
+    (request as any)?.research_estimation?.vendor ||
+    (request as any)?.extra_fields?.vendor ||
+    request?.title ||
+    'Approved Standard Vendor'
   const [vendor, setVendor] = useState<string>(defaultVendor)
 
   // 6. Commercial Evaluation
@@ -67,12 +87,12 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
 
   // 7. Business Justification
   const [businessJustification, setBusinessJustification] = useState<string>(
-    request.justification || 'Required for engineering team capacity scaling and critical project delivery.'
+    request?.justification || 'Required for engineering team capacity scaling and critical project delivery.'
   )
 
   // 8. Business Impact
   const [businessImpact, setBusinessImpact] = useState<string>(
-    'Non-approval will delay scheduled Q3 deliverables, team onboarding, and sprint milestones.'
+    'Non-approval will delay scheduled deliverables, team onboarding, and sprint milestones.'
   )
 
   // 9. Risk & Compliance
@@ -80,46 +100,108 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
 
   // 10. Approval Comments
   const [approvalComments, setApprovalComments] = useState<string>(
-    'Technical specifications and departmental headcount growth reviewed and verified. Approved for procurement.'
+    'Technical specifications and departmental expenditure verified and approved for procurement.'
   )
 
   const [validationError, setValidationError] = useState<string>('')
 
+  const reqRawSt = ((request as any)?.raw_status || request?.status || '').toUpperCase()
+  const reqSt = (request?.status || '').toLowerCase()
+  const reqFinSt = (request?.financeStatus || '').toLowerCase()
+
+  // Portal-specific already-approved check
   const isAlreadyApproved = Boolean(
-    request.status === 'approved' ||
-    request.status === 'finance_approved' ||
-    request.financeStatus?.toLowerCase() === 'approved' ||
-    (request.currentStage !== undefined && request.currentStage >= 4) ||
-    request.status === 'quotes_received' ||
-    request.status === 'assigned_to_vendor' ||
-    request.status === 'delivered' ||
-    request.status === 'invoiced' ||
-    request.status === 'completed' ||
-    request.financeApprovedBy ||
-    request.financeApprovedDate
+    !request ? false :
+    portalType === 'FINANCE'
+      ? (
+          reqSt === 'finance_approved' ||
+          reqRawSt === 'FINANCE_APPROVED' ||
+          reqRawSt === 'ADMIN_APPROVED' ||
+          reqRawSt === 'PAYMENT_APPROVED' ||
+          reqRawSt === 'PAYMENT_PROCESSED' ||
+          reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+          reqRawSt === 'PAYMENT_JUSTIFIED' ||
+          reqRawSt === 'PAYMENT_COMPLETED' ||
+          reqRawSt === 'COMPLETED' ||
+          reqRawSt === 'REQUEST_COMPLETED' ||
+          reqSt === 'payment_approved' ||
+          reqSt === 'payment_completed' ||
+          reqSt === 'completed' ||
+          reqFinSt === 'approved' ||
+          reqFinSt === 'paid' ||
+          reqFinSt === 'completed' ||
+          (Boolean(request.financeApprovedBy) && Boolean(request.financeApprovedDate))
+        )
+      : portalType === 'ADMIN'
+      ? (
+          reqSt === 'admin_approved' ||
+          reqRawSt === 'ADMIN_APPROVED' ||
+          reqRawSt === 'PAYMENT_APPROVED' ||
+          reqRawSt === 'PAYMENT_COMPLETED' ||
+          reqRawSt === 'COMPLETED' ||
+          reqRawSt === 'REQUEST_COMPLETED' ||
+          reqFinSt === 'admin approved' ||
+          reqFinSt === 'completed'
+        )
+      : (
+          reqRawSt !== 'TEAM_LEAD_SUBMITTED' &&
+          reqRawSt !== 'MANAGER_REVIEW' &&
+          reqRawSt !== 'PENDING' &&
+          (
+            reqSt === 'approved' ||
+            reqSt === 'finance_approved' ||
+            reqRawSt === 'MANAGER_APPROVED' ||
+            reqRawSt === 'FINANCE_APPROVED' ||
+            reqRawSt === 'ADMIN_APPROVED' ||
+            reqRawSt === 'IN_PROCUREMENT' ||
+            reqRawSt === 'COMPLETED' ||
+            reqRawSt === 'REQUEST_COMPLETED' ||
+            request.status === 'approved'
+          )
+        )
   )
 
-  // Reset form when request changes
+  // Reset form when request changes or modal opens
   useEffect(() => {
-    if (request) {
-      const currentReqAmt = Number(request.amount ?? (request as any).total_estimated_cost ?? (request as any).estimated_cost ?? (request as any).estimatedCost ?? 0) || 0
-      const initialApprovedAmt = portalType === 'MANAGER' && currentReqAmt > 50000
-        ? 50000
-        : portalType === 'FINANCE' && currentReqAmt > 100000
-        ? 100000
-        : currentReqAmt
+    if (request && isOpen) {
+      const currentReqAmt = Number(
+        request.amount ??
+        (request as any).total_estimated_cost ??
+        (request as any).estimated_cost ??
+        (request as any).estimatedCost ??
+        (request as any).requested_amount ??
+        0
+      ) || 0
+      const initialApprovedAmt = calcInitialApproved(currentReqAmt, portalType)
       setApprovedAmount(initialApprovedAmt || '')
       setBudgetAvailable('Yes')
       setCostCenter(request.costCenter || `CC-${(request.department || 'ENG').toUpperCase().slice(0, 3)}-2026-Q3`)
-      setVendor(request.vendor || '')
+      setVendor(
+        request.vendor ||
+        (request as any).preferred_vendor ||
+        (request as any).preferredVendor ||
+        (request as any).research_estimation?.vendor ||
+        (request as any).extra_fields?.vendor ||
+        request.title ||
+        'Approved Standard Vendor'
+      )
       setCommercialEvaluation('Completed')
       setBusinessJustification(request.justification || 'Required for department operational and strategic delivery.')
       setBusinessImpact('Direct impact on department deliverables and sprint schedule if unapproved.')
       setRiskCompliance('Passed')
-      setApprovalComments('Specifications verified against approved OPEX/CAPEX allocation. Approved for PO generation.')
+      setApprovalComments(
+        portalType === 'FINANCE'
+          ? 'Budget headroom verified and certified. Approved for commercial procurement and PO issuance.'
+          : portalType === 'ADMIN'
+          ? 'Executive administrative review completed. Approved for capital spend.'
+          : 'Specifications verified against approved OPEX/CAPEX allocation. Approved for PO generation.'
+      )
       setValidationError('')
     }
-  }, [request?.id, portalType])
+  }, [request?.id, portalType, isOpen])
+
+  // Early return ONLY after all hooks are executed
+  if (!isOpen || !request) return null
 
   const handleConfirm = (e: React.FormEvent) => {
     e.preventDefault()

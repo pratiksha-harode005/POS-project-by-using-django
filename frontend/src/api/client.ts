@@ -18,11 +18,26 @@ rawAxios.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-// Response Interceptor: Auto Token Refresh on 401
+// Response Interceptor: Auto Token Refresh on 401 & Transient Connection Retry
 rawAxios.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean; _netRetry?: boolean }
+
+    // 1. Handle transient connection errors (server reload / restart)
+    const isNetworkError = !error.response && (
+      error.code === 'ERR_NETWORK' ||
+      error.code === 'ECONNABORTED' ||
+      error.message?.includes('Network Error') ||
+      error.message?.includes('ERR_CONNECTION')
+    )
+    if (isNetworkError && originalRequest && !originalRequest._netRetry) {
+      originalRequest._netRetry = true
+      await new Promise(res => setTimeout(res, 350))
+      return rawAxios(originalRequest)
+    }
+
+    // 2. Auto Token Refresh on 401
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true
       const refreshToken = localStorage.getItem('refresh_token')
@@ -49,7 +64,7 @@ rawAxios.interceptors.response.use(
 // ── In-Memory API Cache & In-Flight Request Deduplication ───────────────────────
 const _apiCache = new Map<string, { data: any; timestamp: number }>()
 const _inFlightRequests = new Map<string, Promise<AxiosResponse<any>>>()
-const CACHE_TTL_MS = 5000 // 5 seconds cache for instant tab transitions
+const CACHE_TTL_MS = 30000 // 30s cache for ultra-fast instant UI navigation without stale data (invalidated on mutation)
 
 export function invalidateApiCache(resourcePrefix?: string) {
   if (!resourcePrefix) {
@@ -76,21 +91,33 @@ function getCacheKey(url: string, params?: any): string {
   return `${url}${paramStr}`
 }
 
+export interface ApiClientConfig extends AxiosRequestConfig {
+  bypassCache?: boolean
+}
+
 export const apiClient = {
-  get: async <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
+  get: async <T = any>(url: string, config?: ApiClientConfig): Promise<AxiosResponse<T>> => {
     const key = getCacheKey(url, config?.params)
     const now = Date.now()
+    const isLiveNotificationRequest = /(?:^|\/)notifications(?:\/|$)/i.test(url.split('?')[0])
+    const shouldBypassCache = Boolean(config?.bypassCache || isLiveNotificationRequest)
+    const axiosConfig: AxiosRequestConfig = { ...(config || {}) }
+    delete (axiosConfig as ApiClientConfig).bypassCache
 
-    // 1. Check in-memory fast cache (0ms latency)
-    const cached = _apiCache.get(key)
-    if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
-      return {
-        data: cached.data,
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config: config as any || {},
+    // 1. Check in-memory fast cache (0ms latency) unless bypassCache is requested
+    if (!shouldBypassCache) {
+      const cached = _apiCache.get(key)
+      if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
+        return {
+          data: cached.data,
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config: config as any || {},
+        }
       }
+    } else {
+      _apiCache.delete(key)
     }
 
     // 2. Check in-flight duplicate requests (deduplicate identical concurrent calls)
@@ -99,8 +126,10 @@ export const apiClient = {
     }
 
     // 3. Make real network call to backend PostgreSQL API
-    const requestPromise = rawAxios.get<T>(url, config).then(res => {
-      _apiCache.set(key, { data: res.data, timestamp: Date.now() })
+    const requestPromise = rawAxios.get<T>(url, axiosConfig).then(res => {
+      if (!isLiveNotificationRequest) {
+        _apiCache.set(key, { data: res.data, timestamp: Date.now() })
+      }
       _inFlightRequests.delete(key)
       return res
     }).catch(err => {

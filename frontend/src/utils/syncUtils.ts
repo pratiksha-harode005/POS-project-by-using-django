@@ -6,6 +6,8 @@
  * without manual browser refresh, and without aggressive polling.
  */
 
+import { invalidateApiCache } from '../api/client'
+
 const SYNC_EVENT_NAME = 'kss_backend_updated'
 const STORAGE_KEY = 'kss_last_sync_timestamp'
 
@@ -17,11 +19,15 @@ const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in windo
 /**
  * Dispatches a sync event across the current window and all other browser tabs.
  */
-export const triggerGlobalDataSync = (reason?: string) => {
+export const triggerGlobalDataSync = (reason?: string, data?: any) => {
+  // 0. Invalidate local API cache immediately
+  invalidateApiCache()
+
   const payload = {
     type: 'KSS_SYNC',
     reason: reason || 'mutation',
     timestamp: Date.now(),
+    data: data || null,
   }
 
   // 1. Dispatch locally on current window (same-tab contexts)
@@ -42,7 +48,7 @@ export const triggerGlobalDataSync = (reason?: string) => {
 
     // 3. Update localStorage timestamp as secondary cross-tab fallback
     try {
-      localStorage.setItem(STORAGE_KEY, String(payload.timestamp))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
     } catch {
       // ignore storage quota / sandbox errors
     }
@@ -57,34 +63,44 @@ export const triggerGlobalDataSync = (reason?: string) => {
  * - Window focus (when user switches back to tab)
  * - Page visibility changes (when tab becomes visible)
  */
-export const subscribeGlobalDataSync = (callback: () => void): (() => void) => {
+export const subscribeGlobalDataSync = (callback: (payload?: any) => void): (() => void) => {
   if (typeof window === 'undefined') return () => {}
 
   let lastRun = 0
-  const throttledCallback = () => {
+  const throttledCallback = (payload?: any) => {
     const now = Date.now()
-    // Debounce triggers by 150ms to prevent duplicate simultaneous fetches
-    if (now - lastRun > 150) {
+    // Invalidate API cache so fresh network response is retrieved
+    invalidateApiCache()
+    // Debounce triggers by 100ms to prevent duplicate simultaneous fetches
+    if (now - lastRun > 100) {
       lastRun = now
-      callback()
+      callback(payload)
     }
   }
 
   // 1. Listen to local custom event
-  window.addEventListener(SYNC_EVENT_NAME, throttledCallback)
+  const onCustomEvent = (ev: any) => {
+    throttledCallback(ev?.detail)
+  }
+  window.addEventListener(SYNC_EVENT_NAME, onCustomEvent)
 
   // 2. Listen to BroadcastChannel
   const onChannelMessage = (ev: MessageEvent) => {
     if (ev.data?.type === 'KSS_SYNC') {
-      throttledCallback()
+      throttledCallback(ev.data)
     }
   }
   syncChannel?.addEventListener('message', onChannelMessage)
 
   // 3. Listen to storage event (cross-tab fallback)
   const onStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) {
-      throttledCallback()
+    if (e.key === STORAGE_KEY && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue)
+        throttledCallback(parsed)
+      } catch {
+        throttledCallback()
+      }
     }
   }
   window.addEventListener('storage', onStorage)
@@ -103,7 +119,7 @@ export const subscribeGlobalDataSync = (callback: () => void): (() => void) => {
 
   // Cleanup function
   return () => {
-    window.removeEventListener(SYNC_EVENT_NAME, throttledCallback)
+    window.removeEventListener(SYNC_EVENT_NAME, onCustomEvent)
     syncChannel?.removeEventListener('message', onChannelMessage)
     window.removeEventListener('storage', onStorage)
     window.removeEventListener('focus', onFocus)
