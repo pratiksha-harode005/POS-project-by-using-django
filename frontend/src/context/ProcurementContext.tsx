@@ -234,6 +234,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Dynamic parallel fetch from Django REST API backend
   const isFetchingRef = React.useRef(false)
+  const refreshQueuedRef = React.useRef(false)
 
   // Dynamic fetch from Django REST API backend
   const refreshBackendRequests = async () => {
@@ -242,7 +243,10 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setIsPaymentsLoading(false)
       return
     }
-    if (isFetchingRef.current) return
+    if (isFetchingRef.current) {
+      refreshQueuedRef.current = true
+      return
+    }
     isFetchingRef.current = true
 
     try {
@@ -605,6 +609,10 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } finally {
       isFetchingRef.current = false
       setIsPaymentsLoading(false)
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false
+        void refreshBackendRequests()
+      }
     }
   }
 
