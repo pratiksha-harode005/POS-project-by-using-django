@@ -1,4 +1,4 @@
-import { apiClient } from './client'
+import { apiClient, invalidateApiCache } from './client'
 import { triggerGlobalDataSync } from '../utils/syncUtils'
 
 export interface BackendNotification {
@@ -19,6 +19,7 @@ export interface BackendNotification {
 }
 
 export const getNotifications = async (params?: { role?: string; user?: string; vendor?: string; page_size?: number }): Promise<BackendNotification[]> => {
+  invalidateApiCache('/notifications/')
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await apiClient.get('/notifications/', { params })
@@ -29,18 +30,19 @@ export const getNotifications = async (params?: { role?: string; user?: string; 
         await new Promise(r => setTimeout(r, 400))
         continue
       }
-      return []
+      throw err
     }
   }
   return []
 }
 
-export const getUnreadNotificationCount = async (params?: { role?: string; user?: string; vendor?: string }): Promise<number> => {
+export const getUnreadNotificationCount = async (params?: { role?: string; user?: string; vendor?: string }): Promise<number | null> => {
   try {
+    invalidateApiCache('/notifications/')
     const res = await apiClient.get('/notifications/unread_count/', { params })
     return typeof res.data?.unread_count === 'number' ? res.data.unread_count : 0
   } catch {
-    return 0
+    return null
   }
 }
 

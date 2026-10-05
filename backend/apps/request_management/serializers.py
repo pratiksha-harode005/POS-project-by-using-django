@@ -955,11 +955,24 @@ class CreatePurchaseRequestSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'request_id', 'status', 'current_approval_level', 'current_stage', 'created_at']
         extra_kwargs = {
-            'department': {'required': False, 'allow_null': True}
+            'department': {'required': False, 'allow_null': True},
+            'description': {'required': False, 'allow_blank': True},
+            'title': {'required': False, 'allow_blank': True},
+            'category': {'required': False, 'allow_blank': True},
+            'justification': {'required': False, 'allow_blank': True},
+            'quantity': {'required': False},
+            'requested_amount': {'required': False},
+            'total_estimated_cost': {'required': False},
         }
 
     def to_internal_value(self, data):
         data = data.copy() if hasattr(data, 'copy') else dict(data)
+        if not data.get('title') or str(data.get('title')).strip() == '':
+            data['title'] = 'Untitled Draft Request'
+        if not data.get('description') or str(data.get('description')).strip() == '':
+            data['description'] = data.get('title') or 'Draft procurement request'
+        if not data.get('category') or str(data.get('category')).strip() == '':
+            data['category'] = 'IT Hardware'
         dept_val = data.get('department')
         if dept_val is not None and not isinstance(dept_val, int):
             if str(dept_val).isdigit():

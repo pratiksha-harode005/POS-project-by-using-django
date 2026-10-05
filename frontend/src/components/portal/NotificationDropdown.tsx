@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { getNotifications, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
+import { getNotifications, getUnreadNotificationCount, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
 import { subscribeGlobalDataSync, triggerGlobalDataSync } from '../../utils/syncUtils'
 
 export interface NotificationItem {
@@ -29,6 +29,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
   const location = useLocation()
   const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const fetchInFlight = useRef(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -77,7 +78,10 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
         params = { user: user.username, role: activeRole }
       }
 
-      const data: BackendNotification[] = await getNotifications(params)
+      const [data, unreadTotal] = await Promise.all([
+        getNotifications({ ...params, page_size: 1000 }),
+        getUnreadNotificationCount(params),
+      ])
       
       const mapped: NotificationItem[] = data.map((n) => {
         const readStatus = n.is_read !== undefined ? Boolean(n.is_read) : Boolean(n.isRead)
@@ -96,6 +100,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       })
 
       setNotifications(mapped)
+      if (unreadTotal !== null) setUnreadCount(unreadTotal)
     } catch (err) {
       console.warn('Temporary issue loading notifications in dropdown:', err)
     } finally {
@@ -121,12 +126,12 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
     }
   }, [fetchRealNotifications])
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length
   const topNotifications = notifications.slice(0, 5)
 
   // Mark all as read
   const handleMarkAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    setUnreadCount(0)
     const isVendorPortal = location.pathname.includes('/portal/vendor') || activeRole === 'VENDOR' || user?.role === 'VENDOR'
     
     try {
@@ -226,13 +231,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
     }
 
     if (activeRole === 'TEAM_LEAD') {
-      if (titleMsg.includes('payment') && !item.requestId) {
-        return '/portal/team_lead/payment-status'
-      }
-      if (item.requestId) {
-        return `/portal/team_lead/my-requests?search=${encodeURIComponent(item.requestId)}&id=${encodeURIComponent(item.requestId)}`
-      }
-      return '/portal/team_lead/my-requests'
+      return '/portal/team_lead/notifications'
     }
 
     return getNotificationPageRoute()
@@ -244,6 +243,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       setNotifications((prev) =>
         prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
       )
+      setUnreadCount((prev) => Math.max(0, prev - 1))
       try {
         await markNotificationRead(item.id)
         window.dispatchEvent(new CustomEvent('kss_backend_updated'))

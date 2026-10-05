@@ -857,6 +857,17 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 except Exception:
                     pass
 
+            if pr.created_by:
+                try:
+                    Notification.objects.create(
+                        user=pr.created_by,
+                        purchase_request=pr,
+                        title=f"Request {pr.request_id} Recommended to Admin",
+                        message=f"Your request '{pr.title}' was recommended to Admin by Finance ({user_fullname}) for executive review."
+                    )
+                except Exception:
+                    pass
+
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='save-research', permission_classes=[])
@@ -1074,19 +1085,27 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
 
-class TeamLeadRequestViewSet(viewsets.ReadOnlyModelViewSet):
+class TeamLeadRequestViewSet(viewsets.ModelViewSet):
     """
     Dedicated REST endpoints for Team Lead Portal:
-    - GET /api/team-lead/requests/: List requests for Team Lead review
+    - GET /api/team-lead/requests/: List requests for Team Lead review & drafts
+    - POST /api/team-lead/requests/: Create request or save as draft
     - GET /api/team-lead/requests/{id}/: Single request details with history
     - POST /api/team-lead/requests/{id}/approve/: Approve -> MANAGER_REVIEW
     - POST /api/team-lead/requests/{id}/reject/: Reject -> REJECTED
     - POST /api/team-lead/requests/{id}/send-back/: Send Back -> SENT_BACK
+    - POST /api/team-lead/requests/{id}/submit_draft/: Advance draft to manager review
+    - DELETE /api/team-lead/requests/{id}/: Delete draft
     """
     serializer_class = PurchaseRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsTeamLeadRole]
     filterset_fields = ['status', 'priority', 'department', 'flow_type']
     search_fields = ['request_id', 'title', 'category', 'description']
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return CreatePurchaseRequestSerializer
+        return PurchaseRequestSerializer
 
     def get_queryset(self):
         user = self.request.user
@@ -1095,6 +1114,101 @@ class TeamLeadRequestViewSet(viewsets.ReadOnlyModelViewSet):
         if scope == 'department' and user.department:
             qs = qs.filter(models.Q(department=user.department) | models.Q(created_by=user) | models.Q(assigned_team_lead=user))
         return apply_request_type_filter(qs, self.request)
+
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+        if not data.get('required_by') or str(data.get('required_by')).strip() == '':
+            import datetime
+            data['required_by'] = (datetime.date.today() + datetime.timedelta(days=14)).isoformat()
+        if not data.get('delivery_location'):
+            data['delivery_location'] = 'Pune HQ'
+        if not data.get('priority'):
+            data['priority'] = 'Medium'
+        if not data.get('justification'):
+            data['justification'] = data.get('description', 'Purchase requisition')
+
+        existing_id = data.get('id') or data.get('draft_id')
+        if existing_id:
+            pr_obj = get_purchase_request_by_pk_or_request_id(existing_id)
+            if pr_obj and (str(pr_obj.status).upper() == 'DRAFT' or pr_obj.current_stage == 0):
+                serializer = self.get_serializer(pr_obj, data=data, partial=True)
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                return Response(PurchaseRequestSerializer(pr_obj).data, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(PurchaseRequestSerializer(serializer.instance).data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_create(self, serializer):
+        user = self.request.user if (self.request.user and self.request.user.is_authenticated) else None
+        if not user or user.is_anonymous:
+            user = User.objects.filter(role='TEAM_LEAD').first() or User.objects.first()
+
+        dept = serializer.validated_data.pop('department', None)
+        if not dept:
+            if hasattr(user, 'department') and user.department:
+                dept = user.department
+            else:
+                dept = Department.objects.first()
+
+        is_draft = bool(
+            self.request.data.get('is_draft') or
+            str(self.request.data.get('status', '')).strip().upper() == 'DRAFT' or
+            self.request.data.get('save_as_draft')
+        )
+
+        initial_status = PurchaseRequest.STATUS_DRAFT if is_draft else PurchaseRequest.STATUS_MANAGER_REVIEW
+        initial_level = PurchaseRequest.LEVEL_NONE if is_draft else PurchaseRequest.LEVEL_MANAGER
+        initial_stage = 0 if is_draft else 2
+
+        with transaction.atomic():
+            req = serializer.save(
+                created_by=user,
+                department=dept,
+                status=initial_status,
+                current_approval_level=initial_level,
+                current_stage=initial_stage
+            )
+            if not req.total_estimated_cost and (req.requested_amount or req.existing_cost):
+                req.total_estimated_cost = req.requested_amount or req.existing_cost
+                req.save(update_fields=['total_estimated_cost'])
+            if not req.requested_amount and (req.total_estimated_cost or req.existing_cost):
+                req.requested_amount = req.total_estimated_cost or req.existing_cost
+                req.save(update_fields=['requested_amount'])
+
+            if is_draft:
+                ApprovalHistory.objects.create(
+                    request=req,
+                    action='DRAFT_SAVED',
+                    performed_by=user,
+                    user_role=getattr(user, 'role', 'TEAM_LEAD') if user else 'TEAM_LEAD',
+                    previous_status='DRAFT',
+                    new_status='DRAFT',
+                    comments='Procurement request saved as draft.',
+                    approved_amount=req.requested_amount or req.existing_cost or 0,
+                    cost_center=getattr(req, 'cost_center', ''),
+                    budget_available=getattr(req, 'budget_available', True),
+                    vendor=getattr(req, 'vendor', '')
+                )
+            else:
+                ApprovalHistory.objects.create(
+                    request=req,
+                    action='CREATE',
+                    performed_by=user,
+                    user_role=getattr(user, 'role', 'TEAM_LEAD') if user else 'TEAM_LEAD',
+                    previous_status='DRAFT',
+                    new_status=initial_status,
+                    comments='Procurement request created by Team Lead and submitted for Manager review.',
+                    approved_amount=req.requested_amount or req.existing_cost or 0,
+                    cost_center=getattr(req, 'cost_center', ''),
+                    budget_available=getattr(req, 'budget_available', True),
+                    vendor=getattr(req, 'vendor', '')
+                )
+                from apps.notification_management.services import notify_stage_event
+                notify_stage_event('REQUEST_CREATED', purchase_request=req, actor=user)
 
     def get_object(self):
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
@@ -3058,9 +3172,8 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
                     Notification.objects.create(
                         user=pr.created_by,
                         purchase_request=pr,
-                        title="Payment Justification Verified",
+                        title=f"Payment Justification Verified | {pr.request_id}",
                         message=f"Manager {user.username} verified payment justification for '{pr.title}'. Awaiting your final acknowledgment.",
-                        notification_type="STATUS_CHANGE"
                     )
             except Exception:
                 pass

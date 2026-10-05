@@ -59,8 +59,13 @@ export const createTeamLeadRequest = async (payload: CreateRequestPayload & { is
     vendor: payload.vendor || payload.preferred_vendor || '',
     preferred_vendor: payload.preferred_vendor || payload.vendor || '',
   }
-  const response = await apiClient.post('/requests/', body)
-  return response.data
+  try {
+    const response = await apiClient.post('/team-lead/requests/', body)
+    return response.data
+  } catch {
+    const fallback = await apiClient.post('/requests/', body)
+    return fallback.data
+  }
 }
 
 export const saveDraftRequest = async (payload: CreateRequestPayload & { id?: string | number }) => {
@@ -74,8 +79,13 @@ export const saveDraftRequest = async (payload: CreateRequestPayload & { id?: st
     vendor: payload.vendor || payload.preferred_vendor || '',
     preferred_vendor: payload.preferred_vendor || payload.vendor || '',
   }
-  const response = await apiClient.post('/requests/', body)
-  return response.data
+  try {
+    const response = await apiClient.post('/team-lead/requests/', body)
+    return response.data
+  } catch {
+    const fallback = await apiClient.post('/requests/', body)
+    return fallback.data
+  }
 }
 
 export const submitDraftRequest = async (id: string | number, payload?: any) => {
@@ -89,8 +99,13 @@ export const submitDraftRequest = async (id: string | number, payload?: any) => 
 }
 
 export const deleteDraftRequest = async (id: string | number) => {
-  const response = await apiClient.delete(`/requests/${id}/`)
-  return response.data
+  try {
+    const response = await apiClient.delete(`/team-lead/requests/${id}/`)
+    return response.data
+  } catch {
+    const fallback = await apiClient.delete(`/requests/${id}/`)
+    return fallback.data
+  }
 }
 
 export const approveTeamLeadRequest = async (id: string | number, comments?: string) => {

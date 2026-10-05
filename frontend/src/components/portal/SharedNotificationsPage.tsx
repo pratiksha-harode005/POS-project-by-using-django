@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Bell, CheckCheck, Clock, ShieldAlert, ArrowRight, Settings, Check, X, Filter } from 'lucide-react'
 import { useLocation, useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { getNotifications, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
+import { getNotifications, getUnreadNotificationCount, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
+import { subscribeGlobalDataSync } from '../../utils/syncUtils'
 
 export interface NotificationItem {
   id: number
@@ -31,8 +32,10 @@ export const SharedNotificationsPage: React.FC = () => {
   const activeVendorId = routeVendorId || user?.vendor_id_code || (user?.role === 'VENDOR' ? user?.username : undefined) || 'VND-HW-001'
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [unreadTotal, setUnreadTotal] = useState(0)
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
   const [loading, setLoading] = useState(false)
+  const fetchInFlight = useRef(false)
 
   useEffect(() => {
     if (selectedNotificationId) {
@@ -47,6 +50,8 @@ export const SharedNotificationsPage: React.FC = () => {
   }, [selectedNotificationId, notifications.length])
 
   const fetchRealNotifications = useCallback(async () => {
+    if (fetchInFlight.current) return
+    fetchInFlight.current = true
     try {
       setLoading(true)
       let queryParams: { role?: string; user?: string; vendor?: string } = { role: currentRole }
@@ -57,7 +62,10 @@ export const SharedNotificationsPage: React.FC = () => {
         queryParams = { user: user.username, role: currentRole }
       }
 
-      const data: BackendNotification[] = await getNotifications(queryParams)
+      const [data, unreadCount] = await Promise.all([
+        getNotifications({ ...queryParams, page_size: 1000 }),
+        getUnreadNotificationCount(queryParams),
+      ])
       const mapped: NotificationItem[] = data.map((n) => {
         const readStatus = n.is_read !== undefined ? Boolean(n.is_read) : Boolean(n.isRead)
         const reqId = n.request_id || n.requestId || (n.purchase_request ? `REQ-${n.purchase_request}` : undefined)
@@ -74,30 +82,27 @@ export const SharedNotificationsPage: React.FC = () => {
         }
       })
       setNotifications(mapped)
+      if (unreadCount !== null) setUnreadTotal(unreadCount)
     } catch (err) {
       console.error('Failed to load notifications page data:', err)
     } finally {
       setLoading(false)
+      fetchInFlight.current = false
     }
   }, [currentRole, isVendorPortal, activeVendorId, user?.username])
 
   useEffect(() => {
     fetchRealNotifications()
 
-    const handleBackendUpdate = () => {
-      fetchRealNotifications()
-    }
-
-    window.addEventListener('kss_backend_updated', handleBackendUpdate)
-    window.addEventListener('focus', handleBackendUpdate)
-    window.addEventListener('storage', handleBackendUpdate)
+    const unsubscribeSync = subscribeGlobalDataSync(fetchRealNotifications)
+    const handleFocus = () => fetchRealNotifications()
+    window.addEventListener('focus', handleFocus)
 
     const interval = setInterval(fetchRealNotifications, 3000)
 
     return () => {
-      window.removeEventListener('kss_backend_updated', handleBackendUpdate)
-      window.removeEventListener('focus', handleBackendUpdate)
-      window.removeEventListener('storage', handleBackendUpdate)
+      unsubscribeSync()
+      window.removeEventListener('focus', handleFocus)
       clearInterval(interval)
     }
   }, [fetchRealNotifications])
@@ -107,8 +112,10 @@ export const SharedNotificationsPage: React.FC = () => {
       setNotifications((prev) =>
         prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
       )
+      setUnreadTotal((prev) => Math.max(0, prev - 1))
       await markNotificationRead(item.id)
     }
+    if (currentRole.toUpperCase() === 'TEAM_LEAD') return
     const titleMsg = `${item.title} ${item.message}`.toLowerCase()
 
     if (isVendorPortal && activeVendorId) {
@@ -170,6 +177,7 @@ export const SharedNotificationsPage: React.FC = () => {
 
   const markAllRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    setUnreadTotal(0)
     if (isVendorPortal) {
       await markAllNotificationsRead({ vendor: activeVendorId })
     } else if (user?.username) {
@@ -180,7 +188,7 @@ export const SharedNotificationsPage: React.FC = () => {
   }
 
   const filtered = notifications.filter((n) => (filter === 'unread' ? !n.isRead : true))
-  const unreadCount = notifications.filter((n) => !n.isRead).length
+  const unreadCount = unreadTotal
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

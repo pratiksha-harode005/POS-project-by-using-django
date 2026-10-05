@@ -32,12 +32,12 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
             if user_param and role_param:
                 if str(user_param).isdigit():
-                    return qs.filter(Q(user_id=int(user_param)) | Q(user__role__iexact=str(role_param).strip())).distinct()
+                    return qs.filter(user_id=int(user_param), user__role__iexact=str(role_param).strip())
                 return qs.filter(
                     Q(user__username__iexact=str(user_param)) |
-                    Q(user__email__iexact=str(user_param)) |
-                    Q(user__role__iexact=str(role_param).strip())
-                ).distinct()
+                    Q(user__email__iexact=str(user_param)),
+                    user__role__iexact=str(role_param).strip()
+                )
 
             if user_param:
                 if str(user_param).isdigit():
@@ -76,7 +76,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
             # If user is authenticated
             if getattr(user, 'is_authenticated', False) and user.is_authenticated:
                 if role_param:
-                    return qs.filter(Q(user=user) | Q(user__role__iexact=str(role_param).strip())).distinct()
+                    return qs.filter(user=user, user__role__iexact=str(role_param).strip())
                 return qs.filter(user=user)
 
             if role_param:
@@ -84,7 +84,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
             return qs
         except Exception:
-            return Notification.objects.all().order_by('-created_at')
+            return Notification.objects.none()
 
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def unread_count(self, request):
@@ -101,12 +101,11 @@ class NotificationViewSet(viewsets.ModelViewSet):
         qs = Notification.objects.filter(is_read=False)
         if user_param and role_param:
             if str(user_param).isdigit():
-                qs = qs.filter(Q(user_id=int(user_param)) | Q(user__role__iexact=str(role_param).strip()))
+                qs = qs.filter(user_id=int(user_param), user__role__iexact=str(role_param).strip())
             else:
                 qs = qs.filter(
-                    Q(user__username__iexact=str(user_param)) |
-                    Q(user__email__iexact=str(user_param)) |
-                    Q(user__role__iexact=str(role_param).strip())
+                    Q(user__username__iexact=str(user_param)) | Q(user__email__iexact=str(user_param)),
+                    user__role__iexact=str(role_param).strip()
                 )
         elif user_param:
             if str(user_param).isdigit():
@@ -141,6 +140,8 @@ class NotificationViewSet(viewsets.ModelViewSet):
                     q_filter |= Q(user__username__icontains=first_tok)
 
             qs = qs.filter(q_filter)
+        elif role_param and getattr(user, 'is_authenticated', False) and user.is_authenticated:
+            qs = qs.filter(user=user, user__role__iexact=str(role_param).strip())
         elif role_param:
             qs = qs.filter(user__role__iexact=str(role_param).strip())
         elif getattr(user, 'is_authenticated', False) and user.is_authenticated:
