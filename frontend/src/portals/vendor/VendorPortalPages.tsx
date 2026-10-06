@@ -619,8 +619,17 @@ export function getStoredVendorInvoices(vendorId: string): any[] {
 export function saveStoredVendorInvoice(vendorId: string, invoice: any): any[] {
   const key = `kss_vendor_invoices_${vendorId}`
   const current = getStoredVendorInvoices(vendorId)
-  const updated = [invoice, ...current]
+  const normKey = (invoice.poRef || invoice.id || '').replace(/^(INV-|PO-|RFQ-|REQ-)/i, '').trim().toUpperCase()
+  const filtered = current.filter((i: any) => {
+    const k = (i.poRef || i.id || '').replace(/^(INV-|PO-|RFQ-|REQ-)/i, '').trim().toUpperCase()
+    return k !== normKey && i.id !== invoice.id
+  })
+  const updated = [invoice, ...filtered]
   localStorage.setItem(key, JSON.stringify(updated))
+  try {
+    window.dispatchEvent(new Event('kss_backend_updated'))
+    window.dispatchEvent(new Event('storage'))
+  } catch (e) {}
   return updated
 }
 
@@ -4182,18 +4191,48 @@ export const DeliveryConfirmationModal: React.FC<{
     saveVendorPOStatus(vendorId, po.id, 'Delivered')
     if (po.requestRef) saveVendorPOStatus(vendorId, po.requestRef, 'Delivered')
 
-    // Save to Invoices page
+    const cleanPoKey = (po.id || po.poNumber || po.requestRef || '').replace(/^(PO-|RFQ-|REQ-)/i, '').trim().toUpperCase()
+    const invId = `INV-${cleanPoKey}`
+    const resolvedCategory = po.category || (po.purchase_request_detail?.category) || 'IT Hardware'
+    const resolvedTitle = itemDescription || po.title || 'Procurement Order Equipment'
+    const isVer = po.document_verification_status === 'Documents Verified' || isInvoiceVerifiedInSystem(po.id) || isInvoiceVerifiedInSystem(invId) || isInvoiceVerifiedInSystem(po.requestRef)
+
+    // Save to Invoices page with complete structured details
     const newInvoice = {
-      id: `INV-${vendorId.replace(/[^A-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`,
-      poRef: po.id,
-      title: itemDescription || po.title || 'Goods Receipt & Invoice Document',
-      amount: totalAmount,
+      id: invId,
+      invoice_id: invId,
+      invoiceNumber: invId,
+      invoice_number: invId,
+      poRef: po.id || `PO-${cleanPoKey}`,
+      requestRef: po.requestRef || `REQ-${cleanPoKey}`,
+      rfqRef: po.rfqRef || `RFQ-${cleanPoKey}`,
+      title: resolvedTitle,
+      description: resolvedTitle,
+      productName: resolvedTitle,
+      category: resolvedCategory,
+      amount: totalAmount || po.amount || 0,
+      invoiceAmount: totalAmount || po.amount || 0,
+      baseAmount: baseNum || po.baseAmount || Math.round((totalAmount || po.amount || 0) / 1.18),
+      gstAmount: gstAmount || po.taxAmount || Math.round((totalAmount || po.amount || 0) - (baseNum || Math.round((totalAmount || po.amount || 0) / 1.18))),
+      gstPercent: gstNum || 18,
+      quantity: parsedQty,
+      productQty: `${parsedQty} Units`,
       invoiceDate: deliveryDate,
-      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      status: 'Submitted',
+      dueDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      status: isVer ? 'Verified & Approved' : 'Submitted',
+      verified: isVer,
+      vendorId: vendorId,
+      vendorName: vendorName,
       docName: finalDocName,
     }
     saveStoredVendorInvoice(vendorId, newInvoice)
+
+    // Also persist PO as Delivered into vendor stored POs
+    try {
+      const storedPOs = getStoredVendorPOs(vendorId)
+      const updatedPOs = [{ ...po, status: 'Delivered', deliveryDate }, ...storedPOs.filter((p: any) => p.id !== po.id && p.requestRef !== po.requestRef)]
+      localStorage.setItem(`kss_vendor_pos_${vendorId}`, JSON.stringify(updatedPOs))
+    } catch (e) {}
 
     // Save to Documents page
     const grnDocRecord = {
@@ -4206,6 +4245,20 @@ export const DeliveryConfirmationModal: React.FC<{
       fileSize: '1.4 MB',
       docName: finalDocName,
     }
+
+    // Submit invoice API in backend
+    submitInvoiceApi(po.id, {
+      invoice_id: invId,
+      invoice_number: invId,
+      amount: totalAmount || po.amount || 0,
+      tax_amount: gstAmount || po.taxAmount || 0,
+      description: resolvedTitle,
+      invoice_date: deliveryDate,
+      due_date: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      vendor: vendorId,
+      status: 'Submitted'
+    }).catch(() => null)
+
     createGoodsReceiptApi(po.id, {
       delivery_date: deliveryDate,
       delivery_location: (po as any).deliveryLocation || 'Main Office / Warehouse',
@@ -4602,6 +4655,47 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
     updateVendorPurchaseOrderApi(targetPoId, { status: 'Delivered' })
     if (poRef && poRef !== targetPoId) {
       updateVendorPurchaseOrderApi(poRef, { status: 'Delivered' })
+    }
+
+    // Ensure invoice is saved to Invoices page
+    const poObj = activeDeliveryModalPo || deduplicatedPos.find((p: any) => p.id === poRef || p.requestRef === poRef)
+    if (poObj) {
+      const cleanPoKey = (poObj.id || poObj.poNumber || poObj.requestRef || poRef).replace(/^(PO-|RFQ-|REQ-)/i, '').trim().toUpperCase()
+      const invId = `INV-${cleanPoKey}`
+      const isVer = poObj.document_verification_status === 'Documents Verified' || isInvoiceVerifiedInSystem(poRef) || isInvoiceVerifiedInSystem(invId) || isInvoiceVerifiedInSystem(poObj.requestRef)
+      const invAmt = poObj.amount || poObj.totalAmount || 44800
+      const invQty = poObj.quantity || 10
+      const invTitle = poObj.title || 'Procurement Order Equipment'
+      const invCat = poObj.category || 'IT Hardware'
+
+      const invRecord = {
+        id: invId,
+        invoice_id: invId,
+        invoiceNumber: invId,
+        invoice_number: invId,
+        poRef: poObj.id || `PO-${cleanPoKey}`,
+        requestRef: poObj.requestRef || `REQ-${cleanPoKey}`,
+        rfqRef: poObj.rfqRef || `RFQ-${cleanPoKey}`,
+        title: invTitle,
+        description: invTitle,
+        productName: invTitle,
+        category: invCat,
+        amount: invAmt,
+        invoiceAmount: invAmt,
+        baseAmount: Math.round(invAmt / 1.18),
+        gstAmount: Math.round(invAmt - Math.round(invAmt / 1.18)),
+        gstPercent: 18,
+        quantity: invQty,
+        productQty: `${invQty} Units`,
+        invoiceDate: deliveryDate,
+        dueDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+        status: isVer ? 'Verified & Approved' : 'Submitted',
+        verified: isVer,
+        vendorId: vendorId,
+        vendorName: vendor.name,
+        docName: docName || `Tax_Invoice_${cleanPoKey}.pdf`,
+      }
+      saveStoredVendorInvoice(vendorId, invRecord)
     }
 
     setToastMsg(`✅ Delivery confirmed & Invoice "${docName}" submitted for ${poRef}! Routed to Manager & Finance for payment release.`)
@@ -5922,14 +6016,17 @@ export const VendorInvoicesPage: React.FC = () => {
 
   const reloadInvoices = async () => {
     try {
-      const res = await getVendorInvoices({ vendor: vendorId })
+      const [res, posRes] = await Promise.all([
+        getVendorInvoices({ vendor: vendorId }).catch(() => []),
+        apiClient.get('/procurement/purchase-orders/', { params: { vendor: vendorId } }).catch(() => ({ data: [] }))
+      ])
       const rawList = Array.isArray(res) ? res : res?.results || []
       const dbInvoices = rawList.map((inv: any) => {
         const po = inv.purchase_order_detail || {}
         const pr = po.purchase_request_detail || {}
         const v = inv.vendor_detail || {}
         const totalAmt = parseFloat(inv.amount) || parseFloat(po.total_amount) || 94400
-        const isVer = inv.status === 'Approved' || inv.status === 'Matched' || inv.status === 'Verified' || inv.status === 'Verified & Approved'
+        const isVer = inv.status === 'Approved' || inv.status === 'Matched' || inv.status === 'Verified' || inv.status === 'Verified & Approved' || isInvoiceVerifiedInSystem(inv.id) || isInvoiceVerifiedInSystem(po.po_id)
 
         let cleanTitle = pr.title || po.title || inv.description || ''
         cleanTitle = cleanTitle.replace(/\s*tax\s*invoice/gi, '').trim()
@@ -5959,24 +6056,86 @@ export const VendorInvoicesPage: React.FC = () => {
           baseAmount: parseFloat(inv.amount) ? Math.round(parseFloat(inv.amount) / 1.18) : Math.round(totalAmt / 1.18),
           gstAmount: parseFloat(inv.tax_amount) || Math.round((totalAmt * 0.18) / 1.18),
           gstPercent: 18,
-          invoiceDate: inv.invoice_date,
-          dueDate: inv.due_date,
+          invoiceDate: inv.invoice_date || new Date().toISOString().split('T')[0],
+          dueDate: inv.due_date || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
           status: isVer ? 'Verified & Approved' : (inv.status === 'Pending Match' ? 'Submitted' : (inv.status || 'Submitted')),
           verified: isVer,
           vendorId: v.unique_vendor_id || vendorId,
           vendorName: v.name || vendor.name,
-          invoiceNumber: inv.invoice_number,
+          invoiceNumber: inv.invoice_number || inv.invoice_id || `INV-${inv.id}`,
         }
       })
 
-      const localData = getScopedVendorData(vendorId).invoices
-      const mergedMap = new Map<string, any>()
-      dbInvoices.forEach((i: any) => mergedMap.set(i.id, i))
-      localData.forEach((i: any) => {
-        if (!mergedMap.has(i.id)) {
-          mergedMap.set(i.id, i)
+      // Also derive invoice receipts for delivered backend purchase orders
+      const posData = Array.isArray(posRes.data) ? posRes.data : (posRes.data?.results || [])
+      const backendDeliveredInvoices: any[] = []
+      posData.forEach((p: any) => {
+        const poId = p.po_id || (typeof p.id === 'string' ? p.id : `PO-${p.id}`)
+        const isDelivered = p.status === 'Delivered' || p.status === 'Fulfilled' || isPODelivered(poId) || isPODelivered(p.purchase_request_detail?.request_id) || !!getStoredDeliveryDocs(poId, vendorId)
+        if (isDelivered) {
+          const cleanKey = poId.replace(/^(PO-|RFQ-|REQ-)/i, '').trim().toUpperCase()
+          const invId = `INV-${cleanKey}`
+          const totalAmt = parseFloat(p.total_amount) || parseFloat(p.amount) || 44800
+          const pr = p.purchase_request_detail || {}
+          const isVer = p.document_verification_status === 'Documents Verified' || p.document_verification?.is_both_verified || isInvoiceVerifiedInSystem(poId) || isInvoiceVerifiedInSystem(invId) || isInvoiceVerifiedInSystem(pr.request_id)
+          const cleanTitle = pr.title || p.title || 'Enterprise Equipment'
+          const delDoc = getStoredDeliveryDocs(poId, vendorId) || (pr.request_id ? getStoredDeliveryDocs(pr.request_id, vendorId) : null)
+
+          backendDeliveredInvoices.push({
+            id: invId,
+            invoice_id: invId,
+            invoiceNumber: invId,
+            invoice_number: invId,
+            poRef: poId,
+            requestRef: pr.request_id || `REQ-${cleanKey}`,
+            rfqRef: p.rfq || `RFQ-${cleanKey}`,
+            title: cleanTitle,
+            description: cleanTitle,
+            category: pr.category || p.category || 'IT Hardware',
+            amount: totalAmt,
+            quantity: pr.quantity || p.quantity || 10,
+            productQty: `${pr.quantity || p.quantity || 10} Units`,
+            baseAmount: Math.round(totalAmt / 1.18),
+            gstAmount: Math.round(totalAmt - Math.round(totalAmt / 1.18)),
+            gstPercent: 18,
+            invoiceDate: delDoc?.deliveryDate || (p.created_at || '').split('T')[0] || new Date().toISOString().split('T')[0],
+            dueDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+            status: isVer ? 'Verified & Approved' : 'Submitted',
+            verified: isVer,
+            vendorId: vendorId,
+            vendorName: vendor.name,
+            docName: delDoc?.invoiceDocName || `Tax_Invoice_${poId}.pdf`
+          })
         }
       })
+
+      const localStoredInvoices = getStoredVendorInvoices(vendorId)
+      const localScopedInvoices = getScopedVendorData(vendorId).invoices
+
+      const mergedMap = new Map<string, any>()
+      const mergeInvoice = (i: any) => {
+        if (!i) return
+        const normKey = (i.poRef || i.id || '').replace(/^(INV-|PO-|RFQ-|REQ-)/i, '').trim().toUpperCase()
+        if (!normKey) return
+        if (!mergedMap.has(normKey)) {
+          mergedMap.set(normKey, i)
+        } else {
+          const existing = mergedMap.get(normKey)
+          const isVer = existing.verified || i.verified || existing.status === 'Verified & Approved' || i.status === 'Verified & Approved' || isInvoiceVerifiedInSystem(normKey) || isInvoiceVerifiedInSystem(i.id) || isInvoiceVerifiedInSystem(i.poRef)
+          mergedMap.set(normKey, {
+            ...existing,
+            ...i,
+            status: isVer ? 'Verified & Approved' : (i.status || existing.status),
+            verified: isVer,
+          })
+        }
+      }
+
+      backendDeliveredInvoices.forEach(mergeInvoice)
+      localScopedInvoices.forEach(mergeInvoice)
+      localStoredInvoices.forEach(mergeInvoice)
+      dbInvoices.forEach(mergeInvoice)
+
       setLocalInvoices(Array.from(mergedMap.values()))
     } catch (e) {
       const data = getScopedVendorData(vendorId)
