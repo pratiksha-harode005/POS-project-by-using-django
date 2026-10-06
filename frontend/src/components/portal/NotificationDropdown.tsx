@@ -206,7 +206,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
         return '/portal/manager/vendor-quotations'
       }
       if (titleMsg.includes('po') || titleMsg.includes('order')) {
-        return '/portal/manager/purchase-orders'
+        return '/portal/manager/purchase-requests'
       }
       return '/portal/manager/notifications'
     }

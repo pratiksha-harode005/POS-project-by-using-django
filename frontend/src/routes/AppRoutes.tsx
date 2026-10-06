@@ -42,7 +42,6 @@ import { TotalRequestsPage } from '../portals/manager/TotalRequestsPage'
 import { RaiseTicketPage } from '../portals/manager/RaiseTicketPage'
 import { MyOrdersPage } from '../portals/manager/MyOrdersPage'
 import { ReceivedReportsPage } from '../portals/manager/ReceivedReportsPage'
-import { ManagerPurchaseOrdersPage } from '../portals/manager/ManagerPurchaseOrdersPage'
 import { ManagerPurchaseRequestsPage } from '../portals/manager/ManagerPurchaseRequestsPage'
 
 // Finance Portal Pages
@@ -160,7 +159,7 @@ function ManagerRoutes() {
       <Route path="rejected-requests" element={<PendingApprovalsPage initialTab="REJECTED" />} />
       <Route path="finance-review" element={<FinanceReviewPage />} />
       <Route path="purchase-requests" element={<ManagerPurchaseRequestsPage />} />
-      <Route path="purchase-orders" element={<ManagerPurchaseRequestsPage />} />
+      <Route path="purchase-orders" element={<Navigate to="/portal/manager/purchase-requests" replace />} />
       <Route path="total-requests" element={<TotalRequestsPage />} />
       <Route path="raise-ticket" element={<RaiseTicketPage />} />
       {/* Backward compat redirect */}

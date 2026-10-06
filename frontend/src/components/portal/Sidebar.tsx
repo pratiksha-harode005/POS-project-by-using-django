@@ -42,7 +42,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
       return [
         { label: 'Dashboard', path: `${basePath}/dashboard`, icon: LayoutDashboard },
         { label: 'Purchase Requests', path: `${basePath}/purchase-requests`, icon: Layers },
-        { label: 'Purchase Orders', path: `${basePath}/purchase-orders`, icon: Package },
         { label: 'Manager Approval', path: `${basePath}/pending-approvals`, icon: CheckSquare },
         { label: 'Finance Review', path: `${basePath}/finance-review`, icon: Landmark },
         { label: 'Raise Ticket', path: `${basePath}/raise-ticket`, icon: Ticket },

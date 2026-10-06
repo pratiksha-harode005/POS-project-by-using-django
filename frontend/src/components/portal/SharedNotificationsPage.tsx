@@ -154,7 +154,7 @@ export const SharedNotificationsPage: React.FC = () => {
       } else if (titleMsg.includes('rfq') || titleMsg.includes('quotation')) {
         navigate('/portal/manager/vendor-quotations')
       } else if (titleMsg.includes('po') || titleMsg.includes('order')) {
-        navigate('/portal/manager/purchase-orders')
+        navigate('/portal/manager/purchase-requests')
       }
     } else if (activeRole === 'ADMIN') {
       if (titleMsg.includes('recommend') || titleMsg.includes('request') || titleMsg.includes('approval')) {
