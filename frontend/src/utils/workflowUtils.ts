@@ -303,14 +303,33 @@ function buildDynamicStages(isSoftware: boolean, hadFinance: boolean, hadAdmin: 
 }
 
 const HW_STAGE_NAMES: Record<number, string> = {
-  0: 'Create Request', 1: 'Manager Approval', 2: 'Finance Approval',
-  3: 'Admin Approval', 4: 'RFQ Sent', 5: 'Vendor Quotes Received',
-  6: 'Product Order', 7: 'Delivery', 8: 'Verification and Order Complete', 9: 'Payment',
+  0: 'Create Request',
+  1: 'Create Request',
+  2: 'Manager Approval',
+  3: 'Finance Approval',
+  4: 'Admin Approval',
+  5: 'RFQ Sent',
+  6: 'Vendor Quotes Received',
+  7: 'Product Order',
+  8: 'Delivery',
+  9: 'Verification and Order Complete',
+  10: 'Payment',
 }
 
 const SW_STAGE_NAMES: Record<number, string> = {
-  0: 'Create Request', 1: 'Manager Approval', 2: 'Finance Approval',
-  3: 'Admin Approval', 4: 'Verification and Order Complete', 5: 'Payment',
+  0: 'Request Created',
+  1: 'Request Created',
+  2: 'Manager Review',
+  3: 'Recommended to Finance',
+  4: 'Finance Review',
+  5: 'Recommended to Admin',
+  6: 'Admin Review',
+  7: 'Admin Approved / Final Approval',
+  8: 'Payment Processed',
+  9: 'Payment Processed',
+  10: 'Payment Justification Submitted',
+  11: 'Manager Verified',
+  12: 'Request Completed',
 }
 
 const FULL_ORDER = [
@@ -513,9 +532,6 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     }
   } else {
     dynamicStages = [...HARDWARE_STAGES]
-    if (!wentToAdmin) {
-      dynamicStages = dynamicStages.filter((s) => s !== 'Admin Approval')
-    }
   }
 
   let stageIndex = 0
