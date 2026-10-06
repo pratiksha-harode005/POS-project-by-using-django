@@ -324,8 +324,9 @@ export const FinanceRaiseTicketPage: React.FC = () => {
   // Validate UTR / reference and dispatch payment
   const handleConfirmAndPay = () => {
     if (payMethod === 'bank') {
-      if (!utrRef.trim() || utrRef.trim().length < 6 || utrRef.trim().length > 22) {
-        setUtrError('Enter a valid 6–22 character UTR / NEFT / RTGS reference.')
+      const isBankUtrValid = /^[A-Za-z]{4}[0-9]{11}$/.test(utrRef.trim())
+      if (!isBankUtrValid) {
+        setUtrError('Invalid UTR format. Must be exactly 4 letters (A–Z) followed by 11 digits (0–9), e.g., UTRB12345678901 (15 characters).')
         return
       }
     } else if (payMethod === 'upi') {
@@ -342,7 +343,9 @@ export const FinanceRaiseTicketPage: React.FC = () => {
     const res = makePayment(ticket.requestId, ticket.id, {
       amount,
       paymentMethod: methodLabel,
-      productId: product?.id
+      productId: product?.id,
+      transactionRef: utrRef.trim(),
+      referenceNumber: utrRef.trim()
     })
 
     setPaymentResult({
@@ -1050,13 +1053,15 @@ export const FinanceRaiseTicketPage: React.FC = () => {
           const needsRef = payMethod === 'bank' || payMethod === 'upi'
           const refLabel = payMethod === 'bank' ? 'UTR / Bank Reference Number' : 'UPI Transaction Reference'
           const refPlaceholder = payMethod === 'bank'
-            ? 'e.g., UTR202610010091 (16 or 22 chars)'
+            ? 'e.g., UTRB12345678901 (4 letters + 11 digits)'
             : 'e.g., UPI12345678901234'
           const refHint = payMethod === 'bank'
-            ? 'Enter the 6–22 character alphanumeric reference provided by NEFT/RTGS/IMPS gateway (Max 22).'
+            ? 'Format: 4 letters (A–Z) followed by 11 digits (0–9) — exactly 15 characters.'
             : 'Enter the UPI Transaction ID / Reference from your payment app.'
 
-          const canPay = !needsRef || (utrRef.trim().length >= 6 && utrRef.trim().length <= 22)
+          const isBankUtrValid = /^[A-Za-z]{4}[0-9]{11}$/.test(utrRef.trim())
+          const isUpiValid = utrRef.trim().length >= 6 && utrRef.trim().length <= 22
+          const canPay = !needsRef || (payMethod === 'bank' ? isBankUtrValid : isUpiValid)
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -1142,17 +1147,42 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                         <label className="text-xs font-bold text-slate-800">
                           {refLabel} <span className="text-red-500">*</span>
                         </label>
-                        <span className="text-[10px] text-slate-400 font-mono">{utrRef.length}/22 Characters</span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {utrRef.length}/{payMethod === 'bank' ? 15 : 22} Characters
+                        </span>
                       </div>
                       <input
                         type="text"
-                        maxLength={22}
+                        maxLength={payMethod === 'bank' ? 15 : 22}
                         value={utrRef}
-                        onChange={(e) => { setUtrRef(e.target.value.replace(/[^A-Za-z0-9]/g, '')); setUtrError('') }}
+                        onChange={(e) => {
+                          const val = payMethod === 'bank'
+                            ? e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 15)
+                            : e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 22)
+                          setUtrRef(val)
+                          if (payMethod === 'bank') {
+                            if (val.length === 15 && !/^[A-Z]{4}[0-9]{11}$/.test(val)) {
+                              setUtrError('Invalid UTR format. Must be exactly 4 letters (A–Z) followed by 11 digits (0–9), e.g., UTRB12345678901.')
+                            } else {
+                              setUtrError('')
+                            }
+                          } else {
+                            setUtrError('')
+                          }
+                        }}
+                        onBlur={() => {
+                          if (payMethod === 'bank' && utrRef.trim().length > 0) {
+                            if (!/^[A-Z]{4}[0-9]{11}$/.test(utrRef.trim())) {
+                              setUtrError('Invalid UTR format. Must be exactly 4 letters (A–Z) followed by 11 digits (0–9), e.g., UTRB12345678901 (15 characters).')
+                            } else {
+                              setUtrError('')
+                            }
+                          }
+                        }}
                         placeholder={refPlaceholder}
                         className={`w-full px-4 py-2.5 rounded-xl border text-xs font-mono focus:outline-none focus:ring-2 transition-all ${
                           utrError
-                            ? 'border-red-400 focus:ring-red-200 bg-red-50'
+                            ? 'border-red-400 focus:ring-red-200 bg-red-50 text-red-900'
                             : 'border-slate-200 focus:ring-indigo-200 focus:border-indigo-400 bg-slate-50'
                         }`}
                       />
