@@ -967,21 +967,24 @@ class DocumentViewSet(viewsets.ViewSet):
         if not pk:
             return Response({'error': 'Missing ID'}, status=status.HTTP_400_BAD_REQUEST)
         pk_str = str(pk).strip()
-        clean = pk_str.replace('DOC-GRN-', '').replace('DOC-PO-', '').replace('DOC-INV-', '').replace('DOC-REG-', '').replace('DOC-GST-', '').replace('DOC-REC-', '').replace('DOC-', '').replace('GRN-', '').replace('PO-', '').replace('REC-', '').replace('INV-', '').strip()
+        clean = pk_str.replace('DOC-GRN-', '').replace('DOC-PO-', '').replace('DOC-INV-', '').replace('DOC-REG-', '').replace('DOC-GST-', '').replace('DOC-REC-', '').replace('DOC-', '').replace('GRN-', '').replace('REC-', '').replace('INV-', '').strip()
         
-        # Delete matching Goods Receipts
+        if not clean or len(clean) < 3:
+            return Response({'error': 'Invalid ID'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Delete ONLY the exact Goods Receipt
         GoodsReceipt.objects.filter(
-            Q(receipt_id__icontains=clean) |
-            Q(receipt_id__icontains=pk_str) |
-            Q(purchase_order__po_id__icontains=clean) |
-            Q(purchase_order__po_id__icontains=pk_str)
+            Q(receipt_id__iexact=pk_str) |
+            Q(receipt_id__iexact=clean) |
+            Q(receipt_id__iexact=f"REC-{clean}")
         ).delete()
         
-        # Delete matching Invoices
+        # Delete ONLY the exact Invoice
         Invoice.objects.filter(
-            Q(invoice_number__icontains=clean) |
-            Q(invoice_id__icontains=clean) |
-            Q(purchase_order__po_id__icontains=clean)
+            Q(invoice_number__iexact=pk_str) |
+            Q(invoice_number__iexact=clean) |
+            Q(invoice_id__iexact=pk_str) |
+            Q(invoice_id__iexact=clean)
         ).delete()
         
         return Response({'success': True, 'deleted': pk}, status=status.HTTP_200_OK)

@@ -211,68 +211,51 @@ export function sortVendorDocuments(docs: any[]): any[] {
   })
 }
 
+const INVALID_DELETE_WORDS = new Set([
+  'RECEIPT', 'GOODS', 'NOTE', 'OFFICIAL', 'COMPLIANCE', 'CERTIFICATE',
+  'REGISTRATION', 'TAX', 'COMMERCIAL', 'INVOICE', 'PURCHASE', 'ORDER',
+  'HARDWARE', 'SOFTWARE', 'VENDOR', 'ENTERPRISE', 'WORKSTATIONS',
+  'NULL', 'UNDEFINED', 'OBJECT', 'TRUE', 'FALSE'
+])
+
 export function extractDocKeys(docOrId: any): string[] {
   if (!docOrId) return []
   const keys = new Set<string>()
-  
-  const addKeyVariants = (val: string) => {
-    if (!val || typeof val !== 'string') return
-    const str = val.trim()
-    if (!str) return
+
+  const addId = (idVal: string) => {
+    if (!idVal || typeof idVal !== 'string') return
+    const str = idVal.trim()
+    if (!str || str.length < 2) return
+    const upper = str.toUpperCase()
+    if (INVALID_DELETE_WORDS.has(upper)) return
+
     keys.add(str)
-    keys.add(str.toUpperCase())
-    
-    // Strip prefixes
-    const clean = str.replace(/^(DOC-GRN-|DOC-INV-|DOC-PO-|DOC-REG-|DOC-GST-|DOC-QUO-|DOC-REC-|DOC-|GRN-|REC-|PO-|RFQ-|REQ-|INV-)+/i, '').trim()
-    if (clean) {
-      keys.add(clean)
-      keys.add(clean.toUpperCase())
-      keys.add(`DOC-GRN-${clean}`)
-      keys.add(`DOC-GRN-${clean.toUpperCase()}`)
-      keys.add(`DOC-GRN-REC-${clean.toUpperCase()}`)
-      keys.add(`DOC-${clean}`)
-      keys.add(`DOC-${clean.toUpperCase()}`)
-      keys.add(`GRN-${clean}`)
-      keys.add(`GRN-${clean.toUpperCase()}`)
-      keys.add(`REC-${clean}`)
-      keys.add(`REC-${clean.toUpperCase()}`)
-      keys.add(`PO-${clean}`)
-      keys.add(`PO-${clean.toUpperCase()}`)
-      keys.add(`DOC-PO-${clean.toUpperCase()}`)
-      keys.add(`DOC-INV-${clean.toUpperCase()}`)
-      keys.add(`INV-${clean.toUpperCase()}`)
-    }
-    
-    const hexMatches = str.match(/[A-Za-z0-9-]{6,}/g)
-    if (hexMatches) {
-      hexMatches.forEach(t => {
-        const upperT = t.toUpperCase()
-        const cleanT = upperT.replace(/^(DOC-GRN-|DOC-INV-|DOC-PO-|DOC-|GRN-|REC-|PO-|RFQ-|REQ-|INV-)+/i, '')
-        keys.add(upperT)
-        if (cleanT) {
-          keys.add(cleanT)
-          keys.add(`DOC-GRN-${cleanT}`)
-          keys.add(`DOC-GRN-REC-${cleanT}`)
-          keys.add(`REC-${cleanT}`)
-          keys.add(`PO-${cleanT}`)
-        }
-      })
+    keys.add(upper)
+
+    // Match exact code from structured IDs like DOC-GRN-REC-566A7797, DOC-GRN-566A7797, DOC-PO-123
+    const match = str.match(/^(DOC-GRN-REC-|DOC-GRN-|DOC-INV-|DOC-PO-|DOC-REG-|DOC-GST-|DOC-QUO-|DOC-REC-|DOC-|GRN-|REC-|PO-|INV-)(.+)$/i)
+    if (match && match[2]) {
+      const coreCode = match[2].trim().toUpperCase()
+      if (coreCode.length >= 3 && !INVALID_DELETE_WORDS.has(coreCode)) {
+        keys.add(coreCode)
+        keys.add(`DOC-GRN-${coreCode}`)
+        keys.add(`DOC-GRN-REC-${coreCode}`)
+        keys.add(`DOC-${coreCode}`)
+        keys.add(`GRN-${coreCode}`)
+        keys.add(`REC-${coreCode}`)
+      }
     }
   }
 
   if (typeof docOrId === 'string') {
-    addKeyVariants(docOrId)
+    addId(docOrId)
   } else if (typeof docOrId === 'object') {
-    if (docOrId.id) addKeyVariants(docOrId.id)
-    if (docOrId.name) addKeyVariants(docOrId.name)
-    if (docOrId.grnDocNumber) addKeyVariants(docOrId.grnDocNumber)
-    if (docOrId.receiptNumber) addKeyVariants(docOrId.receiptNumber)
-    if (docOrId.poRef) addKeyVariants(docOrId.poRef)
-    if (docOrId.rfqRef) addKeyVariants(docOrId.rfqRef)
-    if (docOrId.requestRef) addKeyVariants(docOrId.requestRef)
-    if (docOrId.rawId) addKeyVariants(String(docOrId.rawId))
+    if (docOrId.id) addId(docOrId.id)
+    if (docOrId.receiptNumber) addId(docOrId.receiptNumber)
+    if (docOrId.grnDocNumber) addId(docOrId.grnDocNumber)
+    if (docOrId.rawId) addId(String(docOrId.rawId))
   }
-  
+
   return Array.from(keys)
 }
 
@@ -288,7 +271,7 @@ export function getDeletedDocIds(vendorId: string): Set<string> {
   const key = `kss_vendor_deleted_docs_${vendorId}`
   const globalKey = `kss_vendor_deleted_documents`
   const result = new Set<string>()
-  
+
   const parseKey = (storageKey: string) => {
     const saved = localStorage.getItem(storageKey)
     if (saved) {
@@ -297,15 +280,19 @@ export function getDeletedDocIds(vendorId: string): Set<string> {
         if (Array.isArray(arr)) {
           arr.forEach(item => {
             if (item) {
-              result.add(String(item))
-              result.add(String(item).toUpperCase())
+              const str = String(item).trim()
+              const upper = str.toUpperCase()
+              if (str.length >= 3 && !INVALID_DELETE_WORDS.has(upper)) {
+                result.add(str)
+                result.add(upper)
+              }
             }
           })
         }
       } catch (e) {}
     }
   }
-  
+
   parseKey(key)
   parseKey(globalKey)
   return result
@@ -315,14 +302,16 @@ export function addDeletedDocId(vendorId: string, docOrId: any): Set<string> {
   const key = `kss_vendor_deleted_docs_${vendorId}`
   const globalKey = `kss_vendor_deleted_documents`
   const current = getDeletedDocIds(vendorId)
-  
+
   const extracted = extractDocKeys(docOrId)
   extracted.forEach(k => {
-    current.add(k)
-    current.add(k.toUpperCase())
+    if (!INVALID_DELETE_WORDS.has(k.toUpperCase())) {
+      current.add(k)
+      current.add(k.toUpperCase())
+    }
   })
-  
-  const arr = Array.from(current)
+
+  const arr = Array.from(current).filter(k => !INVALID_DELETE_WORDS.has(k.toUpperCase()))
   localStorage.setItem(key, JSON.stringify(arr))
   localStorage.setItem(globalKey, JSON.stringify(arr))
   return current
@@ -330,6 +319,16 @@ export function addDeletedDocId(vendorId: string, docOrId: any): Set<string> {
 
 export function isDocDeleted(deletedSet: Set<string>, doc: any): boolean {
   if (!doc) return true
+  if (doc.id && !INVALID_DELETE_WORDS.has(doc.id.toUpperCase())) {
+    if (deletedSet.has(doc.id) || deletedSet.has(doc.id.toUpperCase())) return true
+  }
+  if (doc.receiptNumber && !INVALID_DELETE_WORDS.has(doc.receiptNumber.toUpperCase())) {
+    if (deletedSet.has(doc.receiptNumber) || deletedSet.has(doc.receiptNumber.toUpperCase())) return true
+  }
+  if (doc.grnDocNumber && !INVALID_DELETE_WORDS.has(doc.grnDocNumber.toUpperCase())) {
+    if (deletedSet.has(doc.grnDocNumber) || deletedSet.has(doc.grnDocNumber.toUpperCase())) return true
+  }
+
   const keys = extractDocKeys(doc)
   for (const k of keys) {
     if (deletedSet.has(k) || deletedSet.has(k.toUpperCase())) return true
@@ -343,7 +342,7 @@ export function deleteStoredVendorDocument(vendorId: string, docOrId: any): any[
   const current = getStoredVendorDocuments(vendorId)
   const updated = current.filter((d: any) => !isDocDeleted(deletedSet, d))
   localStorage.setItem(key, JSON.stringify(updated))
-  
+
   // Clean up receipts cache if matching
   const rcpKey = `kss_vendor_receipts_${vendorId}`
   try {
@@ -356,7 +355,7 @@ export function deleteStoredVendorDocument(vendorId: string, docOrId: any): any[
       }
     }
   } catch (e) {}
-  
+
   return updated
 }
 
@@ -7281,17 +7280,10 @@ export const VendorDocumentsPage: React.FC = () => {
 
     // Delete on backend API so it never returns on refresh
     try {
-      if (docId) {
-        await deleteVendorDocumentApi(docId)
-      }
-      if (docObj.receiptNumber && docObj.receiptNumber !== docId) {
+      if (docObj.receiptNumber) {
         await deleteVendorDocumentApi(docObj.receiptNumber)
-      }
-      if (docObj.poRef && docObj.poRef !== docId) {
-        await deleteVendorDocumentApi(docObj.poRef)
-      }
-      if (docObj.grnDocNumber && docObj.grnDocNumber !== docId) {
-        await deleteVendorDocumentApi(docObj.grnDocNumber)
+      } else if (docId) {
+        await deleteVendorDocumentApi(docId)
       }
     } catch (e) {
       console.warn('Backend delete document failed:', e)
