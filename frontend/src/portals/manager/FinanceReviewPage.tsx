@@ -112,15 +112,40 @@ export const FinanceReviewPage: React.FC = () => {
         r.paymentStatus === 'Paid' ||
         r.status === 'completed' ||
         r.currentStage === 9 ||
-        r.paymentTransactionRef
+        r.paymentTransactionRef ||
+        (r as any).paymentReference ||
+        (r as any).payment_reference ||
+        (r as any).extraFields?.payment_reference
       )
 
-      const utr = r.paymentTransactionRef || matchingPay?.transactionRef || matchingPay?.referenceNumber || (matchingPay as any)?.reference_number || (isPaid ? `UTR-${(r.paidDate || r.date || new Date().toISOString().split('T')[0]).replace(/-/g, '')}-${r.id.replace(/[^a-zA-Z0-9]/g, '')}` : undefined)
-      const payDate = r.paidDate || matchingPay?.paymentDate || (isPaid ? r.date : undefined)
-      const payAmount = matchingPay?.amount ?? r.amount
-      const vendorName = matchingPay?.vendor || r.vendor || 'Vendor Partner'
+      const utr =
+        (r as any).paymentReference ||
+        (r as any).payment_reference ||
+        (r as any).extraFields?.payment_reference ||
+        r.paymentTransactionRef ||
+        (r as any).transactionRef ||
+        matchingPay?.transactionRef ||
+        matchingPay?.referenceNumber ||
+        (matchingPay as any)?.reference_number ||
+        (isPaid ? `UTR-${(r.paidDate || r.date || new Date().toISOString().split('T')[0]).replace(/-/g, '')}-${r.id.replace(/[^a-zA-Z0-9]/g, '')}` : undefined)
+
+      const payDate =
+        r.paidDate ||
+        (r as any).payment_date ||
+        (r as any).extraFields?.payment_date ||
+        matchingPay?.paymentDate ||
+        (isPaid ? (r.date || new Date().toISOString().split('T')[0]) : undefined)
+
+      const payAmount = (r as any).paymentAmount || (matchingPay?.amount ?? r.amount)
+      const vendorName = (r as any).vendor || (r as any).preferred_vendor || (r as any).supplier_name || matchingPay?.vendor || 'Preferred Vendor'
       const poNum = matchingPay?.poNumber || r.poNumber || `PO-${r.id.replace(/^REQ-/, '')}`
-      const invNum = matchingPay?.invoiceId || r.invoiceDetails?.invoiceNumber || `INV-${r.id.replace(/^REQ-/, '')}`
+      const invNum = matchingPay?.invoiceId || r.invoiceDetails?.invoiceNumber || (r as any).invoiceNumber || `INV-${r.id.replace(/^REQ-/, '')}`
+      const payMethod =
+        (r as any).paymentMethod ||
+        (r as any).payment_method ||
+        (r as any).extraFields?.payment_method ||
+        matchingPay?.paymentMethod ||
+        'Online Bank Transfer'
 
       return {
         ...r,
@@ -131,7 +156,7 @@ export const FinanceReviewPage: React.FC = () => {
         effectiveVendor: vendorName,
         effectivePoNumber: poNum,
         effectiveInvoiceNumber: invNum,
-        effectivePaymentMethod: matchingPay?.paymentMethod || 'NEFT / RTGS Corporate Treasury',
+        effectivePaymentMethod: payMethod,
       }
     })
   }, [financeReview, payments])
@@ -454,11 +479,11 @@ export const FinanceReviewPage: React.FC = () => {
                     : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300'
                 }`}
               >
-                <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2 flex-wrap">
                       <UnreadBadge isUnread={isNew} />
-                      <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                      <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 font-mono">
                         {r.id}
                       </span>
                       {isSettled ? (
@@ -478,56 +503,66 @@ export const FinanceReviewPage: React.FC = () => {
                           {r.priority} Priority
                         </span>
                       )}
+                      {isReceipt && (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-purple-50 text-purple-700 border-purple-200 flex items-center gap-1">
+                          <FileText size={11} /> Payment Receipt Submitted
+                        </span>
+                      )}
                     </div>
+
                     <h2 className="text-base font-bold text-slate-900 mb-1">{r.title}</h2>
+                    
                     <div className="flex flex-wrap gap-4 text-xs text-slate-500">
                       <span>👤 Requester: <b className="text-slate-800">{r.requester}</b></span>
                       <span>🏢 Department: <b className="text-slate-800">{r.department}</b></span>
                       <span>📁 Category: <b className="text-slate-800">{r.category || 'General'}</b></span>
                       <span>📅 Submitted: {formatDate(r.date)}</span>
                     </div>
+
                     {r.justification && (
                       <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mt-3">
                         <b className="text-slate-900">Justification:</b> {r.justification}
                       </p>
                     )}
-                  </div>
-                  <h2 className="text-base font-bold text-slate-900 mb-1">{r.title}</h2>
-                  <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-                    <span>👤 Requester: <b className="text-slate-800">{r.requester}</b></span>
-                    <span>🏢 Department: <b className="text-slate-800">{r.department}</b></span>
-                    <span>📁 Category: <b className="text-slate-800">{r.category || 'General'}</b></span>
-                    <span>📅 Submitted: {r.date}</span>
+
                     {isReceipt && (
-                      <span className="text-purple-600 font-bold flex items-center gap-1">
-                        <FileText size={13} /> Payment Receipt Submitted
-                      </span>
+                      <div className="mt-3 bg-purple-50/70 border border-purple-200/80 p-3.5 rounded-xl text-xs space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-purple-900 font-bold text-xs pb-1 border-b border-purple-200/50">
+                          <FileText size={13} className="text-purple-600" />
+                          <span>Submitted Payment &amp; Settlement Details</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          <p><b className="text-purple-950">Payment Method:</b> <span className="text-purple-800 font-medium">{(r as any).paymentMethod || (r as any).extraFields?.payment_method || (r as any).payment_method || 'N/A'}</span></p>
+                          <p><b className="text-purple-950">Transaction Ref:</b> <span className="font-mono font-bold text-purple-900">{(r as any).paymentReference || (r as any).extraFields?.payment_reference || (r as any).payment_reference || 'N/A'}</span></p>
+                        </div>
+                        <p className="pt-1">
+                          <b className="text-purple-950">Payment Details / Notes:</b>{' '}
+                          <span className="text-purple-800">
+                            {typeof (r as any).extraFields?.payment_justification === 'string'
+                              ? (r as any).extraFields.payment_justification
+                              : ((r as any).extraFields?.payment_justification?.business_justification ||
+                                 (r as any).extraFields?.payment_justification?.proof_description ||
+                                 (r as any).payment_justification_detail?.business_purpose ||
+                                 (r as any).payment_justification_detail?.why_required ||
+                                 (r as any).payment_notes ||
+                                 'Receipt details provided.')}
+                          </span>
+                        </p>
+                      </div>
                     )}
                   </div>
-                  {r.justification && !isReceipt && (
-                    <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mt-3">
-                      <b className="text-slate-900">Justification:</b> {r.justification}
+
+                  <div className="sm:text-right flex sm:flex-col items-baseline sm:items-end justify-between sm:justify-start gap-1 flex-shrink-0 pt-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {isSettled ? 'Settled Value' : 'Authorized Value'}
+                    </span>
+                    <p className="text-xl font-black text-slate-900 font-mono">
+                      {fmt(r.effectivePayAmount || r.amount || 0)}
                     </p>
-                  )}
-                  {isReceipt && (
-                    <div className="mt-3 bg-purple-50 border border-purple-100 p-3 rounded-lg text-xs space-y-1.5">
-                      <p><b className="text-purple-900">Payment Method:</b> <span className="text-purple-700">{(r as any).paymentMethod || (r as any).extraFields?.payment_method || (r as any).payment_method || 'N/A'}</span></p>
-                      <p><b className="text-purple-900">Transaction Ref:</b> <span className="text-purple-700">{(r as any).paymentReference || (r as any).extraFields?.payment_reference || (r as any).payment_reference || 'N/A'}</span></p>
-                      <p>
-                        <b className="text-purple-900">Payment Details:</b>{' '}
-                        <span className="text-purple-700">
-                          {typeof (r as any).extraFields?.payment_justification === 'string'
-                            ? (r as any).extraFields.payment_justification
-                            : ((r as any).extraFields?.payment_justification?.business_justification ||
-                               (r as any).extraFields?.payment_justification?.proof_description ||
-                               (r as any).payment_justification_detail?.business_purpose ||
-                               (r as any).payment_justification_detail?.why_required ||
-                               (r as any).payment_notes ||
-                               'Receipt details provided.')}
-                        </span>
-                      </p>
-                    </div>
-                  )}
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      Est. Requisition Spend
+                    </span>
+                  </div>
                 </div>
 
                 {/* ── DEDICATED TREASURY PAYMENT SETTLEMENT BANNER ── */}
