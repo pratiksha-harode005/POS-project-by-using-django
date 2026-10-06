@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
 import { History, Search, Filter, Download, ArrowUpDown, ChevronLeft, ChevronRight, FileSpreadsheet, FileText } from 'lucide-react'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { useProcurement } from '../../context/ProcurementContext'
 import { formatDate } from '../../utils/formatDate'
 
@@ -88,7 +90,7 @@ export const RequestHistoryPage: React.FC = () => {
 
   // Export handlers
   const handleExportCSV = () => {
-    const headers = ['Request ID', 'Title', 'Category', 'Estimated Cost', 'Date', 'Status', 'Days in Stage']
+    const headers = ['Request ID', 'Title', 'Category', 'Estimated Cost (INR)', 'Date', 'Status', 'Days in Stage']
     const rows = sorted.map((r) => [
       r.id,
       `"${r.title.replace(/"/g, '""')}"`,
@@ -110,8 +112,108 @@ export const RequestHistoryPage: React.FC = () => {
   }
 
   const handleExportPDF = () => {
-    alert('PDF Export generated! (Formatted document download initiated)')
-    handleExportCSV() // Fallback plain text / CSV download
+    try {
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'pt',
+        format: 'a4',
+      })
+
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const margin = 36
+
+      // Header Brand Bar
+      doc.setFillColor(15, 23, 42) // #0f172a
+      doc.rect(0, 0, pageWidth, 56, 'F')
+      doc.setFillColor(37, 99, 235) // #2563eb
+      doc.rect(0, 56, pageWidth, 4, 'F')
+
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(13)
+      doc.text('KSS PROCUREMENT OS — REQUEST HISTORY & AUDIT LOG', margin, 26)
+
+      const totalVal = sorted.reduce((sum, r) => sum + (Number(r.estimatedCost) || 0), 0)
+      const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(203, 213, 225)
+      doc.text(`TOTAL RECORDS: ${sorted.length}  |  TOTAL VALUE: INR ${totalVal.toLocaleString('en-IN')}`, margin, 42)
+
+      doc.setFont('helvetica', 'bold')
+      doc.text(`GENERATED: ${dateStr} ${timeStr}`, pageWidth - margin, 26, { align: 'right' })
+      doc.setFont('helvetica', 'normal')
+      doc.text('PORTAL: TEAM LEAD', pageWidth - margin, 42, { align: 'right' })
+
+      // Data Rows for AutoTable
+      const tableHeaders = [['REQ ID', 'TITLE / SPECIFICATION', 'CATEGORY', 'EST. COST (INR)', 'SUBMITTED DATE', 'DAYS IN STAGE', 'STATUS']]
+      const tableData = sorted.map((r) => [
+        r.id || '—',
+        r.title || '—',
+        r.category || 'General',
+        `INR ${(Number(r.estimatedCost) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        formatDate(r.date) || r.date || '—',
+        computeDaysInStage(r.date),
+        (r.status || 'Pending').toUpperCase(),
+      ])
+
+      autoTable(doc, {
+        head: tableHeaders,
+        body: tableData,
+        startY: 75,
+        margin: { left: margin, right: margin, bottom: 40 },
+        theme: 'striped',
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 6,
+          textColor: [30, 41, 59],
+          overflow: 'linebreak',
+        },
+        headStyles: {
+          fillColor: [30, 41, 59],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 9,
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+        columnStyles: {
+          0: { cellWidth: 90, fontStyle: 'bold', textColor: [37, 99, 235] },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 115 },
+          3: { cellWidth: 100, halign: 'right', fontStyle: 'bold' },
+          4: { cellWidth: 85, halign: 'center' },
+          5: { cellWidth: 75, halign: 'center' },
+          6: { cellWidth: 85, halign: 'center', fontStyle: 'bold' },
+        },
+        didDrawPage: () => {
+          const pageCount = (doc.internal as any).getNumberOfPages()
+          const currentPageNum = (doc as any).internal.getCurrentPageInfo().pageNumber
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(7.5)
+          doc.setTextColor(148, 163, 184)
+          doc.text(
+            'KSS Procurement OS — Official Request Audit Log  |  Confidential & Proprietary',
+            margin,
+            doc.internal.pageSize.getHeight() - 18
+          )
+          doc.text(
+            `Page ${currentPageNum} of ${pageCount}`,
+            pageWidth - margin,
+            doc.internal.pageSize.getHeight() - 18,
+            { align: 'right' }
+          )
+        },
+      })
+
+      doc.save(`Request_History_Audit_Log_${new Date().toISOString().split('T')[0]}.pdf`)
+    } catch (err) {
+      console.error('Failed to generate Request History PDF:', err)
+      handleExportCSV()
+    }
   }
 
   return (
