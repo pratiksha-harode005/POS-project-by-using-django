@@ -395,7 +395,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
               Live Workflow Sync
             </span>
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-              {progression.workflowType === 'SOFTWARE' ? 'Software / Digital (6 Stages)' : 'Hardware Workflow (10 Stages)'}
+              {progression.workflowType === 'SOFTWARE' ? `Software Workflow (${stages.length} Stages)` : `Hardware Workflow (${stages.length} Stages)`}
             </span>
           </div>
         </div>

@@ -531,7 +531,8 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       dynamicStages = [...PATH_C_ADMIN_STAGES]
     }
   } else {
-    dynamicStages = [...HARDWARE_STAGES]
+    const { hadFinance, hadAdmin } = detectActualApprovalPath(req.approval_steps || [], req.history || [], req.currentStage)
+    dynamicStages = buildDynamicStages(false, hadFinance, hadAdmin)
   }
 
   let stageIndex = 0
@@ -619,62 +620,41 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     const foundIdx = dynamicStages.indexOf(currentStageName)
     stageIndex = foundIdx >= 0 ? foundIdx : 0
   } else {
-    // Hardware Stages
-    if (st === 'pending_arrival' || st === 'draft') {
+    // Hardware Stages based on real database state & artifacts
+    const { hadFinance, hadAdmin } = detectActualApprovalPath(req.approval_steps || [], req.history || [], req.currentStage)
+
+    if (st === 'pending_arrival' || st === 'draft' || st === 'created') {
       currentStageName = 'Create Request'
       currentlyWith = 'Team Lead / Requester'
     } else if (
       st === 'pending_approval' ||
       st === 'submitted' ||
       st === 'pending' ||
-      st === 'manager_review'
+      st === 'manager_review' ||
+      st === 'team_lead_submitted'
     ) {
       currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
     } else if (
-      st === 'finance_review' ||
-      st === 'sent_to_finance' ||
       st === 'recommended_to_finance' ||
       st === 'manager_recommended_to_finance' ||
+      st === 'finance_review' ||
+      st === 'finance_recommended' ||
+      st === 'sent_to_finance' ||
       st === 'finance_on_hold' ||
-      st === 'clarification_requested' ||
-      (st === 'approved' && req.currentStage === 2)
+      st === 'clarification_requested'
     ) {
       currentStageName = 'Finance Approval'
       currentlyWith = 'Finance — Mark Finance Officer'
-    } else if (st === 'approved' || st === 'rfq_sent') {
-      currentStageName = 'RFQ Sent'
-      currentlyWith = 'Sourcing Team (RFQ Sent)'
     } else if (
       st === 'recommended_to_admin' ||
       st === 'finance_recommended_to_admin' ||
+      st === 'admin_review' ||
+      st === 'admin_research' ||
       fst === 'recommended to admin'
     ) {
       currentStageName = 'Admin Approval'
       currentlyWith = 'Admin — Executive Authority'
-    } else if (st === 'quotes_received' || st === 'assigned_to_vendor' || st === 'vendor_assigned' || st === 'in_procurement') {
-      currentStageName = 'Vendor Quotes Received'
-      currentlyWith = 'Selected Vendor (Awaiting Acceptance)'
-    } else if (st === 'vendor_accepted') {
-      currentStageName = 'Delivery'
-      currentlyWith = 'Vendor Partner (Delivery in Progress)'
-    } else if (st === 'vendor_rejected') {
-      currentStageName = 'Vendor Quotes Received'
-      currentlyWith = 'Vendor Declined — Reassignment Required'
-    } else if (st === 'delivered' || st === 'delivery') {
-      currentStageName = 'Invoice'
-      currentlyWith = 'Accounts & Dock (Invoice & GRN Verification)'
-    } else if (st === 'invoiced' || st === 'invoice') {
-      currentStageName = 'Verification and Order Complete'
-      currentlyWith = 'Procurement Audit & Raise Ticket Verification'
-    } else if (
-      st === 'verified' ||
-      st === 'order_complete' ||
-      st === 'finance_approved' ||
-      st === 'product_order'
-    ) {
-      currentStageName = 'Delivery'
-      currentlyWith = 'Logistics & Receiving Dock'
     } else if (
       st === 'completed' ||
       st === 'payment' ||
@@ -685,20 +665,42 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     ) {
       currentStageName = 'Payment'
       currentlyWith = 'Finance Treasury & Disbursement'
+    } else if (areDocsVerified || st === 'verified' || st === 'order_complete' || st === 'invoiced' || st === 'invoice') {
+      currentStageName = 'Verification and Order Complete'
+      currentlyWith = 'Procurement Audit & Raise Ticket Verification'
+    } else if (hasGrn || st === 'delivered' || st === 'delivery') {
+      currentStageName = 'Delivery'
+      currentlyWith = 'Accounts & Dock (Invoice & GRN Verification)'
+    } else if (hasPo || st === 'product_order') {
+      currentStageName = 'Product Order'
+      currentlyWith = 'Logistics & Vendor (PO Dispatched)'
+    } else if (hasQuotes || st === 'quotes_received') {
+      currentStageName = 'Vendor Quotes Received'
+      currentlyWith = 'Selected Vendor (Awaiting Acceptance)'
+    } else if (hasRfq || st === 'rfq_sent' || st === 'in_procurement') {
+      currentStageName = 'RFQ Sent'
+      currentlyWith = 'Procurement Sourcing Desk'
+    } else if (
+      st === 'manager_approved' ||
+      st === 'finance_approved' ||
+      st === 'admin_approved' ||
+      st === 'approved'
+    ) {
+      if (hadAdmin || st === 'admin_approved') {
+        currentStageName = 'Admin Approval'
+      } else if (hadFinance || st === 'finance_approved') {
+        currentStageName = 'Finance Approval'
+      } else {
+        currentStageName = 'Manager Approval'
+      }
+      currentlyWith = 'Procurement Sourcing Desk — Approved & Ready for RFQ'
     } else {
       currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
     }
 
-    if (typeof req.currentStage === 'number' && !isNaN(req.currentStage)) {
-      const effectiveStageNum = (req.currentStage === 0 && st !== 'draft' && st !== 'created' && st !== 'pending_arrival') ? 1 : req.currentStage
-      stageIndex = mapBackendStageToIndex(effectiveStageNum, dynamicStages, false)
-      stageIndex = Math.min(Math.max(stageIndex, 0), dynamicStages.length - 1)
-      currentStageName = dynamicStages[stageIndex] || currentStageName
-    } else {
-      const foundIdx = dynamicStages.indexOf(currentStageName)
-      stageIndex = foundIdx >= 0 ? foundIdx : 0
-    }
+    const foundIdx = dynamicStages.indexOf(currentStageName)
+    stageIndex = foundIdx >= 0 ? foundIdx : 0
   }
 
   if (isCompleted) stageIndex = dynamicStages.length - 1
