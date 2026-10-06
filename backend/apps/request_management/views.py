@@ -230,12 +230,24 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(
                     models.Q(status='Recommended') |
                     models.Q(status__icontains='FINANCE') |
-                    models.Q(status__in=[PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE, PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN, PurchaseRequest.STATUS_FINANCE_REVIEW, PurchaseRequest.STATUS_APPROVED, PurchaseRequest.STATUS_ADMIN_APPROVED]) |
-                    models.Q(approval_steps__decision='RECOMMEND') |
+                    models.Q(status__in=[
+                        PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE,
+                        PurchaseRequest.STATUS_MANAGER_RECOMMENDED_TO_FINANCE,
+                        PurchaseRequest.STATUS_FINANCE_RECOMMENDED,
+                        PurchaseRequest.STATUS_FINANCE_REVIEW,
+                        PurchaseRequest.STATUS_FINANCE_RESEARCH,
+                        PurchaseRequest.STATUS_COST_ESTIMATION,
+                        PurchaseRequest.STATUS_FINANCE_REPORT,
+                        PurchaseRequest.STATUS_FINANCE_APPROVED,
+                        PurchaseRequest.STATUS_PAYMENT_APPROVED,
+                        PurchaseRequest.STATUS_PAYMENT_PROCESSED,
+                        PurchaseRequest.STATUS_PAYMENT_COMPLETED,
+                        PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN,
+                    ]) |
+                    models.Q(approval_steps__decision__in=['RECOMMEND', 'RECOMMEND_FINANCE', 'FINANCE_APPROVE', 'RECOMMEND_ADMIN']) |
                     models.Q(approval_steps__role='FINANCE') |
                     models.Q(created_by__role='FINANCE') |
-                    models.Q(created_by=user) |
-                    models.Q(current_stage__gte=2)
+                    models.Q(created_by=user)
                 ).distinct()
 
         # Handle hardware/software filters cleanly
@@ -630,6 +642,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         prev_status = pr.status
         if act == 'APPROVE':
             is_admin_action = (role == 'ADMIN') or (pr.current_approval_level == PurchaseRequest.LEVEL_ADMIN) or (pr.status in [PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN, PurchaseRequest.STATUS_ADMIN_REVIEW, PurchaseRequest.STATUS_FINANCE_REPORT])
+            is_finance_action = (role == 'FINANCE') or (pr.current_approval_level == PurchaseRequest.LEVEL_FINANCE) or (pr.status in [PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE, PurchaseRequest.STATUS_FINANCE_REVIEW, PurchaseRequest.STATUS_FINANCE_RESEARCH, PurchaseRequest.STATUS_COST_ESTIMATION])
             if is_admin_action:
                 if not isinstance(pr.extra_fields, dict):
                     pr.extra_fields = {}
@@ -641,12 +654,22 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 pr.status = PurchaseRequest.STATUS_ADMIN_APPROVED if pr.is_software else PurchaseRequest.STATUS_APPROVED
                 pr.current_approval_level = PurchaseRequest.LEVEL_TEAM_LEAD if pr.is_software else PurchaseRequest.LEVEL_COMPLETED
                 pr.current_stage = 7 if pr.is_software else 4
+            elif is_finance_action:
+                if not isinstance(pr.extra_fields, dict):
+                    pr.extra_fields = {}
+                pr.extra_fields['final_approval_by'] = 'FINANCE'
+                pr.extra_fields['finance_approved'] = True
+                pr.extra_fields['finance_approved_at'] = timezone.now().isoformat()
+                pr.extra_fields['finance_status'] = 'Approved'
+                pr.finance_comment = notes
+                pr.status = PurchaseRequest.STATUS_FINANCE_APPROVED
+                pr.current_approval_level = PurchaseRequest.LEVEL_FINANCE
+                pr.current_stage = 5 if pr.is_software else 7
             elif pr.is_software or pr.flow_type == 'B':
                 extra = pr.extra_fields or {}
                 if 'payment_justification' in extra:
                     pr.status = PurchaseRequest.STATUS_PAYMENT_JUSTIFIED
                     pr.current_stage = 10
-                    # Stamp pj.verified_at so acknowledge can confirm manager verification
                     _pj = getattr(pr, 'payment_justification', None)
                     if _pj and not _pj.verified_at:
                         _pj.verified_by = actor
@@ -657,19 +680,22 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                     pr.current_stage = 8
                 else:
                     pr.status = PurchaseRequest.STATUS_MANAGER_APPROVED
-                    pr.current_stage = 7
-                pr.current_approval_level = PurchaseRequest.LEVEL_TEAM_LEAD
+                    pr.current_stage = 3
+                if not isinstance(pr.extra_fields, dict):
+                    pr.extra_fields = {}
+                pr.extra_fields['final_approval_by'] = 'MANAGER'
+                pr.extra_fields['manager_approved'] = True
+                pr.extra_fields['manager_approved_at'] = timezone.now().isoformat()
+                pr.current_approval_level = PurchaseRequest.LEVEL_MANAGER
             else:
-                pr.status = 'In Procurement'
-                if pr.current_stage <= 2:
-                    pr.current_stage = 4
-                elif pr.current_stage == 3:
-                    pr.current_stage = 4
-                else:
-                    pr.current_stage = min(pr.current_stage + 1, 9)
-                if pr.current_stage >= 9:
-                    pr.status = 'Completed'
-                pr.current_approval_level = PurchaseRequest.LEVEL_COMPLETED
+                pr.status = PurchaseRequest.STATUS_MANAGER_APPROVED
+                pr.current_stage = 3
+                pr.current_approval_level = PurchaseRequest.LEVEL_MANAGER
+                if not isinstance(pr.extra_fields, dict):
+                    pr.extra_fields = {}
+                pr.extra_fields['final_approval_by'] = 'MANAGER'
+                pr.extra_fields['manager_approved'] = True
+                pr.extra_fields['manager_approved_at'] = timezone.now().isoformat()
 
         elif act == 'REJECT':
             pr.status = 'Rejected'
@@ -2733,17 +2759,14 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
                 )
 
             prev_status = pr.status
-            if pr.is_software and pr.request_operation not in ['RENEWAL', 'UPGRADE']:
-                pr.status = PurchaseRequest.STATUS_MANAGER_APPROVED
-                pr.current_approval_level = PurchaseRequest.LEVEL_TEAM_LEAD
-                pr.current_stage = 3  # Stage 3: Manager Approval
-                if not isinstance(pr.extra_fields, dict):
-                    pr.extra_fields = {}
-                pr.extra_fields['final_approval_by'] = 'MANAGER'
-            else:
-                pr.status = PurchaseRequest.STATUS_FINANCE_REVIEW
-                pr.current_approval_level = PurchaseRequest.LEVEL_FINANCE
-                pr.current_stage = 6
+            pr.status = PurchaseRequest.STATUS_MANAGER_APPROVED
+            pr.current_approval_level = PurchaseRequest.LEVEL_MANAGER
+            pr.current_stage = 3  # Stage 3: Manager Approval
+            if not isinstance(pr.extra_fields, dict):
+                pr.extra_fields = {}
+            pr.extra_fields['final_approval_by'] = 'MANAGER'
+            pr.extra_fields['manager_approved'] = True
+            pr.extra_fields['manager_approved_at'] = timezone.now().isoformat()
 
             # Update commercial fields & amounts
             pr.approved_amount = approved_amount if approved_amount is not None else (pr.requested_amount or pr.total_estimated_cost or 0)
@@ -3261,10 +3284,6 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(status__iexact=status_param)
             return apply_request_type_filter(qs, self.request)
 
-        # For Finance and Admin users, return all requests by default so no request is inadvertently hidden
-        if user and getattr(user, 'role', None) in ['FINANCE', 'ADMIN']:
-            return apply_request_type_filter(qs, self.request)
-
         finance_lifecycle_statuses = [
             PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE,
             PurchaseRequest.STATUS_MANAGER_RECOMMENDED_TO_FINANCE,
@@ -3295,8 +3314,11 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
         ]
         filtered_qs = qs.filter(
             models.Q(status__in=finance_lifecycle_statuses) |
-            models.Q(current_approval_level__in=[PurchaseRequest.LEVEL_FINANCE, PurchaseRequest.LEVEL_ADMIN])
-        )
+            models.Q(current_approval_level=PurchaseRequest.LEVEL_FINANCE) |
+            models.Q(approval_steps__decision__in=['RECOMMEND', 'RECOMMEND_FINANCE', 'FINANCE_APPROVE', 'RECOMMEND_ADMIN']) |
+            models.Q(approval_steps__role='FINANCE') |
+            models.Q(created_by__role='FINANCE')
+        ).distinct()
         return apply_request_type_filter(filtered_qs, self.request)
 
     def get_object(self):
@@ -3479,12 +3501,14 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
             prev_status = pr.status
             new_status = PurchaseRequest.STATUS_FINANCE_APPROVED
             pr.status = new_status
-            pr.current_approval_level = PurchaseRequest.LEVEL_TEAM_LEAD if pr.is_software else PurchaseRequest.LEVEL_FINANCE
+            pr.current_approval_level = PurchaseRequest.LEVEL_FINANCE
             pr.current_stage = 5 if pr.is_software else 7
-            if pr.is_software:
-                if not isinstance(pr.extra_fields, dict):
-                    pr.extra_fields = {}
-                pr.extra_fields['final_approval_by'] = 'FINANCE'
+            if not isinstance(pr.extra_fields, dict):
+                pr.extra_fields = {}
+            pr.extra_fields['final_approval_by'] = 'FINANCE'
+            pr.extra_fields['finance_approved'] = True
+            pr.extra_fields['finance_approved_at'] = timezone.now().isoformat()
+            pr.extra_fields['finance_status'] = 'Approved'
 
             if approved_amount is not None:
                 pr.finance_approved_amount = approved_amount

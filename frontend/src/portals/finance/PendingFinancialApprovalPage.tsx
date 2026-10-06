@@ -74,18 +74,9 @@ export const PendingFinancialApprovalPage: React.FC = () => {
       ...pendingFinancialApprovals,
       ...approvedFinanceRequests,
       ...rejectedFinanceRequests,
-      ...allRequests.filter(r => 
-        r.financeStatus || 
-        r.status.startsWith('finance_') || 
-        r.status.startsWith('payment_') || 
-        r.status === 'approved' || 
-        r.status === 'recommended_to_admin' || 
-        r.status === 'completed' ||
-        ['FINANCE_APPROVED', 'ADMIN_APPROVED', 'PAYMENT_APPROVED', 'PAYMENT_PROCESSED', 'PAYMENT_JUSTIFICATION_SUBMITTED', 'PAYMENT_JUSTIFIED', 'PAYMENT_COMPLETED', 'COMPLETED', 'TEAM_LEAD_CONFIRMED', 'RECOMMENDED_TO_FINANCE', 'FINANCE_REVIEW'].includes((r as any).raw_status || '')
-      )
     ]
     return list.filter((item, idx, self) => idx === self.findIndex(t => t.id === item.id))
-  }, [pendingFinancialApprovals, approvedFinanceRequests, rejectedFinanceRequests, allRequests])
+  }, [pendingFinancialApprovals, approvedFinanceRequests, rejectedFinanceRequests])
 
   // Active pool matching the status filter
   const rawList = useMemo(() => {

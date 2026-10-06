@@ -131,29 +131,49 @@ export const AdminRequestsPage: React.FC = () => {
     setSearchParams({ status: filter.toLowerCase() })
   }
 
+  const isAdminRelevantRequest = (r: ProcurementRequest) => {
+    const raw = ((r as any).raw_status || r.status || '').toLowerCase()
+    const finSt = r.financeStatus || ''
+    const isEscalatedToAdmin =
+      r.status === 'recommended_to_admin' ||
+      raw === 'recommended_to_admin' ||
+      raw === 'finance_recommended_to_admin' ||
+      raw === 'admin_review' ||
+      finSt === 'Recommended to Admin' ||
+      Boolean((r as any).extra_fields?.finance_recommendation_reason)
+    const isAdminApproved =
+      r.status === 'admin_approved' ||
+      raw === 'admin_approved' ||
+      Boolean((r as any).extra_fields?.admin_approved) ||
+      (r as any).extra_fields?.final_approval_by === 'ADMIN' ||
+      r.approvalLevel === 'Admin Approved' ||
+      finSt === 'Admin Approved' ||
+      finSt === 'Admin Approved - Queued for Payment' ||
+      justApprovedIds.includes(r.id)
+    const isAdminRejectedOrReturned =
+      (r.status.includes('rejected') && (r.rejectedBy?.toLowerCase().includes('admin') || finSt.includes('Admin Rejected'))) ||
+      (r.status === 'clarification_requested' && finSt.includes('Admin'))
+    const isAdminCreated = (r.requester || '').toLowerCase().includes('admin') || (r as any).created_by_detail?.role === 'ADMIN'
+
+    return isEscalatedToAdmin || isAdminApproved || isAdminRejectedOrReturned || isAdminCreated
+  }
+
   // Segmented request lists - strictly single active stage for Admin
   const pendingRequests = useMemo(() => {
     return allRequests.filter(r => {
       const raw = ((r as any).raw_status || r.status || '').toLowerCase()
+      const finSt = r.financeStatus || ''
       const isReqApproved =
-        raw === 'approved' ||
         raw === 'admin_approved' ||
-        raw === 'finance_approved' ||
-        r.status === 'approved' ||
         (r.status as string) === 'admin_approved' ||
-        r.status === 'finance_approved' ||
-        r.status === 'payment_pending' ||
-        r.financeStatus === 'Approved' ||
         r.financeStatus === 'Admin Approved' ||
         r.financeStatus === 'Admin Approved - Queued for Payment' ||
-        (r as any).status_display === 'Admin Approved' ||
-        (r as any).status_display === 'Approved' ||
         Boolean((r as any).extra_fields?.admin_approved) ||
-        Boolean((r as any).extra_fields?.finance_status === 'Approved') ||
         Boolean((r as any).extra_fields?.final_approval_by === 'ADMIN') ||
         Boolean(r.approvalLevel === 'Admin Approved')
 
       if (isReqApproved && !justApprovedIds.includes(r.id)) return false
+      if (r.status.includes('rejected') || raw.includes('rejected') || finSt.includes('Rejected')) return false
 
       return (
         r.status === 'recommended_to_admin' ||
@@ -163,9 +183,6 @@ export const AdminRequestsPage: React.FC = () => {
         raw === 'admin_review' ||
         raw === 'admin_research' ||
         r.status === 'admin_research' ||
-        r.status === 'cost_estimation' ||
-        r.status === 'finance_report' ||
-        raw === 'finance_report' ||
         justApprovedIds.includes(r.id)
       )
     })
@@ -175,22 +192,12 @@ export const AdminRequestsPage: React.FC = () => {
     return allRequests.filter(r => {
       const raw = ((r as any).raw_status || r.status || '').toLowerCase()
       return (
-        raw === 'approved' ||
         raw === 'admin_approved' ||
-        raw === 'finance_approved' ||
-        r.status === 'approved' ||
         (r.status as string) === 'admin_approved' ||
-        r.status === 'finance_approved' ||
-        r.status === 'payment_pending' ||
-        r.status === 'completed' ||
-        r.financeStatus === 'Approved' ||
         r.financeStatus === 'Admin Approved' ||
         r.financeStatus === 'Admin Approved - Queued for Payment' ||
-        r.financeStatus === 'Completed' ||
         (r as any).status_display === 'Admin Approved' ||
-        (r as any).status_display === 'Approved' ||
         Boolean((r as any).extra_fields?.admin_approved) ||
-        Boolean((r as any).extra_fields?.finance_status === 'Approved') ||
         Boolean((r as any).extra_fields?.final_approval_by === 'ADMIN') ||
         Boolean(r.approvalLevel === 'Admin Approved') ||
         justApprovedIds.includes(r.id)
@@ -200,15 +207,32 @@ export const AdminRequestsPage: React.FC = () => {
 
   const rejectedRequests = useMemo(() => {
     return allRequests.filter(r => {
-      return r.status.includes('rejected') || Boolean(r.financeStatus?.includes('Rejected'))
+      return (
+        (r.status.includes('rejected') || Boolean(r.financeStatus?.includes('Rejected'))) &&
+        (r.rejectedBy?.toLowerCase().includes('admin') || Boolean(r.financeStatus?.includes('Admin Rejected')) || (r.status === 'rejected' && ((r as any).raw_status === 'ADMIN_REJECTED' || (r as any).extra_fields?.final_approval_by === 'ADMIN')))
+      )
     })
   }, [allRequests])
 
   const returnedRequests = useMemo(() => {
     return allRequests.filter(r => {
-      return r.status === 'clarification_requested' || Boolean(r.financeStatus?.includes('Returned'))
+      return (
+        (r.status === 'clarification_requested' || Boolean(r.financeStatus?.includes('Returned'))) &&
+        (Boolean(r.financeStatus?.includes('Admin')) || Boolean((r as any).extra_fields?.returned_by === 'ADMIN'))
+      )
     })
   }, [allRequests])
+
+  const allAdminRequests = useMemo(() => {
+    const list = [
+      ...pendingRequests,
+      ...approvedRequests,
+      ...rejectedRequests,
+      ...returnedRequests,
+      ...allRequests.filter(isAdminRelevantRequest),
+    ]
+    return list.filter((item, idx, self) => idx === self.findIndex(t => t.id === item.id))
+  }, [pendingRequests, approvedRequests, rejectedRequests, returnedRequests, allRequests, justApprovedIds])
 
   // Base list depending on statusFilter
   const baseList = useMemo(() => {
@@ -216,8 +240,8 @@ export const AdminRequestsPage: React.FC = () => {
     if (statusFilter === 'APPROVED') return approvedRequests
     if (statusFilter === 'REJECTED') return rejectedRequests
     if (statusFilter === 'RETURNED') return returnedRequests
-    return allRequests
-  }, [statusFilter, pendingRequests, approvedRequests, rejectedRequests, returnedRequests, allRequests])
+    return allAdminRequests
+  }, [statusFilter, pendingRequests, approvedRequests, rejectedRequests, returnedRequests, allAdminRequests])
 
   // Segmented filter counts
   const softwareCount = useMemo(() => baseList.filter(r => isSoftwareRequest(r)).length, [baseList])
@@ -385,7 +409,7 @@ export const AdminRequestsPage: React.FC = () => {
               {statusFilter === 'APPROVED' && `${approvedRequests.length} Approved Requests`}
               {statusFilter === 'REJECTED' && `${rejectedRequests.length} Disapproved Requests`}
               {statusFilter === 'RETURNED' && `${returnedRequests.length} Clarification Requests`}
-              {statusFilter === 'ALL' && `${allRequests.length} Total Enterprise Requisitions`}
+              {statusFilter === 'ALL' && `${allAdminRequests.length} Total Enterprise Requisitions`}
             </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1 flex items-center gap-2">
@@ -416,7 +440,7 @@ export const AdminRequestsPage: React.FC = () => {
                   : 'bg-slate-200 text-slate-700'
               }`}
             >
-              {allRequests.length}
+              {allAdminRequests.length}
             </span>
           </button>
 

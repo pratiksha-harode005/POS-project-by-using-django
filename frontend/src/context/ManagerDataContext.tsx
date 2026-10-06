@@ -643,44 +643,61 @@ export interface QuotationItem {
 
 export const isFinanceRelevantRequest = (r?: ProcurementRequest | null): boolean => {
   if (!r) return false
-  // If explicitly not escalated or is a Manager-only Stage 1 pending request, exclude from Finance
   if (r.financeStatus === 'Not Escalated') return false
-  const isFinanceUser = (r.requester || '').toLowerCase().includes('finance') || (r as any).created_by_detail?.role === 'FINANCE'
-  if (!isFinanceUser && (r.currentStage ?? 1) === 1 && !r.isForwardedToFinance && (r.status === 'pending_approval' || r.status === 'pending_arrival')) {
-    return false
-  }
-  const rawSt = String(r.status || '').toLowerCase()
-  if (rawSt === 'rejected' && !r.rejectedBy?.toLowerCase().includes('finance')) {
+
+  const st = (r.status || '').toLowerCase()
+  const rawSt = ((r as any).raw_status || '').toUpperCase()
+  const finSt = r.financeStatus || ''
+
+  // If request is purely Manager-approved and NOT recommended to Finance, it is NOT finance-relevant
+  if (
+    (st === 'manager_approved' || (st === 'approved' && !finSt && !r.isForwardedToFinance)) &&
+    !r.recommendationReason &&
+    !r.financeApprovedBy &&
+    !(r as any).extra_fields?.recommendation_reason &&
+    !(r as any).extra_fields?.finance_approved
+  ) {
     return false
   }
 
-  // A request belongs to Finance if it involves Finance, originated from Finance, or progressed beyond Stage 1:
+  const isFinanceUser = (r.requester || '').toLowerCase().includes('finance') || (r as any).created_by_detail?.role === 'FINANCE'
   if (isFinanceUser) return true
   if (r.isForwardedToFinance) return true
-  if (typeof r.currentStage === 'number' && r.currentStage >= 2) return true
+
   if (
-    r.status === 'finance_review' ||
-    r.status === 'recommended_to_finance' ||
-    r.status === 'sent_to_finance' ||
-    r.status === 'finance_approved' ||
-    r.status === 'finance_rejected' ||
-    r.status === 'finance_on_hold' ||
-    r.status === 'recommended_to_admin'
+    st === 'recommended_to_finance' ||
+    rawSt === 'RECOMMENDED_TO_FINANCE' ||
+    st === 'sent_to_finance' ||
+    st === 'finance_review' ||
+    rawSt === 'FINANCE_REVIEW' ||
+    st === 'finance_approved' ||
+    rawSt === 'FINANCE_APPROVED' ||
+    st === 'finance_rejected' ||
+    rawSt === 'FINANCE_REJECTED' ||
+    st === 'finance_on_hold' ||
+    st === 'recommended_to_admin' ||
+    rawSt === 'RECOMMENDED_TO_ADMIN' ||
+    rawSt === 'FINANCE_RECOMMENDED_TO_ADMIN'
   ) {
     return true
   }
-  if (r.financeApprovedBy || r.financeApprovedDate) return true
+
+  if (r.financeApprovedBy || r.financeApprovedDate || (r as any).finance_approved || (r as any).extra_fields?.finance_approved) return true
+
+  if (finSt && !['Not Escalated', 'Pending', 'Not Forwarded', 'None', ''].includes(finSt)) {
+    return true
+  }
+
   if (
     Array.isArray(r.history) &&
     r.history.some((h: any) =>
       (typeof h.actorRole === 'string' && h.actorRole.toUpperCase().includes('FINANCE')) ||
-      h.action === 'RECOMMEND' ||
+      h.action === 'RECOMMEND_FINANCE' ||
+      h.action === 'FINANCE_APPROVE' ||
+      h.action === 'RECOMMEND_ADMIN' ||
       (typeof h.remark === 'string' && h.remark.toLowerCase().includes('finance'))
     )
   ) {
-    return true
-  }
-  if (r.financeStatus && r.financeStatus !== 'Not Escalated' && r.financeStatus !== 'Pending' && r.financeStatus !== 'Not Forwarded') {
     return true
   }
 
@@ -2588,12 +2605,15 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         rawSt === 'RECOMMENDED_TO_ADMIN' ||
         rawSt === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
         st === 'approved' ||
+        st === 'manager_approved' ||
         st === 'finance_review' ||
         st === 'finance_approved' ||
+        st === 'admin_approved' ||
         st === 'completed' ||
         st === 'payment_completed' ||
         Boolean(r.approvedBy) ||
-        Boolean(r.approvalParams)
+        Boolean(r.approvalParams) ||
+        Boolean((r as any).extra_fields?.manager_approved)
       )
       const isRejected = rawSt === 'REJECTED' || rawSt === 'FINANCE_REJECTED' || st === 'rejected' || st === 'finance_rejected'
 
@@ -2606,6 +2626,9 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         st === 'recommended_to_admin' ||
         rawSt === 'RECOMMENDED_TO_ADMIN' ||
         rawSt === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
+        r.financeStatus === 'Awaiting Finance Action' ||
+        r.financeStatus === 'Recommended to Admin' ||
+        Boolean(r.isForwardedToFinance) ||
         recInfo.isRecommended ||
         Boolean((r as any).extra_fields?.recommendation_reason) ||
         Boolean(r.recommendationReason)
@@ -2616,9 +2639,12 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       // Standard pending reviews & justification checks
       if (
         st === 'pending_approval' ||
+        st === 'pending_arrival' ||
         rawSt === 'PENDING_APPROVAL' ||
         rawSt === 'MANAGER_REVIEW' ||
         rawSt === 'PENDING' ||
+        rawSt === 'SUBMITTED' ||
+        rawSt === 'CREATED' ||
         rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
         st === 'payment_justification_submitted'
       ) {
@@ -2636,32 +2662,30 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const st = (r.status || '').toLowerCase()
       const recInfo = getRecommendationStatus(r)
 
-      if (recInfo.isRecommended) return false
+      if (
+        recInfo.isRecommended ||
+        st === 'recommended_to_finance' ||
+        rawSt === 'RECOMMENDED_TO_FINANCE' ||
+        r.financeStatus === 'Awaiting Finance Action' ||
+        Boolean(r.isForwardedToFinance) ||
+        Boolean(r.recommendationReason) ||
+        Boolean((r as any).extra_fields?.recommendation_reason)
+      ) {
+        return false
+      }
       if (rawSt === 'REJECTED' || rawSt === 'FINANCE_REJECTED' || st === 'rejected' || st === 'finance_rejected') return false
 
       return (
         st === 'approved' ||
+        st === 'manager_approved' ||
         rawSt === 'MANAGER_APPROVED' ||
-        st === 'finance_review' ||
-        rawSt === 'FINANCE_REVIEW' ||
-        st === 'finance_approved' ||
-        rawSt === 'FINANCE_APPROVED' ||
-        st === 'payment_approved' ||
-        rawSt === 'PAYMENT_APPROVED' ||
-        st === 'payment_justified' ||
-        rawSt === 'PAYMENT_JUSTIFIED' ||
-        st === 'manager_verified' ||
-        rawSt === 'MANAGER_VERIFIED' ||
-        st === 'manager_verified_pending_team_lead_acknowledgement' ||
-        st === 'payment_completed' ||
-        rawSt === 'PAYMENT_COMPLETED' ||
         st === 'assigned_to_vendor' ||
         rawSt === 'ASSIGNED_TO_VENDOR' ||
-        st === 'completed' ||
-        rawSt === 'COMPLETED' ||
-        rawSt === 'REQUEST_COMPLETED' ||
-        Boolean(r.approvalParams) ||
-        Boolean(r.approvedBy)
+        st === 'delivered' ||
+        st === 'invoiced' ||
+        Boolean((r as any).extra_fields?.manager_approved) ||
+        Boolean((r as any).extra_fields?.final_approval_by === 'MANAGER') ||
+        (Boolean(r.approvedBy) && !r.financeApprovedBy && !r.status.includes('finance'))
       )
     }), [backendRequests])
 
@@ -2710,7 +2734,6 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         st === 'payment_justified' ||
         st === 'payment_justification_submitted' ||
         st === 'payment_completed' ||
-        st === 'completed' ||
         r.paymentStatus === 'Paid' ||
         Boolean(r.paymentTransactionRef) ||
         Boolean((r as any).paymentReference) ||
@@ -2719,8 +2742,6 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         rawSt === 'FINANCE_REVIEW' ||
         rawSt === 'FINANCE_APPROVED' ||
         rawSt === 'PAYMENT_COMPLETED' ||
-        rawSt === 'COMPLETED' ||
-        rawSt === 'REQUEST_COMPLETED' ||
         rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
         rawSt === 'PAYMENT_JUSTIFIED' ||
         Boolean((r as any).extraFields?.payment_justification) ||
@@ -2729,21 +2750,33 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }), [backendRequests, payments])
 
   const recommendedToFinance = useMemo(() =>
-    backendRequests.filter(r =>
-      r.status === 'recommended_to_finance' ||
-      r.status === 'finance_review' ||
-      (r as any).raw_status === 'RECOMMENDED_TO_FINANCE'
-    ), [backendRequests])
+    backendRequests.filter(r => {
+      const st = (r.status || '').toLowerCase()
+      const rawSt = ((r as any).raw_status || '').toUpperCase()
+      const finSt = r.financeStatus || ''
+      return (
+        st === 'recommended_to_finance' ||
+        rawSt === 'RECOMMENDED_TO_FINANCE' ||
+        finSt === 'Awaiting Finance Action' ||
+        Boolean(r.isForwardedToFinance) ||
+        Boolean(r.recommendationReason) ||
+        Boolean((r as any).extra_fields?.recommendation_reason)
+      )
+    }), [backendRequests])
 
   const recommendedToAdmin = useMemo(() =>
-    backendRequests.filter(r =>
-      r.status === 'recommended_to_admin' ||
-      (r as any).raw_status === 'RECOMMENDED_TO_ADMIN' ||
-      (r as any).raw_status === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
-      r.financeStatus === 'Recommended to Admin' ||
-      r.status === 'finance_approved' ||
-      r.status === 'payment_completed'
-    ), [backendRequests])
+    backendRequests.filter(r => {
+      const st = (r.status || '').toLowerCase()
+      const rawSt = ((r as any).raw_status || '').toUpperCase()
+      const finSt = r.financeStatus || ''
+      return (
+        st === 'recommended_to_admin' ||
+        rawSt === 'RECOMMENDED_TO_ADMIN' ||
+        rawSt === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
+        finSt === 'Recommended to Admin' ||
+        Boolean((r as any).extra_fields?.finance_recommendation_reason)
+      )
+    }), [backendRequests])
 
   const allRequestsRef = React.useRef<ProcurementRequest[]>([])
   useEffect(() => {
@@ -2759,49 +2792,99 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Computed: Pending Financial Approvals (all requests awaiting finance action)
   const pendingFinancialApprovals = useMemo(() => {
-    return allRequests.filter(r =>
-      r.status === 'sent_to_finance' ||
-      r.status === 'finance_review' ||
-      r.status === 'recommended_to_finance' ||
-      r.status === 'finance_on_hold' ||
-      r.status === 'clarification_requested' ||
-      r.financeStatus === 'Awaiting Finance Action' ||
-      r.financeStatus === 'Sent to Finance' ||
-      r.financeStatus === 'Under Review' ||
-      (r as any).raw_status === 'RECOMMENDED_TO_FINANCE' ||
-      (r as any).raw_status === 'FINANCE_REVIEW' ||
-      (r as any).raw_status === 'FINANCE_RECOMMENDED' ||
-      (r as any).raw_status === 'FINANCE_RESEARCH' ||
-      (r as any).raw_status === 'COST_ESTIMATION' ||
-      (r as any).raw_status === 'FINANCE_REPORT' ||
-      (r as any).raw_status === 'MANAGER_APPROVED'
-    )
+    return allRequests.filter(r => {
+      const st = (r.status || '').toLowerCase()
+      const rawSt = ((r as any).raw_status || '').toUpperCase()
+      const finSt = r.financeStatus || ''
+
+      // Must not be already approved by Finance, Admin, or completed
+      if (
+        st === 'finance_approved' ||
+        st === 'admin_approved' ||
+        rawSt === 'FINANCE_APPROVED' ||
+        rawSt === 'ADMIN_APPROVED' ||
+        finSt === 'Approved' ||
+        finSt === 'Admin Approved' ||
+        Boolean(r.financeApprovedBy) ||
+        Boolean(r.financeApprovedDate) ||
+        Boolean((r as any).finance_approved) ||
+        Boolean((r as any).extra_fields?.finance_approved) ||
+        st === 'completed' ||
+        rawSt === 'COMPLETED'
+      ) {
+        return false
+      }
+
+      // Must not be recommended to Admin (it has moved to Admin)
+      if (
+        st === 'recommended_to_admin' ||
+        rawSt === 'RECOMMENDED_TO_ADMIN' ||
+        rawSt === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
+        finSt === 'Recommended to Admin'
+      ) {
+        return false
+      }
+
+      // Must not be rejected
+      if (st.includes('rejected') || rawSt.includes('REJECTED') || finSt.includes('Rejected')) {
+        return false
+      }
+
+      // Must be explicitly escalated/recommended to Finance
+      return (
+        st === 'recommended_to_finance' ||
+        rawSt === 'RECOMMENDED_TO_FINANCE' ||
+        st === 'sent_to_finance' ||
+        finSt === 'Awaiting Finance Action' ||
+        finSt === 'Sent to Finance' ||
+        finSt === 'Under Review' ||
+        (st === 'finance_review' && Boolean(r.isForwardedToFinance || r.recommendationReason || finSt)) ||
+        (rawSt === 'FINANCE_REVIEW' && Boolean(r.isForwardedToFinance || r.recommendationReason || finSt)) ||
+        rawSt === 'FINANCE_RECOMMENDED' ||
+        rawSt === 'FINANCE_RESEARCH' ||
+        rawSt === 'COST_ESTIMATION' ||
+        rawSt === 'FINANCE_REPORT'
+      )
+    })
   }, [allRequests])
 
   // Computed: Approved Finance Requests (including payment completed & completed)
   const approvedFinanceRequests = useMemo(() => {
-    return allRequests.filter(r =>
-      r.financeStatus === 'Approved' ||
-      r.financeStatus === 'Paid' ||
-      r.financeStatus === 'Completed' ||
-      r.financeStatus === 'Admin Approved' ||
-      r.status === 'finance_approved' ||
-      r.status === 'payment_approved' ||
-      r.status === 'payment_justification_submitted' ||
-      (r.status as string) === 'manager_verified_pending_team_lead_acknowledgement' ||
-      r.status === 'payment_justified' ||
-      r.status === 'payment_completed' ||
-      r.status === 'completed' ||
-      (r as any).raw_status === 'FINANCE_APPROVED' ||
-      (r as any).raw_status === 'ADMIN_APPROVED' ||
-      (r as any).raw_status === 'PAYMENT_APPROVED' ||
-      (r as any).raw_status === 'PAYMENT_PROCESSED' ||
-      (r as any).raw_status === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-      (r as any).raw_status === 'PAYMENT_JUSTIFIED' ||
-      (r as any).raw_status === 'PAYMENT_COMPLETED' ||
-      (r as any).raw_status === 'COMPLETED' ||
-      (r as any).raw_status === 'TEAM_LEAD_CONFIRMED'
-    )
+    return allRequests.filter(r => {
+      const st = (r.status || '').toLowerCase()
+      const rawSt = ((r as any).raw_status || '').toUpperCase()
+      const finSt = r.financeStatus || ''
+
+      // Must NOT be recommended to Admin unless it was approved by Finance
+      if (
+        (st === 'recommended_to_admin' || rawSt === 'RECOMMENDED_TO_ADMIN' || finSt === 'Recommended to Admin') &&
+        !Boolean(r.financeApprovedBy || (r as any).finance_approved || st === 'finance_approved' || rawSt === 'FINANCE_APPROVED')
+      ) {
+        return false
+      }
+
+      return (
+        st === 'finance_approved' ||
+        rawSt === 'FINANCE_APPROVED' ||
+        finSt === 'Approved' ||
+        finSt === 'Paid' ||
+        Boolean(r.financeApprovedBy) ||
+        Boolean((r as any).finance_approved) ||
+        Boolean((r as any).extra_fields?.finance_approved) ||
+        Boolean((r as any).extra_fields?.final_approval_by === 'FINANCE') ||
+        st === 'payment_approved' ||
+        st === 'payment_justification_submitted' ||
+        (st as string) === 'manager_verified_pending_team_lead_acknowledgement' ||
+        st === 'payment_justified' ||
+        st === 'payment_completed' ||
+        rawSt === 'PAYMENT_APPROVED' ||
+        rawSt === 'PAYMENT_PROCESSED' ||
+        rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+        rawSt === 'PAYMENT_JUSTIFIED' ||
+        rawSt === 'PAYMENT_COMPLETED' ||
+        rawSt === 'COMPLETED'
+      )
+    })
   }, [allRequests])
 
   // Computed: Rejected Finance Requests
@@ -2977,13 +3060,22 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     setBackendRequests(prev => prev.map(r => r.id === id ? {
       ...r,
-      status: 'finance_review',
-      recommendationReason: reason,
+      status: 'recommended_to_finance',
+      raw_status: 'RECOMMENDED_TO_FINANCE',
+      recommendationReason: safeReason,
       recommendedBy: 'Procurement Manager',
       recommendedDate: new Date().toISOString().split('T')[0],
       financeStatus: 'Awaiting Finance Action',
+      isForwardedToFinance: true,
+      extra_fields: {
+        ...(r.extra_fields || {}),
+        recommendation_reason: safeReason,
+        recommended_by: 'Procurement Manager',
+        recommended_portal: 'Manager Portal',
+        finance_status: 'Awaiting Finance Action',
+      }
     } : r))
-  }, [])
+  }, [refreshManagerBackendData])
 
   const approveRequest = useCallback((id: string, notes?: string, approvalParams?: ApprovalParameters) => {
     const req = pendingApprovals.find(r => r.id === id) || arrivedRequests.find(r => r.id === id) || allRequestsRef.current.find(r => r.id === id)
@@ -3008,22 +3100,28 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const approvedAmountVal = Number(finalParams.approvedAmount) || Number(req.amount) || 0
     const isSoftware = req.category?.toLowerCase().includes('software') || req.category?.toLowerCase().includes('saas') || req.request_type === 'software'
 
-    // Optimistic update via single source of truth
+    // Optimistic update: request stays with Manager in Manager Approved queue
     setBackendRequests(prev => prev.map(r => r.id === id ? {
       ...r,
-      status: isSoftware ? 'approved' : 'finance_review',
-      raw_status: isSoftware ? 'MANAGER_APPROVED' : 'FINANCE_REVIEW',
-      currentStage: isSoftware ? 7 : 3,
-      currentlyWith: isSoftware ? 'Team Lead — Pay Now (Mock) Ready' : 'Finance Desk',
-      currently_with: isSoftware ? 'Team Lead — Pay Now (Mock) Ready' : 'Finance Desk',
-      financeStatus: isSoftware ? undefined : 'Awaiting Finance Action',
+      status: 'approved',
+      raw_status: 'MANAGER_APPROVED',
+      currentStage: 3,
+      currentlyWith: isSoftware ? 'Team Lead — Pay Now (Mock) Ready' : 'Manager Approved (PO Workflow)',
+      currently_with: isSoftware ? 'Team Lead — Pay Now (Mock) Ready' : 'Manager Approved (PO Workflow)',
+      financeStatus: undefined,
+      isForwardedToFinance: false,
       approvedBy: finalParams.approvedBy,
       approvedDate: today,
       description: notes || r.description,
       amount: approvedAmountVal,
       vendor: finalParams.vendor || r.vendor,
       costCenter: finalParams.costCenter || r.costCenter,
-      approvalParams: finalParams
+      approvalParams: finalParams,
+      extra_fields: {
+        ...(r.extra_fields || {}),
+        manager_approved: true,
+        final_approval_by: 'MANAGER',
+      }
     } : r))
 
     approveRequestApi(id, {
@@ -3603,6 +3701,12 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       financeApprovedBy: actor,
       financeApprovedDate: today,
       financeComment: comment || 'Budget verified and approved by Finance.',
+      extra_fields: {
+        ...(r.extra_fields || {}),
+        finance_approved: true,
+        final_approval_by: 'FINANCE',
+        finance_status: 'Approved',
+      }
     } : r))
 
     // 3. Add to finance audit history
@@ -3794,12 +3898,20 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const record: ProcurementRequest = {
       ...base,
       status: 'recommended_to_admin',
+      raw_status: 'RECOMMENDED_TO_ADMIN',
       financeStatus: 'Recommended to Admin',
       approvalLevel: 'Admin / Executive Authority',
       recommendationReason: reason,
       financeComment: comment || reason,
       recommendedBy: actor,
       recommendedDate: today,
+      extra_fields: {
+        ...(base.extra_fields || {}),
+        finance_recommendation_reason: reason,
+        finance_recommended_by: actor,
+        finance_recommended_date: today,
+        finance_status: 'Recommended to Admin',
+      }
     }
 
     // 1. Single source optimistic update
