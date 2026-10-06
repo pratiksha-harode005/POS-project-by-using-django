@@ -304,31 +304,31 @@ function buildDynamicStages(isSoftware: boolean, hadFinance: boolean, hadAdmin: 
 
 const HW_STAGE_NAMES: Record<number, string> = {
   0: 'Create Request',
-  1: 'Create Request',
-  2: 'Manager Approval',
-  3: 'Finance Approval',
-  4: 'Admin Approval',
-  5: 'RFQ Sent',
-  6: 'Vendor Quotes Received',
-  7: 'Product Order',
-  8: 'Delivery',
-  9: 'Verification and Order Complete',
+  1: 'Manager Approval',
+  2: 'Finance Approval',
+  3: 'Admin Approval',
+  4: 'RFQ Sent',
+  5: 'Vendor Quotes Received',
+  6: 'Product Order',
+  7: 'Delivery',
+  8: 'Verification and Order Complete',
+  9: 'Payment',
   10: 'Payment',
 }
 
 const SW_STAGE_NAMES: Record<number, string> = {
   0: 'Request Created',
-  1: 'Request Created',
-  2: 'Manager Review',
-  3: 'Recommended to Finance',
-  4: 'Finance Review',
-  5: 'Recommended to Admin',
-  6: 'Admin Review',
-  7: 'Admin Approved / Final Approval',
-  8: 'Payment Processed',
-  9: 'Payment Processed',
-  10: 'Payment Justification Submitted',
-  11: 'Manager Verified',
+  1: 'Manager Review',
+  2: 'Recommended to Finance',
+  3: 'Finance Review',
+  4: 'Recommended to Admin',
+  5: 'Admin Review',
+  6: 'Admin Approved / Final Approval',
+  7: 'Payment Processed',
+  8: 'Payment Justification Submitted',
+  9: 'Manager Verified',
+  10: 'Awaiting Team Lead Acknowledgement',
+  11: 'Request Completed',
   12: 'Request Completed',
 }
 
@@ -623,27 +623,36 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     if (st === 'pending_arrival' || st === 'draft') {
       currentStageName = 'Create Request'
       currentlyWith = 'Team Lead / Requester'
-    } else if (st === 'pending_approval') {
+    } else if (
+      st === 'pending_approval' ||
+      st === 'submitted' ||
+      st === 'pending' ||
+      st === 'manager_review'
+    ) {
       currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'
     } else if (
       st === 'finance_review' ||
       st === 'sent_to_finance' ||
       st === 'recommended_to_finance' ||
+      st === 'manager_recommended_to_finance' ||
       st === 'finance_on_hold' ||
       st === 'clarification_requested' ||
-      st === 'manager_approved' ||
-      (st === 'approved' && req.currentStage === 3)
+      (st === 'approved' && req.currentStage === 2)
     ) {
       currentStageName = 'Finance Approval'
       currentlyWith = 'Finance — Mark Finance Officer'
     } else if (st === 'approved' || st === 'rfq_sent') {
       currentStageName = 'RFQ Sent'
       currentlyWith = 'Sourcing Team (RFQ Sent)'
-    } else if (st === 'recommended_to_admin' || fst === 'recommended to admin') {
+    } else if (
+      st === 'recommended_to_admin' ||
+      st === 'finance_recommended_to_admin' ||
+      fst === 'recommended to admin'
+    ) {
       currentStageName = 'Admin Approval'
       currentlyWith = 'Admin — Executive Authority'
-    } else if (st === 'quotes_received' || st === 'assigned_to_vendor' || st === 'vendor_assigned' || st === 'rfq_sent' || st === 'in_procurement') {
+    } else if (st === 'quotes_received' || st === 'assigned_to_vendor' || st === 'vendor_assigned' || st === 'in_procurement') {
       currentStageName = 'Vendor Quotes Received'
       currentlyWith = 'Selected Vendor (Awaiting Acceptance)'
     } else if (st === 'vendor_accepted') {
@@ -682,7 +691,8 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     }
 
     if (typeof req.currentStage === 'number' && !isNaN(req.currentStage)) {
-      stageIndex = mapBackendStageToIndex(req.currentStage, dynamicStages, false)
+      const effectiveStageNum = (req.currentStage === 0 && st !== 'draft' && st !== 'created' && st !== 'pending_arrival') ? 1 : req.currentStage
+      stageIndex = mapBackendStageToIndex(effectiveStageNum, dynamicStages, false)
       stageIndex = Math.min(Math.max(stageIndex, 0), dynamicStages.length - 1)
       currentStageName = dynamicStages[stageIndex] || currentStageName
     } else {

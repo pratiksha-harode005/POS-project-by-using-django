@@ -28,6 +28,19 @@ export const SharedProfilePage: React.FC = () => {
       if (saved) {
         const parsed = JSON.parse(saved)
         if (parsed.approvalLimit && parsed.monthlyCapexLimit) {
+          if (role === 'FINANCE') {
+            const migrated = {
+              approvalLimit: parsed.approvalLimit === '₹20,00,000' ? '₹1,00,000' : parsed.approvalLimit,
+              monthlyCapexLimit: parsed.monthlyCapexLimit === '₹75,00,000' ? '₹1,00,000' : parsed.monthlyCapexLimit,
+            }
+            if (
+              migrated.approvalLimit !== parsed.approvalLimit ||
+              migrated.monthlyCapexLimit !== parsed.monthlyCapexLimit
+            ) {
+              localStorage.setItem(`profile_limits_${role}`, JSON.stringify(migrated))
+            }
+            return migrated
+          }
           if (role === 'MANAGER') {
             return {
               approvalLimit: parsed.approvalLimit === '₹15,00,000' ? '₹5,00,000' : parsed.approvalLimit,
@@ -47,8 +60,8 @@ export const SharedProfilePage: React.FC = () => {
         }
       case 'FINANCE':
         return {
-          approvalLimit: '₹20,00,000',
-          monthlyCapexLimit: '₹75,00,000',
+          approvalLimit: '₹1,00,000',
+          monthlyCapexLimit: '₹1,00,000',
         }
       case 'MANAGER':
         return {
@@ -494,7 +507,7 @@ export const SharedProfilePage: React.FC = () => {
                   {isEditing && (
                     <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                       <span className="text-[10px] text-slate-400 font-medium">Quick presets:</span>
-                      {['₹10,00,000', '₹25,00,000', '₹50,00,000', '₹1,00,00,000'].map((preset) => (
+                      {['₹1,00,000', '₹10,00,000', '₹25,00,000', '₹50,00,000', '₹1,00,00,000'].map((preset) => (
                         <button
                           key={preset}
                           type="button"
@@ -527,7 +540,7 @@ export const SharedProfilePage: React.FC = () => {
                   {isEditing && (
                     <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                       <span className="text-[10px] text-slate-400 font-medium">Quick presets:</span>
-                      {['₹50,00,000', '₹1,00,00,000', '₹2,50,00,000', '₹5,00,00,000'].map((preset) => (
+                      {['₹1,00,000', '₹50,00,000', '₹1,00,00,000', '₹2,50,00,000', '₹5,00,00,000'].map((preset) => (
                         <button
                           key={preset}
                           type="button"

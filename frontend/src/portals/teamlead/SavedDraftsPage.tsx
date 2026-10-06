@@ -24,7 +24,15 @@ export const SavedDraftsPage: React.FC = () => {
 
   // Filter only drafts
   const drafts = useMemo(() => {
-    return requests.filter((r) => r.status === 'Draft' || r.currentStage === 0 || r.raw_status === 'DRAFT')
+    return requests.filter((r) => {
+      const raw = (r.raw_status || '').toUpperCase()
+      const st = (r.status || '').toLowerCase()
+      if (raw === 'DRAFT' || st === 'draft') return true
+      if (r.currentStage === 0 && st !== 'pending' && st !== 'pending approval' && st !== 'approved' && raw !== 'PENDING_APPROVAL' && raw !== 'MANAGER_REVIEW') {
+        return true
+      }
+      return false
+    })
   }, [requests])
 
   const filteredDrafts = useMemo(() => {

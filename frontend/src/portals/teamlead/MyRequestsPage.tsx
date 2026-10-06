@@ -1803,20 +1803,15 @@ export const MyRequestsPage: React.FC = () => {
                   )
                 })()}
 
-                {/* Currently With */}
-                <div className="mb-4 bg-gray-50 p-2.5 rounded-xl border border-gray-200 flex flex-wrap items-center justify-between text-xs gap-2">
-                  <div className="flex items-center gap-2">
-                    <User size={14} className="text-blue-600" />
-                    <span className="text-gray-600 font-medium">Currently with:</span>
-                    <strong className="text-gray-900">{req.currentlyWith?.role} — {req.currentlyWith?.name}</strong>
-                  </div>
-                  {req.currentStage >= 7 && (
-                    <div className="flex items-center gap-2 text-purple-700 font-semibold bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200">
+                {/* Delivery info when in progress */}
+                {req.currentStage >= 7 && (
+                  <div className="mb-4 bg-purple-50 p-2.5 rounded-xl border border-purple-200 flex items-center justify-between text-xs gap-2 text-purple-700 font-semibold">
+                    <div className="flex items-center gap-2">
                       <Truck size={14} />
                       <span>Delivery Ref: {req.deliveryRef || 'TRK-994821'} | Expected: {req.expectedDelivery || '2026-09-25'}</span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <TrackingStepper
                   currentStage={req.currentStage}
