@@ -24,7 +24,7 @@ export const CASH_MAX_LIMIT = 200000
 const STEPS = ['View Receipts', 'Verify Documents', 'Review Summary', 'Submit Ticket']
 
 export const FinanceRaiseTicketPage: React.FC = () => {
-  const { tickets, verifyDocument, submitTicket, submitProductTicket, makePayment, financeRequests } = useFinanceData()
+  const { tickets, verifyDocument, submitTicket, submitProductTicket, makePayment, financeRequests, payments } = useFinanceData()
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -178,7 +178,24 @@ export const FinanceRaiseTicketPage: React.FC = () => {
     matchingRequest?.paymentStatus === 'Paid' ||
     matchingRequest?.paymentTransactionRef ||
     (matchingRequest as any)?.paymentReference ||
-    (matchingRequest as any)?.payment_reference
+    (matchingRequest as any)?.payment_reference ||
+    (payments && payments.some(p => {
+      const pNorm = (p.requestId || p.id || '').replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+      const tNorm = (ticket?.requestId || ticket?.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+      return (p.status === 'Paid') && (p.requestId === ticket?.requestId || (pNorm && tNorm && pNorm === tNorm))
+    })) ||
+    (() => {
+      try {
+        const paidReqs = JSON.parse(localStorage.getItem('kss_paid_requests') || '[]')
+        const tNorm = (ticket?.requestId || ticket?.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+        return Array.isArray(paidReqs) && paidReqs.some((k: string) => {
+          const kNorm = String(k).replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+          return k === ticket?.requestId || k === ticket?.id || (kNorm && tNorm && kNorm === tNorm)
+        })
+      } catch {
+        return false
+      }
+    })()
   )
 
   useEffect(() => {
@@ -734,9 +751,32 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                 const rNorm = (r.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
                 return (
                   pNorm && rNorm && pNorm === rNorm &&
-                  (r.status === 'completed' || r.paymentStatus === 'Paid' || r.paymentTransactionRef || (r as any)?.paymentReference)
+                  (r.status === 'completed' || r.paymentStatus === 'Paid' || r.paymentTransactionRef || (r as any)?.paymentReference || (r as any)?.payment_reference)
                 )
-              })
+              }) ||
+              (payments && payments.some(p => {
+                const pNorm = (p.requestId || p.id || '').replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+                const prodNorm = (product.id || '').replace(/^(PRD-|REQ-|TCK-|PO-)/, '').slice(0, 8).trim().toUpperCase()
+                const tckNorm = (ticket?.requestId || ticket?.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+                return (p.status === 'Paid') && (
+                  p.requestId === product.id ||
+                  p.requestId === ticket?.requestId ||
+                  (pNorm && (pNorm === prodNorm || pNorm === tckNorm))
+                )
+              })) ||
+              (() => {
+                try {
+                  const paidReqs = JSON.parse(localStorage.getItem('kss_paid_requests') || '[]')
+                  const prodNorm = (product.id || '').replace(/^(PRD-|REQ-|TCK-|PO-)/, '').slice(0, 8).trim().toUpperCase()
+                  const tckNorm = (ticket?.requestId || ticket?.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+                  return Array.isArray(paidReqs) && paidReqs.some((k: string) => {
+                    const kNorm = String(k).replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+                    return k === product.id || k === ticket?.requestId || k === ticket?.id || (kNorm && (kNorm === prodNorm || kNorm === tckNorm))
+                  })
+                } catch {
+                  return false
+                }
+              })()
             )
 
             const productDocs = [

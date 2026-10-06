@@ -1013,7 +1013,8 @@ export function buildDynamicTickets(
   quotes: QuotationItem[] = [],
   receiptsList: GoodsReceiptItem[] = [],
   rfqsList: any[] = [],
-  invoicesList: any[] = []
+  invoicesList: any[] = [],
+  paymentsList: any[] = []
 ): RaiseTicket[] {
   const result: RaiseTicket[] = []
 
@@ -1306,7 +1307,35 @@ export function buildDynamicTickets(
     const grnId = matchedReceipt?.grnNumber || matchedReceipt?.id || ((delDoc?.deliveryId && !isMockKey(delDoc.deliveryId)) ? delDoc.deliveryId : `GRN-${normKey}`)
     const invoiceId = (invDoc?.id && !isMockKey(invDoc.id)) ? invDoc.id : `INV-DELL-${normKey}`
 
+    const matchingPayment = (paymentsList || []).find((p: any) => {
+      const pReqId = p.requestId || p.request_id || (typeof p.purchase_request === 'string' ? p.purchase_request : '')
+      const pNorm = (pReqId || p.id || '').replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+      const pPoNum = p.poNumber || p.po_number || ''
+      const pPoNorm = pPoNum.replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+      return (
+        (pReqId && (pReqId === reqId || pReqId === rawKey)) ||
+        (pNorm && normKey && pNorm === normKey) ||
+        (pPoNorm && normKey && pPoNorm === normKey)
+      )
+    })
+
+    const isPaidInStorage = (() => {
+      try {
+        const paidReqs = JSON.parse(localStorage.getItem('kss_paid_requests') || '[]')
+        return Array.isArray(paidReqs) && paidReqs.some((k: string) => {
+          const kNorm = String(k).replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+          return k === reqId || k === rawKey || (kNorm && normKey && kNorm === normKey)
+        })
+      } catch {
+        return false
+      }
+    })()
+
     const isPaid = Boolean(
+      matchingPayment?.status === 'Paid' ||
+      matchingPayment?.transactionRef ||
+      matchingPayment?.reference_number ||
+      isPaidInStorage ||
       matchingReq?.status === 'completed' ||
       matchingReq?.paymentStatus === 'Paid' ||
       matchingPo?.paymentStatus === 'Paid' ||
@@ -1538,9 +1567,10 @@ export function buildDynamicTickets(
       },
       submitted: isPaid || matchingReq?.status === 'completed',
       paymentSettled: isPaid,
-      utrRef: matchingReq?.paymentTransactionRef || (matchingReq as any)?.paymentReference || (matchingReq as any)?.payment_reference,
-      paymentDate: matchingReq?.paidDate || (matchingReq as any)?.payment_date,
-      paymentMethod: matchingReq?.paymentMethod || (matchingReq as any)?.payment_method
+      utrRef: matchingReq?.paymentTransactionRef || (matchingReq as any)?.paymentReference || (matchingReq as any)?.payment_reference || matchingPayment?.transactionRef || matchingPayment?.referenceNumber || matchingPayment?.reference_number || (isPaid ? `UTR-${normKey}` : undefined),
+      referenceNumber: matchingReq?.paymentTransactionRef || (matchingReq as any)?.paymentReference || (matchingReq as any)?.payment_reference || matchingPayment?.transactionRef || matchingPayment?.referenceNumber || matchingPayment?.reference_number || (isPaid ? `UTR-${normKey}` : undefined),
+      paymentDate: matchingReq?.paidDate || (matchingReq as any)?.payment_date || matchingPayment?.paymentDate || matchingPayment?.payment_date || (isPaid ? new Date().toISOString().split('T')[0] : undefined),
+      paymentMethod: matchingReq?.paymentMethod || (matchingReq as any)?.payment_method || matchingPayment?.paymentMethod || matchingPayment?.payment_method || (isPaid ? 'Online Bank Transfer' : undefined)
     }
 
     result.push({
@@ -2655,9 +2685,9 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const allRequestsRef = React.useRef<ProcurementRequest[]>([])
   useEffect(() => {
     allRequestsRef.current = allRequests
-    const dynamic = buildDynamicTickets(allRequests, purchaseOrders, quotations, receipts, rfqs, invoices)
+    const dynamic = buildDynamicTickets(allRequests, purchaseOrders, quotations, receipts, rfqs, invoices, payments)
     setTickets(dynamic)
-  }, [allRequests, purchaseOrders, quotations, receipts, rfqs, invoices])
+  }, [allRequests, purchaseOrders, quotations, receipts, rfqs, invoices, payments])
 
   // Computed: Finance-relevant requests (only those forwarded, escalated, or reached Finance review/approval)
   const financeRequests = useMemo(() => {
@@ -4438,6 +4468,13 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const reqNorm = (requestId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
     const tckNorm = (ticketId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
     const targetProdNorm = (targetProductId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+
+    // Save paid reference in localStorage for instant persistence across re-renders/syncs
+    try {
+      const existingPaid = JSON.parse(localStorage.getItem('kss_paid_requests') || '[]')
+      const toAdd = [requestId, ticketId, reqNorm, tckNorm, targetProductId, targetProdNorm].filter(Boolean)
+      localStorage.setItem('kss_paid_requests', JSON.stringify(Array.from(new Set([...existingPaid, ...toAdd]))))
+    } catch (e) {}
 
     // 1. Update request across all lists to 'completed' and 'Paid'
     const markCompleted = (r: ProcurementRequest): ProcurementRequest => {
