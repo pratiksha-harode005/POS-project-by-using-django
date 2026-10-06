@@ -120,12 +120,15 @@ class PaymentViewSet(viewsets.ModelViewSet):
         )
         if is_bank_method:
             if raw_ref:
-                if len(str(raw_ref).strip()) != 12 or not str(raw_ref).strip().isalnum():
+                clean_ref = str(raw_ref).strip().upper()
+                import re
+                utr_regex = re.compile(r'^[A-Z]{4}[0-9]{11}$')
+                if not (utr_regex.match(clean_ref) or (10 <= len(clean_ref) <= 22 and clean_ref.isalnum())):
                     return Response(
-                        {'error': 'UTR / Bank Reference Number must be exactly 12 alphanumeric characters.'},
+                        {'error': 'UTR / Bank Reference Number must be 15 characters (4 letters followed by 11 digits, e.g. SBIN01234567890).'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                ref_num = str(raw_ref).strip().upper()
+                ref_num = clean_ref
             else:
                 ref_num = payment.reference_number
         else:
