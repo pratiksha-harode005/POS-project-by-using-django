@@ -4,11 +4,12 @@ import { useAuth } from '../../context/AuthContext'
 import {
   User, Briefcase, PhoneCall, ShieldCheck, Key, CreditCard, Save,
   CheckCircle, Building, MapPin, Mail, Phone, Calendar, Clock,
-  FileCheck, Shield, AlertCircle, Layers, BellRing, Laptop, LogOut
+  FileCheck, Shield, AlertCircle, Layers, BellRing, Laptop, LogOut, Pencil
 } from 'lucide-react'
+import { apiClient } from '../../api/client'
 
 export const SharedProfilePage: React.FC = () => {
-  const { user, role, logout } = useAuth()
+  const { user, role, logout, updateUserProfile } = useAuth()
   const navigate = useNavigate()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [activeTab, setActiveTab] = useState<
@@ -16,8 +17,12 @@ export const SharedProfilePage: React.FC = () => {
   >('personal')
 
   const isAdmin = role === 'ADMIN'
+  const isTeamLead = role === 'TEAM_LEAD'
 
   const initialLimits = React.useMemo(() => {
+    if (role === 'TEAM_LEAD') {
+      return { approvalLimit: '', monthlyCapexLimit: '' }
+    }
     try {
       const saved = localStorage.getItem(`profile_limits_${role || 'default'}`)
       if (saved) {
@@ -28,7 +33,7 @@ export const SharedProfilePage: React.FC = () => {
       }
     } catch (e) {}
 
-    switch (role) {
+    switch (role as string) {
       case 'ADMIN':
         return {
           approvalLimit: '₹50,00,000',
@@ -63,19 +68,19 @@ export const SharedProfilePage: React.FC = () => {
   }, [role])
 
   const [formData, setFormData] = useState({
-    firstName: user?.first_name || (isAdmin ? 'Priyanka' : 'Sarah'),
-    lastName: user?.last_name || (isAdmin ? 'Sharma' : 'Manager'),
-    email: user?.email || (isAdmin ? 'admin@procurementos.com' : 'sarah.manager@procurementos.com'),
-    phone: user?.phone || '+91 98765 44444',
-    preferredName: isAdmin ? 'Priyanka S.' : 'Sarah M.',
+    firstName: user?.first_name || (isAdmin ? 'Priyanka' : isTeamLead ? '' : 'Sarah'),
+    lastName: user?.last_name || (isAdmin ? 'Sharma' : isTeamLead ? '' : 'Manager'),
+    email: user?.email || (isAdmin ? 'admin@procurementos.com' : isTeamLead ? '' : 'sarah.manager@procurementos.com'),
+    phone: user?.phone || (isTeamLead ? '' : '+91 98765 44444'),
+    preferredName: user?.preferred_name || (isAdmin ? 'Priyanka S.' : isTeamLead ? '' : 'Sarah M.'),
     dateOfBirth: '1988-04-15',
-    emergencyContact: isAdmin ? 'Corporate Legal Desk (+91 98765 00000)' : 'Michael Manager (+91 98765 43219)',
-    jobTitle: user?.job_title || (isAdmin ? 'System Administrator' : 'Senior Procurement Manager'),
-    department: isAdmin ? 'Executive Sourcing & System Administration' : 'IT & Infrastructure Operations',
-    costCenter: isAdmin ? 'CC-ADM-001 (Executive Administration)' : 'CC-IT-101 (Core Engineering & Cloud)',
+    emergencyContact: user?.emergency_contact || (isAdmin ? 'Corporate Legal Desk (+91 98765 00000)' : isTeamLead ? '' : 'Michael Manager (+91 98765 43219)'),
+    jobTitle: user?.job_title || (isAdmin ? 'System Administrator' : isTeamLead ? '' : 'Senior Procurement Manager'),
+    department: isAdmin ? 'Executive Sourcing & System Administration' : user?.department_detail?.name || (isTeamLead ? '' : 'IT & Infrastructure Operations'),
+    costCenter: user?.cost_center || (isAdmin ? 'CC-ADM-001 (Executive Administration)' : isTeamLead ? '' : 'CC-IT-101 (Core Engineering & Cloud)'),
     businessUnit: isAdmin ? 'Corporate Procurement OS Governance' : 'Global Technology Operations',
-    reportingManager: isAdmin ? 'Board of Directors / Managing Committee' : 'David Director, VP of Engineering & Operations',
-    workLocation: user?.work_location || 'Pune HQ, Level 4 (Tech Hub)',
+    reportingManager: user?.reporting_manager || (isAdmin ? 'Board of Directors / Managing Committee' : isTeamLead ? '' : 'David Director, VP of Engineering & Operations'),
+    workLocation: user?.work_location || (isTeamLead ? '' : 'Pune HQ, Level 4 (Tech Hub)'),
     employmentType: 'Full-time Permanent',
     joinDate: '2022-03-15',
     approvalLimit: initialLimits.approvalLimit,
@@ -88,9 +93,76 @@ export const SharedProfilePage: React.FC = () => {
   })
 
   const [saved, setSaved] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
-  const handleSave = (e: React.FormEvent) => {
+  React.useEffect(() => {
+    if (!isTeamLead || isEditing || !user) return
+    setFormData((current) => ({
+      ...current,
+      firstName: user.first_name || '',
+      lastName: user.last_name || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      preferredName: user.preferred_name || '',
+      emergencyContact: user.emergency_contact || '',
+      jobTitle: user.job_title || '',
+      workLocation: user.work_location || '',
+      costCenter: user.cost_center || '',
+      reportingManager: user.reporting_manager || '',
+      department: user.department_detail?.name || '',
+    }))
+  }, [user, isTeamLead, isEditing])
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isTeamLead) {
+      if (!isEditing || saving) return
+      setSaving(true)
+      setSaveError('')
+      try {
+        const response = await apiClient.patch('/users/profile/', {
+          first_name: formData.firstName.trim(),
+          last_name: formData.lastName.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          preferred_name: formData.preferredName.trim(),
+          emergency_contact: formData.emergencyContact.trim(),
+          job_title: formData.jobTitle.trim(),
+          work_location: formData.workLocation.trim(),
+          cost_center: formData.costCenter.trim(),
+          reporting_manager: formData.reportingManager.trim(),
+        })
+        updateUserProfile(response.data)
+        setFormData((current) => ({
+          ...current,
+          firstName: response.data.first_name || '',
+          lastName: response.data.last_name || '',
+          email: response.data.email || '',
+          phone: response.data.phone || '',
+          preferredName: response.data.preferred_name || '',
+          emergencyContact: response.data.emergency_contact || '',
+          jobTitle: response.data.job_title || '',
+          workLocation: response.data.work_location || '',
+          costCenter: response.data.cost_center || '',
+          reportingManager: response.data.reporting_manager || '',
+          department: response.data.department_detail?.name || current.department,
+        }))
+        setIsEditing(false)
+        setSaved(true)
+        window.setTimeout(() => setSaved(false), 3000)
+      } catch (error: any) {
+        const data = error?.response?.data
+        const message = data && typeof data === 'object'
+          ? Object.values(data).flat().join(' ')
+          : ''
+        setSaveError(message || 'Unable to save your profile. Please try again.')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
     setSaved(true)
     try {
       localStorage.setItem(`profile_limits_${role || 'default'}`, JSON.stringify({
@@ -104,7 +176,7 @@ export const SharedProfilePage: React.FC = () => {
   const tabs = [
     { id: 'personal', label: 'Personal Information', icon: User },
     { id: 'work', label: 'Work & Organization', icon: Briefcase },
-    { id: 'limits', label: 'Procurement Limits & Authority', icon: CreditCard },
+    ...(!isTeamLead ? [{ id: 'limits', label: 'Procurement Limits & Authority', icon: CreditCard }] : []),
     { id: 'security', label: 'Security & Access', icon: ShieldCheck },
   ]
 
@@ -114,14 +186,19 @@ export const SharedProfilePage: React.FC = () => {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Executive Profile & Settings</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Manage your enterprise credentials, role hierarchy, and procurement authority limits.
+          {isTeamLead ? 'Manage your personal and work profile information.' : 'Manage your enterprise credentials, role hierarchy, and procurement authority limits.'}
         </p>
       </div>
 
       {saved && (
         <div className="p-3.5 bg-emerald-50 text-emerald-800 rounded-xl text-xs flex items-center gap-2 border border-emerald-200 shadow-2xs animate-fadeIn">
           <CheckCircle size={16} className="text-emerald-600 flex-shrink-0" />
-          <span className="font-semibold">Profile and procurement credentials updated successfully!</span>
+          <span className="font-semibold">{isTeamLead ? 'Profile updated successfully.' : 'Profile and procurement credentials updated successfully!'}</span>
+        </div>
+      )}
+      {saveError && (
+        <div role="alert" className="p-3.5 bg-rose-50 text-rose-800 rounded-xl text-xs border border-rose-200">
+          {saveError}
         </div>
       )}
 
@@ -180,7 +257,7 @@ export const SharedProfilePage: React.FC = () => {
         </div>
 
         {/* Quick Enterprise Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-5">
+        {!isTeamLead && <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-5">
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Approval Limit</span>
             <p className="text-lg font-bold text-slate-900 mt-0.5 font-mono">{formData.approvalLimit}</p>
@@ -204,7 +281,7 @@ export const SharedProfilePage: React.FC = () => {
             <p className="text-lg font-bold text-emerald-600 mt-0.5 font-mono">99.4%</p>
             <span className="text-[10px] text-slate-500">Internal audit grade</span>
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* Tabs Bar */}
@@ -243,6 +320,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.firstName}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -252,6 +330,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.lastName}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -261,6 +340,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="email"
                     value={formData.email}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -270,6 +350,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.phone}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -279,6 +360,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.preferredName}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, preferredName: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -288,6 +370,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.emergencyContact}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -306,6 +389,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.jobTitle}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -315,6 +399,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.department}
+                    disabled={isTeamLead}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -324,6 +409,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.costCenter}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, costCenter: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -333,6 +419,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.reportingManager}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, reportingManager: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -342,6 +429,7 @@ export const SharedProfilePage: React.FC = () => {
                   <input
                     type="text"
                     value={formData.workLocation}
+                    disabled={isTeamLead && !isEditing}
                     onChange={(e) => setFormData({ ...formData, workLocation: e.target.value })}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -535,12 +623,32 @@ export const SharedProfilePage: React.FC = () => {
               <LogOut size={14} /> Log Out
             </button>
 
-            <button
-              type="submit"
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors"
-            >
-              <Save size={15} /> Save Profile Changes
-            </button>
+            {isTeamLead ? (
+              isEditing ? (
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors"
+                >
+                  <Save size={15} /> {saving ? 'Saving…' : 'Save to Profile'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setSaveError(''); setIsEditing(true) }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors"
+                >
+                  <Pencil size={15} /> Edit
+                </button>
+              )
+            ) : (
+              <button
+                type="submit"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors"
+              >
+                <Save size={15} /> Save Profile Changes
+              </button>
+            )}
           </div>
         </form>
       </div>

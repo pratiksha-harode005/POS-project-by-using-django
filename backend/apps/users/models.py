@@ -29,6 +29,10 @@ class User(AbstractUser):
     phone = models.CharField(max_length=30, blank=True)
     work_location = models.CharField(max_length=150, blank=True)
     job_title = models.CharField(max_length=100, blank=True)
+    preferred_name = models.CharField(max_length=100, blank=True)
+    emergency_contact = models.CharField(max_length=150, blank=True)
+    cost_center = models.CharField(max_length=100, blank=True)
+    reporting_manager = models.CharField(max_length=150, blank=True)
 
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"

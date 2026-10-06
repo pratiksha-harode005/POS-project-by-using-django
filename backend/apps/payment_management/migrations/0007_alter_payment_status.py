@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('payment_management', '0006_add_mock_payment_method_and_status'),
+        ('payment_management', '0006_alter_payment_payment_method'),
     ]
 
     operations = [

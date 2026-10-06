@@ -16,6 +16,11 @@ export interface UserProfile {
   work_location?: string
   job_title?: string
   phone?: string
+  preferred_name?: string
+  emergency_contact?: string
+  cost_center?: string
+  reporting_manager?: string
+  department_detail?: { id: number; name: string; code?: string } | null
 }
 
 interface AuthContextType {
@@ -25,6 +30,7 @@ interface AuthContextType {
   login: (usernameOrEmail: string, pass: string, targetRole?: UserRole) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   switchRolePortal: (newRole: UserRole) => void
+  updateUserProfile: (profile: Partial<UserProfile>) => void
   loading: boolean
 }
 
@@ -50,6 +56,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return localStorage.getItem('access_token') || null
   })
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!token) return
+    let isCurrent = true
+    apiClient.get('/users/profile/')
+      .then((response) => {
+        if (isCurrent) setUser(response.data)
+      })
+      .catch((error) => {
+        console.warn('Unable to refresh profile from the server:', error)
+      })
+    return () => {
+      isCurrent = false
+    }
+  }, [token])
 
   const login = async (usernameOrEmail: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     setLoading(true)
@@ -112,8 +133,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     triggerGlobalDataSync('role_switched')
   }
 
+  const updateUserProfile = (profile: Partial<UserProfile>) => {
+    setUser((current) => current ? { ...current, ...profile } : current)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, role, token, login, logout, switchRolePortal, loading }}>
+    <AuthContext.Provider value={{ user, role, token, login, logout, switchRolePortal, updateUserProfile, loading }}>
       {children}
     </AuthContext.Provider>
   )

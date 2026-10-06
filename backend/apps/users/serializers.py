@@ -32,7 +32,9 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'role', 'department', 'department_detail', 'vendor_id_code',
-            'phone', 'work_location', 'job_title', 'is_active', 'date_joined', 'password'
+            'phone', 'work_location', 'job_title', 'preferred_name',
+            'emergency_contact', 'cost_center', 'reporting_manager',
+            'is_active', 'date_joined', 'password'
         ]
         read_only_fields = ['id', 'date_joined']
 
@@ -58,7 +60,10 @@ class UserSerializer(serializers.ModelSerializer):
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email', 'phone', 'work_location', 'job_title']
+        fields = [
+            'first_name', 'last_name', 'email', 'phone', 'work_location', 'job_title',
+            'preferred_name', 'emergency_contact', 'cost_center', 'reporting_manager',
+        ]
 
 
 class PasswordChangeSerializer(serializers.Serializer):
