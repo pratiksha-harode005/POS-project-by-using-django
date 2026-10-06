@@ -40,7 +40,6 @@ import { RejectedRequestsPage } from '../portals/manager/RejectedRequestsPage'
 import { FinanceReviewPage } from '../portals/manager/FinanceReviewPage'
 import { TotalRequestsPage } from '../portals/manager/TotalRequestsPage'
 import { RaiseTicketPage } from '../portals/manager/RaiseTicketPage'
-import { RaiseComplaintPage } from '../portals/manager/RaiseComplaintPage'
 import { MyOrdersPage } from '../portals/manager/MyOrdersPage'
 import { ReceivedReportsPage } from '../portals/manager/ReceivedReportsPage'
 import { ManagerPurchaseOrdersPage } from '../portals/manager/ManagerPurchaseOrdersPage'
@@ -55,7 +54,6 @@ import { FinancialReportsPage } from '../portals/finance/FinancialReportsPage'
 import { FinancePurchaseRequestsPage } from '../portals/finance/FinancePurchaseRequestsPage'
 import { FinanceApprovedRejectedPage } from '../portals/finance/FinanceApprovedRejectedPage'
 import { FinanceRaiseTicketPage } from '../portals/finance/FinanceRaiseTicketPage'
-import { FinanceComplaintsPage } from '../portals/finance/FinanceComplaintsPage'
 import { FinanceRequestDetailsPage } from '../portals/finance/FinanceRequestDetailsPage'
 import { FinanceMyRequestsPage } from '../portals/finance/FinanceMyRequestsPage'
 import { FinanceReceivedReportsPage } from '../portals/finance/FinanceReceivedReportsPage'
@@ -165,7 +163,6 @@ function ManagerRoutes() {
       <Route path="purchase-orders" element={<ManagerPurchaseRequestsPage />} />
       <Route path="total-requests" element={<TotalRequestsPage />} />
       <Route path="raise-ticket" element={<RaiseTicketPage />} />
-      <Route path="raise-complaint" element={<RaiseComplaintPage />} />
       {/* Backward compat redirect */}
       <Route path="three-way-matching" element={<Navigate to="/portal/manager/raise-ticket" replace />} />
       <Route path="request-details" element={<ManagerRequestDetailsPage />} />
@@ -202,8 +199,6 @@ function FinanceRoutes() {
       <Route path="approved-rejected" element={<FinanceApprovedRejectedPage />} />
       <Route path="raise-ticket" element={<FinanceRaiseTicketPage />} />
       <Route path="three-way-matching" element={<FinanceRaiseTicketPage />} />
-      <Route path="raise-complaint" element={<FinanceComplaintsPage />} />
-      <Route path="complaints" element={<FinanceComplaintsPage />} />
       <Route path="payments" element={<FinancePaymentsPage />} />
       <Route path="request-details" element={<FinanceRequestDetailsPage />} />
       <Route path="financial-reports" element={<FinancialReportsPage />} />
@@ -234,7 +229,6 @@ function AdminRoutes() {
       <Route path="departments" element={<AdminDepartmentsPage />} />
       <Route path="workflows" element={<AdminWorkflowsPage />} />
       <Route path="raise-ticket" element={<RaiseTicketPage />} />
-      <Route path="raise-complaint" element={<RaiseComplaintPage />} />
       <Route path="notifications" element={<SharedNotificationsPage />} />
       <Route path="profile" element={<SharedProfilePage />} />
       <Route path="*" element={<Navigate to="/portal/admin/dashboard" replace />} />

@@ -46,7 +46,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
         { label: 'Manager Approval', path: `${basePath}/pending-approvals`, icon: CheckSquare },
         { label: 'Finance Review', path: `${basePath}/finance-review`, icon: Landmark },
         { label: 'Raise Ticket', path: `${basePath}/raise-ticket`, icon: Ticket },
-        { label: 'Raise Complaint', path: `${basePath}/raise-complaint`, icon: AlertTriangle },
         { label: 'Recommended to Finance', path: `${basePath}/recommended-finance`, icon: ArrowUpRight },
         { label: 'Payment', path: `${basePath}/payments`, icon: CreditCard },
         { label: 'Received Reports', path: `${basePath}/received-reports`, icon: FileCheck },
@@ -66,7 +65,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
         { label: 'Finance Approval', path: `${basePath}/pending-approvals`, icon: CheckSquare },
         { label: 'Recommend to Admin', path: `${basePath}/recommended-admin`, icon: ArrowUpRight },
         { label: 'Raise Ticket', path: `${basePath}/raise-ticket`, icon: Ticket },
-        { label: 'Raise Complaint', path: `${basePath}/raise-complaint`, icon: AlertTriangle },
         { label: 'Payments', path: `${basePath}/payments`, icon: CreditCard },
         { label: 'Received Reports', path: `${basePath}/received-reports`, icon: FileCheck },
         { label: 'Financial Reports', path: `${basePath}/financial-reports`, icon: FileSpreadsheet },
@@ -80,7 +78,6 @@ export const getSidebarItems = (role: UserRole, activeVendorId?: string): MenuIt
         { label: 'Requests', path: `${basePath}/requests`, icon: FileText },
         { label: 'Vendors', path: `${basePath}/vendors`, icon: Truck },
         { label: 'Raise Ticket', path: `${basePath}/raise-ticket`, icon: Ticket },
-        { label: 'Raise Complaint', path: `${basePath}/raise-complaint`, icon: AlertTriangle },
         { label: 'RFQs', path: `${basePath}/rfqs`, icon: FileSpreadsheet },
         { label: 'Vendor Quotations', path: `${basePath}/vendor-quotations`, icon: Scale },
         { label: 'Purchase Orders', path: `${basePath}/purchase-orders`, icon: Package },
@@ -206,7 +203,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
                 Contact Procurement Support
               </p>
               <Link
-                to={`/portal/${role.toLowerCase()}/raise-complaint`}
+                to={`/portal/${role.toLowerCase()}/raise-ticket`}
                 className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-400 hover:text-blue-300 mt-1.5 transition-colors"
               >
                 Get Support &rarr;
