@@ -256,7 +256,9 @@ export const RecommendedToFinancePage: React.FC = () => {
                       {/* Action */}
                       <td className="p-3.5 text-center whitespace-nowrap">
                         <button
-                          onClick={() => navigate(`/manager/request-details?id=${r.id}`)}
+                          onClick={() => navigate(`/portal/manager/request-details?id=${encodeURIComponent(r.id)}`, {
+                            state: { requestId: r.id, id: r.id }
+                          })}
                           className="p-1.5 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors cursor-pointer"
                           title="View Request Details"
                         >

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { TrackingStepper } from '../../components/portal/TrackingStepper'
 import {
   FileText, User, Calendar, Building, ArrowLeft,
@@ -22,6 +22,7 @@ const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN')}`
 
 export const ManagerRequestDetailsPage: React.FC = () => {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const { allRequests, tickets, approveRequest, recommendToFinance } = useManagerData()
   const [showApprovalModal, setShowApprovalModal] = useState(false)
@@ -38,10 +39,17 @@ export const ManagerRequestDetailsPage: React.FC = () => {
     setTimeout(() => setToast(null), 3500)
   }
 
-  const reqId = searchParams.get('id') || allRequests[0]?.id || 'REQ-2026-001'
+  const queryId = searchParams.get('id') || searchParams.get('requestId') || (location.state as any)?.requestId || (location.state as any)?.id
+  const reqId = queryId || allRequests[0]?.id || 'REQ-2026-001'
 
   const req = useMemo(() => {
-    return allRequests.find((r) => r.id === reqId) || allRequests[0]
+    if (!reqId) return allRequests[0]
+    return allRequests.find((r) =>
+      r.id === reqId ||
+      (r as any).requestId === reqId ||
+      (r as any).request_id === reqId ||
+      String((r as any).pk) === String(reqId)
+    ) || allRequests[0]
   }, [allRequests, reqId])
 
   const matchedTicket = useMemo(() => {

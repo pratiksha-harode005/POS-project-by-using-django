@@ -946,7 +946,9 @@ export const FinanceReceivedReportsPage: React.FC = () => {
                         <td className="p-3.5 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
-                              onClick={() => navigate(`/finance/request-details?id=${r.id}`)}
+                              onClick={() => navigate(`/portal/finance/request-details?id=${encodeURIComponent(r.id)}`, {
+                                state: { requestId: r.id, id: r.id }
+                              })}
                               className="p-1.5 hover:bg-purple-100 text-purple-600 rounded-lg transition-colors cursor-pointer"
                               title="View Full Lifecycle Details"
                             >
