@@ -2654,16 +2654,59 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     [backendRequests])
 
   const financeReview = useMemo(() =>
-    backendRequests.filter(r =>
-      r.status === 'finance_review' ||
-      r.status === 'recommended_to_finance' ||
-      (r as any).raw_status === 'RECOMMENDED_TO_FINANCE' ||
-      (r as any).raw_status === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-      (r as any).raw_status === 'PAYMENT_JUSTIFIED' ||
-      r.status === 'payment_justified' ||
-      r.status === 'payment_justification_submitted' ||
-      (r as any).extraFields?.payment_justification
-    ), [backendRequests])
+    backendRequests.filter(r => {
+      const rawSt = ((r as any).raw_status || r.status || '').toUpperCase()
+      const st = (r.status || '').toLowerCase()
+      const reqNorm = (r.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+
+      const isPaidInStorage = (() => {
+        try {
+          const paidReqs = JSON.parse(localStorage.getItem('kss_paid_requests') || '[]')
+          return Array.isArray(paidReqs) && paidReqs.some((k: string) => {
+            const kNorm = String(k).replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+            return k === r.id || (kNorm && reqNorm && kNorm === reqNorm)
+          })
+        } catch {
+          return false
+        }
+      })()
+
+      const hasPaidRecord = Boolean(
+        payments && payments.some(p => {
+          const pNorm = (p.requestId || p.id || '').replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+          return (p.status === 'Paid') && (p.requestId === r.id || (pNorm && reqNorm && pNorm === reqNorm))
+        })
+      )
+
+      return (
+        isFinanceRelevantRequest(r) ||
+        isPaidInStorage ||
+        hasPaidRecord ||
+        st === 'finance_review' ||
+        st === 'recommended_to_finance' ||
+        st === 'sent_to_finance' ||
+        st === 'finance_approved' ||
+        st === 'payment_approved' ||
+        st === 'payment_justified' ||
+        st === 'payment_justification_submitted' ||
+        st === 'payment_completed' ||
+        st === 'completed' ||
+        r.paymentStatus === 'Paid' ||
+        Boolean(r.paymentTransactionRef) ||
+        Boolean((r as any).paymentReference) ||
+        Boolean((r as any).payment_reference) ||
+        rawSt === 'RECOMMENDED_TO_FINANCE' ||
+        rawSt === 'FINANCE_REVIEW' ||
+        rawSt === 'FINANCE_APPROVED' ||
+        rawSt === 'PAYMENT_COMPLETED' ||
+        rawSt === 'COMPLETED' ||
+        rawSt === 'REQUEST_COMPLETED' ||
+        rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+        rawSt === 'PAYMENT_JUSTIFIED' ||
+        Boolean((r as any).extraFields?.payment_justification) ||
+        Boolean((r as any).extraFields?.payment_reference)
+      )
+    }), [backendRequests, payments])
 
   const recommendedToFinance = useMemo(() =>
     backendRequests.filter(r =>

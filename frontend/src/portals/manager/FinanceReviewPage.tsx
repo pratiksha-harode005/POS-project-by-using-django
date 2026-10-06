@@ -100,18 +100,36 @@ export const FinanceReviewPage: React.FC = () => {
   // Correlate requests with payments
   const enrichedList = useMemo(() => {
     return financeReview.map(r => {
-      const matchingPay = payments.find(p =>
-        p.requestId === r.id ||
-        (r.id && p.requestId?.includes(r.id.replace('REQ-', ''))) ||
-        (r.poNumber && p.poNumber === r.poNumber) ||
-        (r.invoiceDetails?.invoiceNumber && p.invoiceId === r.invoiceDetails.invoiceNumber)
-      )
+      const reqNorm = (r.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+      const matchingPay = payments.find(p => {
+        const pNorm = (p.requestId || p.id || '').replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+        return (
+          p.requestId === r.id ||
+          (reqNorm && pNorm && reqNorm === pNorm) ||
+          (r.poNumber && p.poNumber === r.poNumber) ||
+          (r.invoiceDetails?.invoiceNumber && p.invoiceId === r.invoiceDetails.invoiceNumber)
+        )
+      })
+
+      const isPaidInStorage = (() => {
+        try {
+          const paidReqs = JSON.parse(localStorage.getItem('kss_paid_requests') || '[]')
+          return Array.isArray(paidReqs) && paidReqs.some((k: string) => {
+            const kNorm = String(k).replace(/^(REQ-|TCK-|PO-|PRD-|PAY-)/, '').slice(0, 8).trim().toUpperCase()
+            return k === r.id || (kNorm && reqNorm && kNorm === reqNorm)
+          })
+        } catch {
+          return false
+        }
+      })()
 
       const isPaid = Boolean(
         matchingPay?.status === 'Paid' ||
+        isPaidInStorage ||
         r.paymentStatus === 'Paid' ||
         r.status === 'completed' ||
-        r.currentStage === 9 ||
+        r.status === 'payment_completed' ||
+        (r.currentStage !== undefined && r.currentStage >= 9) ||
         r.paymentTransactionRef ||
         (r as any).paymentReference ||
         (r as any).payment_reference ||
