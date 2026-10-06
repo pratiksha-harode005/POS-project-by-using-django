@@ -966,8 +966,23 @@ class DocumentViewSet(viewsets.ViewSet):
     def destroy(self, request, pk=None):
         if not pk:
             return Response({'error': 'Missing ID'}, status=status.HTTP_400_BAD_REQUEST)
-        clean = str(pk).replace('DOC-GRN-', '').replace('DOC-PO-', '').replace('DOC-INV-', '').replace('DOC-', '').replace('GRN-', '').replace('PO-', '').strip()
+        pk_str = str(pk).strip()
+        clean = pk_str.replace('DOC-GRN-', '').replace('DOC-PO-', '').replace('DOC-INV-', '').replace('DOC-REG-', '').replace('DOC-GST-', '').replace('DOC-REC-', '').replace('DOC-', '').replace('GRN-', '').replace('PO-', '').replace('REC-', '').replace('INV-', '').strip()
+        
+        # Delete matching Goods Receipts
         GoodsReceipt.objects.filter(
-            Q(receipt_id__icontains=clean) | Q(purchase_order__po_id__icontains=clean)
+            Q(receipt_id__icontains=clean) |
+            Q(receipt_id__icontains=pk_str) |
+            Q(purchase_order__po_id__icontains=clean) |
+            Q(purchase_order__po_id__icontains=pk_str)
         ).delete()
+        
+        # Delete matching Invoices
+        Invoice.objects.filter(
+            Q(invoice_number__icontains=clean) |
+            Q(invoice_id__icontains=clean) |
+            Q(purchase_order__po_id__icontains=clean)
+        ).delete()
+        
         return Response({'success': True, 'deleted': pk}, status=status.HTTP_200_OK)
+

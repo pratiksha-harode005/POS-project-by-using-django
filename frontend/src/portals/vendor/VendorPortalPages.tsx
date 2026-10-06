@@ -182,20 +182,181 @@ export function getStoredVendorDocuments(vendorId: string): any[] {
   return []
 }
 
+export function parseDocDate(dStr: any): number {
+  if (!dStr || dStr === 'None' || dStr === 'null' || dStr === 'N/A') return 0
+  if (typeof dStr === 'number') return dStr
+  if (typeof dStr === 'string') {
+    const trimmed = dStr.trim()
+    const dmyMatch = trimmed.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10)
+      const month = parseInt(dmyMatch[2], 10) - 1
+      const year = parseInt(dmyMatch[3], 10)
+      return new Date(year, month, day).getTime() || 0
+    }
+    const t = new Date(trimmed).getTime()
+    if (!isNaN(t)) return t
+  }
+  return 0
+}
+
+export function sortVendorDocuments(docs: any[]): any[] {
+  return [...docs].sort((a, b) => {
+    const timeA = parseDocDate(a.uploadedDate || a.date || a.createdAt || a.created_at)
+    const timeB = parseDocDate(b.uploadedDate || b.date || b.createdAt || b.created_at)
+    if (timeA !== timeB) {
+      return timeB - timeA
+    }
+    return (b.id || '').localeCompare(a.id || '')
+  })
+}
+
+export function extractDocKeys(docOrId: any): string[] {
+  if (!docOrId) return []
+  const keys = new Set<string>()
+  
+  const addKeyVariants = (val: string) => {
+    if (!val || typeof val !== 'string') return
+    const str = val.trim()
+    if (!str) return
+    keys.add(str)
+    keys.add(str.toUpperCase())
+    
+    // Strip prefixes
+    const clean = str.replace(/^(DOC-GRN-|DOC-INV-|DOC-PO-|DOC-REG-|DOC-GST-|DOC-QUO-|DOC-REC-|DOC-|GRN-|REC-|PO-|RFQ-|REQ-|INV-)+/i, '').trim()
+    if (clean) {
+      keys.add(clean)
+      keys.add(clean.toUpperCase())
+      keys.add(`DOC-GRN-${clean}`)
+      keys.add(`DOC-GRN-${clean.toUpperCase()}`)
+      keys.add(`DOC-GRN-REC-${clean.toUpperCase()}`)
+      keys.add(`DOC-${clean}`)
+      keys.add(`DOC-${clean.toUpperCase()}`)
+      keys.add(`GRN-${clean}`)
+      keys.add(`GRN-${clean.toUpperCase()}`)
+      keys.add(`REC-${clean}`)
+      keys.add(`REC-${clean.toUpperCase()}`)
+      keys.add(`PO-${clean}`)
+      keys.add(`PO-${clean.toUpperCase()}`)
+      keys.add(`DOC-PO-${clean.toUpperCase()}`)
+      keys.add(`DOC-INV-${clean.toUpperCase()}`)
+      keys.add(`INV-${clean.toUpperCase()}`)
+    }
+    
+    const hexMatches = str.match(/[A-Za-z0-9-]{6,}/g)
+    if (hexMatches) {
+      hexMatches.forEach(t => {
+        const upperT = t.toUpperCase()
+        const cleanT = upperT.replace(/^(DOC-GRN-|DOC-INV-|DOC-PO-|DOC-|GRN-|REC-|PO-|RFQ-|REQ-|INV-)+/i, '')
+        keys.add(upperT)
+        if (cleanT) {
+          keys.add(cleanT)
+          keys.add(`DOC-GRN-${cleanT}`)
+          keys.add(`DOC-GRN-REC-${cleanT}`)
+          keys.add(`REC-${cleanT}`)
+          keys.add(`PO-${cleanT}`)
+        }
+      })
+    }
+  }
+
+  if (typeof docOrId === 'string') {
+    addKeyVariants(docOrId)
+  } else if (typeof docOrId === 'object') {
+    if (docOrId.id) addKeyVariants(docOrId.id)
+    if (docOrId.name) addKeyVariants(docOrId.name)
+    if (docOrId.grnDocNumber) addKeyVariants(docOrId.grnDocNumber)
+    if (docOrId.receiptNumber) addKeyVariants(docOrId.receiptNumber)
+    if (docOrId.poRef) addKeyVariants(docOrId.poRef)
+    if (docOrId.rfqRef) addKeyVariants(docOrId.rfqRef)
+    if (docOrId.requestRef) addKeyVariants(docOrId.requestRef)
+    if (docOrId.rawId) addKeyVariants(String(docOrId.rawId))
+  }
+  
+  return Array.from(keys)
+}
+
 export function saveStoredVendorDocument(vendorId: string, doc: any): any[] {
   const key = `kss_vendor_docs_${vendorId}`
   const current = getStoredVendorDocuments(vendorId)
-  const updated = [doc, ...current]
+  const updated = sortVendorDocuments([doc, ...current.filter((d: any) => d.id !== doc.id)])
   localStorage.setItem(key, JSON.stringify(updated))
   return updated
 }
 
-export function deleteStoredVendorDocument(vendorId: string, docId: string): any[] {
+export function getDeletedDocIds(vendorId: string): Set<string> {
+  const key = `kss_vendor_deleted_docs_${vendorId}`
+  const globalKey = `kss_vendor_deleted_documents`
+  const result = new Set<string>()
+  
+  const parseKey = (storageKey: string) => {
+    const saved = localStorage.getItem(storageKey)
+    if (saved) {
+      try {
+        const arr = JSON.parse(saved)
+        if (Array.isArray(arr)) {
+          arr.forEach(item => {
+            if (item) {
+              result.add(String(item))
+              result.add(String(item).toUpperCase())
+            }
+          })
+        }
+      } catch (e) {}
+    }
+  }
+  
+  parseKey(key)
+  parseKey(globalKey)
+  return result
+}
+
+export function addDeletedDocId(vendorId: string, docOrId: any): Set<string> {
+  const key = `kss_vendor_deleted_docs_${vendorId}`
+  const globalKey = `kss_vendor_deleted_documents`
+  const current = getDeletedDocIds(vendorId)
+  
+  const extracted = extractDocKeys(docOrId)
+  extracted.forEach(k => {
+    current.add(k)
+    current.add(k.toUpperCase())
+  })
+  
+  const arr = Array.from(current)
+  localStorage.setItem(key, JSON.stringify(arr))
+  localStorage.setItem(globalKey, JSON.stringify(arr))
+  return current
+}
+
+export function isDocDeleted(deletedSet: Set<string>, doc: any): boolean {
+  if (!doc) return true
+  const keys = extractDocKeys(doc)
+  for (const k of keys) {
+    if (deletedSet.has(k) || deletedSet.has(k.toUpperCase())) return true
+  }
+  return false
+}
+
+export function deleteStoredVendorDocument(vendorId: string, docOrId: any): any[] {
   const key = `kss_vendor_docs_${vendorId}`
+  const deletedSet = addDeletedDocId(vendorId, docOrId)
   const current = getStoredVendorDocuments(vendorId)
-  const updated = current.filter((d: any) => d.id !== docId && d.grnDocNumber !== docId && d.receiptNumber !== docId)
+  const updated = current.filter((d: any) => !isDocDeleted(deletedSet, d))
   localStorage.setItem(key, JSON.stringify(updated))
-  addDeletedDocId(vendorId, docId)
+  
+  // Clean up receipts cache if matching
+  const rcpKey = `kss_vendor_receipts_${vendorId}`
+  try {
+    const savedRcps = localStorage.getItem(rcpKey)
+    if (savedRcps) {
+      const rcps = JSON.parse(savedRcps)
+      if (Array.isArray(rcps)) {
+        const updatedRcps = rcps.filter((r: any) => !isDocDeleted(deletedSet, r))
+        localStorage.setItem(rcpKey, JSON.stringify(updatedRcps))
+      }
+    }
+  } catch (e) {}
+  
   return updated
 }
 
@@ -203,46 +364,6 @@ export function clearStoredVendorDocuments(vendorId: string): any[] {
   const key = `kss_vendor_docs_${vendorId}`
   localStorage.removeItem(key)
   return []
-}
-
-export function getDeletedDocIds(vendorId: string): Set<string> {
-  const key = `kss_vendor_deleted_docs_${vendorId}`
-  const saved = localStorage.getItem(key)
-  if (saved) {
-    try {
-      return new Set(JSON.parse(saved))
-    } catch (e) {}
-  }
-  return new Set<string>()
-}
-
-export function addDeletedDocId(vendorId: string, docId: string): Set<string> {
-  const key = `kss_vendor_deleted_docs_${vendorId}`
-  const current = getDeletedDocIds(vendorId)
-  if (docId) {
-    current.add(docId)
-    current.add(docId.toUpperCase())
-    const clean = docId.replace(/^(DOC-GRN-|DOC-|GRN-|REC-|PO-|RFQ-|REQ-)/i, '').trim().toUpperCase()
-    if (clean) {
-      current.add(`DOC-GRN-${clean}`)
-      current.add(`DOC-${clean}`)
-      current.add(`GRN-${clean}`)
-      current.add(clean)
-    }
-  }
-  localStorage.setItem(key, JSON.stringify(Array.from(current)))
-  return current
-}
-
-export function isDocDeleted(deletedSet: Set<string>, doc: any): boolean {
-  if (!doc) return true
-  if (doc.id && (deletedSet.has(doc.id) || deletedSet.has(doc.id.toUpperCase()))) return true
-  if (doc.grnDocNumber && (deletedSet.has(doc.grnDocNumber) || deletedSet.has(doc.grnDocNumber.toUpperCase()))) return true
-  if (doc.receiptNumber && (deletedSet.has(doc.receiptNumber) || deletedSet.has(doc.receiptNumber.toUpperCase()))) return true
-  if (doc.poRef && (deletedSet.has(doc.poRef) || deletedSet.has(doc.poRef.toUpperCase()))) return true
-  const cleanKey = (doc.id || doc.grnDocNumber || doc.receiptNumber || '').replace(/^(DOC-GRN-|DOC-|GRN-|REC-|PO-|RFQ-|REQ-)/i, '').trim().toUpperCase()
-  if (cleanKey && deletedSet.has(cleanKey)) return true
-  return false
 }
 
 // ─── ADMIN DOC STATUS OVERRIDE HELPERS ─────────────────────────────────────
@@ -1252,7 +1373,7 @@ export function getScopedVendorData(vendorId: string) {
     })
   }
 
-  const documents = Array.from(combinedDocsMap.values()).filter(d => !isDocDeleted(deletedDocIds, d))
+  const documents = sortVendorDocuments(Array.from(combinedDocsMap.values()).filter(d => !isDocDeleted(deletedDocIds, d)))
 
   // Vendor Notifications (Dynamic)
   const notifications: any[] = []
@@ -7124,18 +7245,13 @@ export const VendorDocumentsPage: React.FC = () => {
       })
 
       const finalDocs = Array.from(mergedMap.values()).filter(d => !isDocDeleted(deletedSet, d))
-      finalDocs.sort((a, b) => {
-        const timeA = new Date(a.uploadedDate || a.date || 0).getTime()
-        const timeB = new Date(b.uploadedDate || b.date || 0).getTime()
-        if (timeA !== timeB) return timeB - timeA
-        return (b.id || '').localeCompare(a.id || '')
-      })
-      setLocalDocs(applyOverrides(finalDocs))
+      const sortedDocs = sortVendorDocuments(finalDocs)
+      setLocalDocs(applyOverrides(sortedDocs))
     } catch (e) {
       const deletedSet = getDeletedDocIds(vendorId)
       const { documents: refreshedDocs } = getScopedVendorData(vendorId)
       const filtered = refreshedDocs.filter(d => !isDocDeleted(deletedSet, d))
-      setLocalDocs(applyOverrides(filtered))
+      setLocalDocs(applyOverrides(sortVendorDocuments(filtered)))
     }
   }
 
@@ -7152,9 +7268,11 @@ export const VendorDocumentsPage: React.FC = () => {
     }
   }, [vendorId])
 
-  const handleDeleteDoc = async (docId: string) => {
-    const updatedSet = addDeletedDocId(vendorId, docId)
-    deleteStoredVendorDocument(vendorId, docId)
+  const handleDeleteDoc = async (doc: any) => {
+    const docObj = (typeof doc === 'object' && doc !== null) ? doc : { id: String(doc) }
+    const docId = docObj.id || String(doc)
+    const updatedSet = addDeletedDocId(vendorId, docObj)
+    deleteStoredVendorDocument(vendorId, docObj)
     
     // Immediately filter local state
     setLocalDocs((prevDocs) => {
@@ -7163,7 +7281,18 @@ export const VendorDocumentsPage: React.FC = () => {
 
     // Delete on backend API so it never returns on refresh
     try {
-      await deleteVendorDocumentApi(docId)
+      if (docId) {
+        await deleteVendorDocumentApi(docId)
+      }
+      if (docObj.receiptNumber && docObj.receiptNumber !== docId) {
+        await deleteVendorDocumentApi(docObj.receiptNumber)
+      }
+      if (docObj.poRef && docObj.poRef !== docId) {
+        await deleteVendorDocumentApi(docObj.poRef)
+      }
+      if (docObj.grnDocNumber && docObj.grnDocNumber !== docId) {
+        await deleteVendorDocumentApi(docObj.grnDocNumber)
+      }
     } catch (e) {
       console.warn('Backend delete document failed:', e)
     }
@@ -7349,7 +7478,7 @@ Certified Digital Audit Seal • KSS Procurement OS Governance Standard
                         </button>
 
                         <button
-                          onClick={() => handleDeleteDoc(doc.id)}
+                          onClick={() => handleDeleteDoc(doc)}
                           className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition-colors cursor-pointer"
                           title="Delete Document"
                         >
@@ -7370,7 +7499,12 @@ Certified Digital Audit Seal • KSS Procurement OS Governance Standard
         onClose={() => setShowUploadModal(false)}
         vendorId={vendor.id}
         vendorName={vendor.name}
-        onDocumentUploaded={(newDoc) => setLocalDocs(applyOverrides([newDoc, ...localDocs]))}
+        onDocumentUploaded={(newDoc) => {
+          setLocalDocs((prevDocs) => {
+            const filtered = prevDocs.filter((d) => d.id !== newDoc.id)
+            return applyOverrides(sortVendorDocuments([newDoc, ...filtered]))
+          })
+        }}
       />
 
       <ViewLinkedRequestModal
