@@ -212,40 +212,13 @@ export const getFinanceRequests = async (params?: ApiRequestParams) => {
   }
 }
 
-/** POST /api/requests/{id}/process_approval/ (Finance recommendation to Admin) */
+/** POST /api/finance/requests/{id}/recommend-admin/ */
 export const recommendToAdminApi = async (id: string, reason: string, notes?: string) => {
-  let matchedReasonId: number | undefined
-  try {
-    const reasonsResponse = await apiClient.get('/requests/reasons/', {
-      params: { reason_type: 'RECOMMEND', page_size: 100 },
-    })
-    const reasons = Array.isArray(reasonsResponse.data)
-      ? reasonsResponse.data
-      : reasonsResponse.data?.results || []
-    const normalizedReason = (reason || '').toLowerCase()
-    const reasonKeywords = normalizedReason.includes('budget') || normalizedReason.includes('delegation') || normalizedReason.includes('exceeds')
-      ? ['budget', 'exceeds']
-      : normalizedReason.includes('strategic') || normalizedReason.includes('director') || normalizedReason.includes('board') || normalizedReason.includes('executive')
-        ? ['executive', 'director', 'high-value', 'strategic']
-        : normalizedReason.includes('policy') || normalizedReason.includes('exception')
-          ? ['policy exception', 'policy']
-          : normalizedReason.includes('cross-department')
-            ? ['cross-department']
-            : ['additional financial review', 'review', 'recommend']
-    const matchedReason = reasons.find((item: { id: number; text: string }) =>
-      reasonKeywords.some(keyword => item.text.toLowerCase().includes(keyword))
-    ) || reasons[0]
-
-    matchedReasonId = matchedReason?.id
-  } catch (err) {
-    console.warn('Failed fetching recommendation reasons from backend:', err)
-  }
-
-  return apiClient.post(`/requests/${id}/process_approval/`, {
-    action: 'RECOMMEND',
-    ...(matchedReasonId ? { reason_id: matchedReasonId } : {}),
-    notes: [reason, notes].filter(Boolean).join('\n'),
+  const res = await apiClient.post(`/finance/requests/${id}/recommend-admin/`, {
+    reason,
+    comments: notes || reason,
   })
+  return res.data
 }
 
 /** POST /api/requests/{id}/process_approval/ (RECOMMEND to Finance) */

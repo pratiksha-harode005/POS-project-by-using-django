@@ -19,7 +19,6 @@ import {
   getPendingRequests,
   approveRequestApi,
   rejectRequestApi,
-  recommendToAdminApi,
   recommendToFinanceApi,
   sendBackRequestApi,
   forwardToFinanceApi,
@@ -33,6 +32,8 @@ import {
   apiClient
 } from '../api/managerApi'
 import {
+  getRecommendedToAdminRequests,
+  recommendToAdminApi as recommendFinanceRequestToAdminApi,
   approveFinanceRequestApi,
   rejectFinanceRequestApi,
   sendBackFinanceRequestApi,
@@ -1683,6 +1684,13 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     try {
       // 1. Kick off requests fetch immediately for fastest UI update
       const requestsPromise = getDashboardStats()
+      const activeRole = (localStorage.getItem('user_role') || '').toUpperCase()
+      const adminRecommendationsPromise = ['FINANCE', 'ADMIN'].includes(activeRole)
+        ? getRecommendedToAdminRequests().catch((error) => {
+            console.warn('Failed to refresh the Admin recommendation register:', error)
+            return []
+          })
+        : Promise.resolve([])
 
       // 2. Kick off other secondary datasets in parallel
       const othersPromise = Promise.allSettled([
@@ -1697,10 +1705,23 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ])
 
       let mapped: ProcurementRequest[] = []
-      const requestsRes = await requestsPromise
-      if (requestsRes) {
+      const [requestsRes, adminRecommendationRows] = await Promise.all([
+        requestsPromise,
+        adminRecommendationsPromise,
+      ])
+      if (requestsRes || adminRecommendationRows.length > 0) {
         const res = requestsRes
-        const list = Array.isArray(res) ? res : res?.results || []
+        const requestRows = Array.isArray(res) ? res : res?.results || []
+        const rowsByRequestId = new Map<string, any>()
+        requestRows.forEach((item: any) => {
+          const key = String(item.request_id || item.id)
+          rowsByRequestId.set(key, item)
+        })
+        adminRecommendationRows.forEach((item: any) => {
+          const key = String(item.request_id || item.id)
+          rowsByRequestId.set(key, item)
+        })
+        const list = Array.from(rowsByRequestId.values())
         const existingMap = new Map(allRequestsRef.current.map(r => [r.id, r]))
 
         mapped = list.map((item: any) => {
@@ -3881,59 +3902,74 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     comment?: string,
     actor = 'Mark Finance Officer'
   ) => {
-    const today = new Date().toISOString().split('T')[0]
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
     const base = financeReview.find(r => r.id === id) || allRequests.find(r => r.id === id)
-    if (!base) return
+    if (!base) throw new Error(`Request ${id} is not available in the current data.`)
 
-    // Dispatch backend API call to update PostgreSQL
-    recommendToAdminApi(id, reason, comment || reason)
-      .then(() => {
-        refreshManagerBackendData()
-        triggerGlobalDataSync('workflow_transition')
-      })
-      .catch((e) => console.warn('Backend recommend to admin error:', e))
-
-    const record: ProcurementRequest = {
-      ...base,
-      status: 'recommended_to_admin',
-      raw_status: 'RECOMMENDED_TO_ADMIN',
-      financeStatus: 'Recommended to Admin',
-      approvalLevel: 'Admin / Executive Authority',
-      recommendationReason: reason,
-      financeComment: comment || reason,
-      recommendedBy: actor,
-      recommendedDate: today,
-      extra_fields: {
-        ...(base.extra_fields || {}),
-        finance_recommendation_reason: reason,
-        finance_recommended_by: actor,
-        finance_recommended_date: today,
-        finance_status: 'Recommended to Admin',
-      }
+    const updated = await recommendFinanceRequestToAdminApi(id, reason, comment || reason)
+    const rawStatus = String(updated?.status || '').toUpperCase()
+    if (!['RECOMMENDED_TO_ADMIN', 'FINANCE_RECOMMENDED_TO_ADMIN'].includes(rawStatus)) {
+      throw new Error('The server did not confirm that the request was recommended to Admin.')
     }
 
-    // 1. Single source optimistic update
-    setBackendRequests(prev => prev.map(r => r.id === id ? record : r))
+    const today = new Date().toISOString().split('T')[0]
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const serverExtra = updated.extra_fields && typeof updated.extra_fields === 'object'
+      ? updated.extra_fields
+      : {}
+    const record: ProcurementRequest = {
+      ...base,
+      id: updated.request_id || base.id,
+      request_id: updated.request_id || (base as any).request_id || base.id,
+      dbId: updated.id ?? (base as any).dbId,
+      department: updated.department_detail?.name || base.department,
+      vendor: updated.preferred_vendor || updated.vendor || base.vendor,
+      amount: Number(updated.amount ?? base.amount),
+      status: 'recommended_to_admin',
+      raw_status: rawStatus,
+      currentStage: updated.current_stage ?? base.currentStage,
+      approvalLevel: updated.current_approval_level || 'ADMIN',
+      financeStatus: updated.finance_status || serverExtra.finance_status || 'Recommended to Admin',
+      recommendationReason: updated.recommendation_reason || serverExtra.finance_recommendation_reason || reason,
+      financeComment: updated.finance_comment || serverExtra.finance_comments || comment || reason,
+      recommendedBy: updated.recommended_by || serverExtra.finance_recommended_by || actor,
+      recommendedDate: updated.recommended_date || serverExtra.finance_recommended_date || today,
+      extra_fields: serverExtra,
+      history: Array.isArray(updated.approval_history)
+        ? updated.approval_history.map((h: any) => ({
+            date: h.created_at || h.timestamp || '',
+            actorRole: h.user_role || 'User',
+            actorName: h.performed_by_detail
+              ? `${h.performed_by_detail.first_name} ${h.performed_by_detail.last_name}`.trim() || h.performed_by_detail.username
+              : h.user_role || 'User',
+            action: h.action || 'Updated',
+            remark: h.comments || '',
+          }))
+        : base.history,
+    }
+
+    setBackendRequests(prev => prev.map(r =>
+      r.id === id || String(r.id) === String(updated.id) || (r as any).request_id === updated.request_id
+        ? record
+        : r
+    ))
 
     setFinanceAuditHistory(prev => [
       {
         id: `AUD-${Date.now()}`,
-        requestId: id,
+        requestId: record.id,
         requestTitle: base.title,
-        actor,
+        actor: record.recommendedBy || actor,
         action: 'RECOMMENDED_TO_ADMIN',
         timestamp: `${today} ${time}`,
-        reason,
+        reason: record.recommendationReason || reason,
         comment: comment || 'Forwarded to Admin / Executive Authority for higher-level review and approval.',
         amount: base.amount,
       },
       ...prev,
     ])
 
-    window.dispatchEvent(new Event('kss_backend_updated'))
-  }, [financeReview, allRequests, refreshManagerBackendData])
+    triggerGlobalDataSync('workflow_transition')
+  }, [financeReview, allRequests])
 
   const adminApproveRequest = useCallback((
     id: string,

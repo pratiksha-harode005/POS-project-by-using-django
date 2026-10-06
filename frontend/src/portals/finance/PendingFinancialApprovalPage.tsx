@@ -175,6 +175,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     } else if (modalAction === 'REJECT') {
       if (!reason) {
         showToast('Rejection reason is required', 'error')
+        setIsSubmitting(false)
         return
       }
       rejectFinanceRequest(activeReq.id, reason, comment, actorName)
@@ -182,6 +183,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     } else if (modalAction === 'HOLD') {
       if (!comment.trim()) {
         showToast('Hold reason/comment is required', 'error')
+        setIsSubmitting(false)
         return
       }
       holdFinanceRequest(activeReq.id, comment, actorName)
@@ -189,6 +191,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     } else if (modalAction === 'SEND_BACK') {
       if (!comment.trim()) {
         showToast('Please provide feedback comments for the send back action', 'error')
+        setIsSubmitting(false)
         return
       }
       sendBackFinanceRequest(activeReq.id, comment, actorName)
@@ -196,9 +199,20 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     } else if (modalAction === 'RECOMMEND_ADMIN') {
       if (!comment.trim()) {
         showToast('Please provide recommendation notes / justification for Admin', 'error')
+        setIsSubmitting(false)
         return
       }
-      recommendToHigherAuthority(activeReq.id, reason, comment, actorName)
+      try {
+        await recommendToHigherAuthority(activeReq.id, reason, comment, actorName)
+        setModalAction(null)
+        setActiveReq(null)
+        setIsSubmitting(false)
+      } catch (error: any) {
+        const detail = error?.response?.data?.detail || error?.response?.data?.error || error?.message
+        showToast(detail || `Could not recommend request ${activeReq.id} to Admin.`, 'error')
+        setIsSubmitting(false)
+        return
+      }
       showToast(`✓ Request ${activeReq.id} recommended to Higher Authority (Admin) for executive approval.`, 'success')
     }
   }

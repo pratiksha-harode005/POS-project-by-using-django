@@ -321,16 +321,6 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         if cost_val is not None:
             data['total_estimated_cost'] = cost_val
 
-        dept_val = data.get('department')
-        if dept_val:
-            from apps.users.models import Department
-            if isinstance(dept_val, str) and not dept_val.isdigit():
-                dept_obj = Department.objects.filter(name__icontains=dept_val).first() or Department.objects.first()
-                if dept_obj:
-                    data['department'] = dept_obj.id
-            elif isinstance(dept_val, int) or (isinstance(dept_val, str) and dept_val.isdigit()):
-                data['department'] = int(dept_val)
-
         existing_id = data.get('id') or data.get('draft_id')
         if existing_id:
             pr_obj = get_purchase_request_by_pk_or_request_id(existing_id)
@@ -356,7 +346,9 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             if hasattr(user, 'department') and user.department:
                 dept = user.department
             else:
-                dept = Department.objects.first()
+                raise ValidationError({
+                    'department': 'Select a department or assign one to the request creator.'
+                })
 
         is_draft = bool(
             self.request.data.get('is_draft') or
@@ -816,7 +808,12 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
 
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['post'], url_path='recommend-admin', permission_classes=[])
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='recommend-admin',
+        permission_classes=[permissions.IsAuthenticated, IsFinanceRole],
+    )
     def recommend_admin(self, request, pk=None):
         pr = self.get_object()
         user = request.user if (request.user and request.user.is_authenticated) else User.objects.filter(role='FINANCE').first()
@@ -1178,7 +1175,9 @@ class TeamLeadRequestViewSet(viewsets.ModelViewSet):
             if hasattr(user, 'department') and user.department:
                 dept = user.department
             else:
-                dept = Department.objects.first()
+                raise ValidationError({
+                    'department': 'Select a department or assign one to the request creator.'
+                })
 
         is_draft = bool(
             self.request.data.get('is_draft') or
@@ -3320,6 +3319,25 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
             models.Q(created_by__role='FINANCE')
         ).distinct()
         return apply_request_type_filter(filtered_qs, self.request)
+
+    @action(detail=False, methods=['get'], url_path='recommended-to-admin')
+    def recommended_to_admin(self, request):
+        """Return the audit register of requests ever recommended to Admin."""
+        qs = get_base_purchase_request_queryset().exclude(status='DRAFT').exclude(current_stage=0)
+        qs = qs.filter(
+            models.Q(status__in=[
+                PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN,
+                PurchaseRequest.STATUS_FINANCE_RECOMMENDED_TO_ADMIN,
+            ]) |
+            models.Q(extra_fields__finance_recommendation_reason__isnull=False) |
+            models.Q(approval_history__action__in=['FINANCE_RECOMMEND_ADMIN', 'RECOMMEND_ADMIN']) |
+            models.Q(approval_steps__decision__in=['RECOMMEND_ADMIN', 'RECOMMEND_TO_ADMIN'])
+        ).distinct()
+        qs = apply_request_type_filter(self.filter_queryset(qs), request)
+
+        page = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
 
     def get_object(self):
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field

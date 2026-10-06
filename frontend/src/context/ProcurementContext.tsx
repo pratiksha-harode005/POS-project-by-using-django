@@ -71,14 +71,8 @@ export interface PurchaseRequest {
   rawRequest?: any
   subscription_type?: string
   renewalCycle?: string
+  renewal_cycle?: string
   renewal_eligibility?: any
-  approval_steps?: any[]
-  rfqId?: string
-  rfqs?: any[]
-  poNumber?: string
-  grnNumber?: string
-  invoiceNumber?: string
-  isVerified?: boolean
 }
 
 export interface ReceiptDetails {
@@ -326,7 +320,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         } else if (bs === 'SENT_BACK' || bs === 'RETURNED') {
           currentlyWithRole = 'Team Lead'
           currentlyWithName = 'Awaiting Re-submission'
-        } else if (normalizedStatus === 'Approved' || bs === 'MANAGER_APPROVED') {
+        } else if (normalizedStatus === 'Approved' || bs === 'MANAGER_APPROVED' || bs === 'FINANCE_APPROVED' || bs === 'ADMIN_APPROVED') {
           const isSoftReq = (
             (item.category || '').toLowerCase().includes('software') ||
             (item.category || '').toLowerCase().includes('saas') ||
@@ -336,18 +330,19 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
             Boolean(item.software_name) ||
             item.flow_type === 'B'
           )
+          const hasRfq = Boolean(
+            item.rfq_id ||
+            item.rfqId ||
+            (Array.isArray(item.rfqs) && item.rfqs.length > 0) ||
+            bs === 'RFQ_SENT' ||
+            bs === 'IN_PROCUREMENT'
+          )
           if (isSoftReq) {
             currentlyWithRole = 'Team Lead'
             currentlyWithName = 'Pay Now (Mock) Ready'
           } else {
-            const hasRfq = Boolean(item.rfq_id || item.rfqId || (item.rfqs && item.rfqs.length > 0))
-            if (hasRfq) {
-              currentlyWithRole = 'Procurement Sourcing Desk'
-              currentlyWithName = 'Sourcing Team (RFQ Sent)'
-            } else {
-              currentlyWithRole = 'Procurement Sourcing Desk'
-              currentlyWithName = 'Procurement Sourcing Desk — Ready for RFQ'
-            }
+            currentlyWithRole = 'Procurement Sourcing Desk'
+            currentlyWithName = hasRfq ? 'Sourcing Team (RFQ Sent)' : 'Awaiting RFQ Creation'
           }
         } else if (bs === 'DRAFT') {
           currentlyWithRole = 'Team Lead'
@@ -374,7 +369,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           item.flow_type === 'B'
         )
 
-        let effectiveCurrentStage = bs === 'DRAFT' ? 0 : (item.current_stage || 1)
+        let effectiveCurrentStage = bs === 'DRAFT' ? 0 : (item.current_stage ?? 1)
         if (isSoftReq) {
           if (item.current_stage) {
             effectiveCurrentStage = item.current_stage
@@ -389,9 +384,6 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           } else if (bs === 'REQUEST_COMPLETED' || bs === 'COMPLETED') {
             effectiveCurrentStage = 12
           }
-        } else {
-          // Hardware requests follow the real database stage (no hardcoded/forced skipping)
-          effectiveCurrentStage = bs === 'DRAFT' ? 0 : (typeof item.current_stage === 'number' ? item.current_stage : 1)
         }
 
         const effectiveCost = Number(
@@ -458,13 +450,6 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           confirmed_by_team_lead: item.confirmed_by_team_lead,
           confirmed_at: item.confirmed_at,
           timeline: item.timeline || [],
-          approval_steps: item.approval_steps || [],
-          rfqId: item.rfq_id || item.rfqId || (item.rfqs && item.rfqs[0]?.rfq_id),
-          rfqs: item.rfqs || [],
-          poNumber: item.po_number || item.po_id || item.poNumber,
-          grnNumber: item.grn_number || item.grnNumber || item.receipt_id,
-          invoiceNumber: item.invoice_number || item.invoiceNumber,
-          isVerified: Boolean(item.is_invoice_verified || item.documentsVerified || item.isVerified),
           final_approval_by: item.final_approval_by || item.extra_fields?.final_approval_by,
           approval_path: item.approval_path || item.final_approval_by || item.extra_fields?.final_approval_by,
           renewal_eligibility: item.renewal_eligibility,

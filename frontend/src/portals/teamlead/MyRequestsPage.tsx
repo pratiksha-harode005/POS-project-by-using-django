@@ -1820,7 +1820,7 @@ export const MyRequestsPage: React.FC = () => {
                   title={req.title}
                   flowType={req.flowType}
                   history={req.history as any}
-                  approval_steps={(req as any).approval_steps || (req as any).rawRequest?.approval_steps}
+                  approval_steps={(req as any).approval_steps}
                   financeStatus={(req as any).financeStatus}
                   paymentStatus={(req as any).paymentStatus}
                   poNumber={req.poRef || (req as any).poNumber || (req as any).po_number}
@@ -1828,7 +1828,6 @@ export const MyRequestsPage: React.FC = () => {
                   invoiceNumber={(req as any).invoiceNumber || (req as any).invoice_number}
                   is_invoice_verified={(req as any).is_invoice_verified || (req as any).documentsVerified}
                   rfqId={(req as any).rfqId || (req as any).rfq_id}
-                  timeline={(req as any).timeline}
                 />
 
                 {/* ─── SUBSCRIPTION & RENEWAL SECTION ─────────────────────────────────── */}

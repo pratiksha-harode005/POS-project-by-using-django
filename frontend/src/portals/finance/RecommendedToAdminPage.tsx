@@ -112,7 +112,6 @@ export const RecommendedToAdminPage: React.FC = () => {
         r.status === 'approved' ||
         r.financeStatus === 'Admin Approved' ||
         r.financeStatus === 'Approved' ||
-        (r.currentStage !== undefined && r.currentStage >= 4) ||
         r.approvedBy
       )
       const isPending = (r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin') && !isApproved

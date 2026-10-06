@@ -531,7 +531,12 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       dynamicStages = [...PATH_C_ADMIN_STAGES]
     }
   } else {
-    const { hadFinance, hadAdmin } = detectActualApprovalPath(req.approval_steps || [], req.history || [], req.currentStage)
+    // Hardware workflow: build dynamic stages based on portals that actually participated
+    const { hadFinance, hadAdmin } = detectActualApprovalPath(
+      req.approval_steps || [],
+      req.history || [],
+      req.currentStage
+    )
     dynamicStages = buildDynamicStages(false, hadFinance, hadAdmin)
   }
 
@@ -620,80 +625,67 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     const foundIdx = dynamicStages.indexOf(currentStageName)
     stageIndex = foundIdx >= 0 ? foundIdx : 0
   } else {
-    // Hardware Stages based on real database state & artifacts
-    const { hadFinance, hadAdmin } = detectActualApprovalPath(req.approval_steps || [], req.history || [], req.currentStage)
-
-    if (st === 'pending_arrival' || st === 'draft' || st === 'created') {
-      currentStageName = 'Create Request'
-      currentlyWith = 'Team Lead / Requester'
-    } else if (
-      st === 'pending_approval' ||
-      st === 'submitted' ||
-      st === 'pending' ||
-      st === 'manager_review' ||
-      st === 'team_lead_submitted'
-    ) {
+    // Hardware Stages: determine real stage from actual database artifacts
+    if (isCompleted || pst === 'paid' || st === 'completed' || st === 'request_completed') {
+      currentStageName = 'Payment'
+      currentlyWith = 'Finance Treasury & Disbursement'
+    } else if (pst === 'processing' || pst === 'pending' || st === 'payment' || st === 'payment_pending') {
+      currentStageName = 'Payment'
+      currentlyWith = 'Finance Treasury & Disbursement'
+    } else if (areDocsVerified || st === 'verified' || st === 'invoiced' || st === 'invoice') {
+      currentStageName = 'Verification and Order Complete'
+      currentlyWith = 'Procurement Audit & Invoice Verification'
+    } else if (hasGrn || st === 'delivered' || st === 'delivery') {
+      currentStageName = 'Delivery'
+      currentlyWith = 'Logistics & Receiving Dock (GRN Verification)'
+    } else if (hasPo || st === 'product_order' || st === 'vendor_accepted') {
+      currentStageName = 'Product Order'
+      currentlyWith = 'Vendor Partner (PO Dispatched)'
+    } else if (hasQuotes || st === 'quotes_received' || st === 'vendor_quotes_received' || st === 'under_evaluation') {
+      currentStageName = 'Vendor Quotes Received'
+      currentlyWith = 'Procurement Sourcing Desk (Evaluating Quotes)'
+    } else if (hasRfq || st === 'rfq_sent' || st === 'in_procurement' || st === 'in procurement') {
+      currentStageName = 'RFQ Sent'
+      currentlyWith = 'Procurement Sourcing Desk — Sourcing Team (RFQ Sent)'
+    } else if (st === 'admin_approved') {
+      currentStageName = dynamicStages.includes('Admin Approval') ? 'Admin Approval' : 'Manager Approval'
+      currentlyWith = 'Procurement Desk — Awaiting RFQ Creation'
+    } else if (st === 'finance_approved') {
+      currentStageName = dynamicStages.includes('Finance Approval') ? 'Finance Approval' : 'Manager Approval'
+      currentlyWith = 'Procurement Desk — Awaiting RFQ Creation'
+    } else if (st === 'manager_approved' || st === 'approved') {
       currentStageName = 'Manager Approval'
-      currentlyWith = 'Manager — Sarah Manager'
-    } else if (
-      st === 'recommended_to_finance' ||
-      st === 'manager_recommended_to_finance' ||
-      st === 'finance_review' ||
-      st === 'finance_recommended' ||
-      st === 'sent_to_finance' ||
-      st === 'finance_on_hold' ||
-      st === 'clarification_requested'
-    ) {
-      currentStageName = 'Finance Approval'
-      currentlyWith = 'Finance — Mark Finance Officer'
+      currentlyWith = 'Procurement Desk — Awaiting RFQ Creation'
     } else if (
       st === 'recommended_to_admin' ||
       st === 'finance_recommended_to_admin' ||
-      st === 'admin_review' ||
-      st === 'admin_research' ||
-      fst === 'recommended to admin'
+      fst === 'recommended to admin' ||
+      st === 'admin_review'
     ) {
       currentStageName = 'Admin Approval'
       currentlyWith = 'Admin — Executive Authority'
     } else if (
-      st === 'completed' ||
-      st === 'payment' ||
-      st === 'payment_pending' ||
-      pst === 'pending' ||
-      pst === 'processing' ||
-      pst === 'paid'
+      st === 'recommended_to_finance' ||
+      st === 'manager_recommended_to_finance' ||
+      st === 'sent_to_finance' ||
+      st === 'finance_review' ||
+      st === 'finance_on_hold' ||
+      st === 'clarification_requested' ||
+      fst === 'awaiting finance action'
     ) {
-      currentStageName = 'Payment'
-      currentlyWith = 'Finance Treasury & Disbursement'
-    } else if (areDocsVerified || st === 'verified' || st === 'order_complete' || st === 'invoiced' || st === 'invoice') {
-      currentStageName = 'Verification and Order Complete'
-      currentlyWith = 'Procurement Audit & Raise Ticket Verification'
-    } else if (hasGrn || st === 'delivered' || st === 'delivery') {
-      currentStageName = 'Delivery'
-      currentlyWith = 'Accounts & Dock (Invoice & GRN Verification)'
-    } else if (hasPo || st === 'product_order') {
-      currentStageName = 'Product Order'
-      currentlyWith = 'Logistics & Vendor (PO Dispatched)'
-    } else if (hasQuotes || st === 'quotes_received') {
-      currentStageName = 'Vendor Quotes Received'
-      currentlyWith = 'Selected Vendor (Awaiting Acceptance)'
-    } else if (hasRfq || st === 'rfq_sent' || st === 'in_procurement') {
-      currentStageName = 'RFQ Sent'
-      currentlyWith = 'Procurement Sourcing Desk'
+      currentStageName = 'Finance Approval'
+      currentlyWith = 'Finance — Mark Finance Officer'
     } else if (
-      st === 'manager_approved' ||
-      st === 'finance_approved' ||
-      st === 'admin_approved' ||
-      st === 'approved'
+      st === 'pending_approval' ||
+      st === 'pending' ||
+      st === 'submitted' ||
+      st === 'manager_review'
     ) {
-      if (hadAdmin || st === 'admin_approved') {
-        currentStageName = 'Admin Approval'
-      } else if (hadFinance || st === 'finance_approved') {
-        currentStageName = 'Finance Approval'
-      } else {
-        currentStageName = 'Manager Approval'
-      }
-      currentlyWith = 'Procurement Sourcing Desk — Approved & Ready for RFQ'
+      currentStageName = 'Manager Approval'
+      currentlyWith = 'Manager — Sarah Manager'
+    } else if (st === 'pending_arrival' || st === 'draft' || st === 'created') {
+      currentStageName = 'Create Request'
+      currentlyWith = 'Team Lead / Requester'
     } else {
       currentStageName = 'Manager Approval'
       currentlyWith = 'Manager — Sarah Manager'

@@ -55,17 +55,12 @@ export const createTeamLeadRequest = async (payload: CreateRequestPayload & { is
     ...payload,
     requested_amount: payload.requested_amount ?? payload.total_estimated_cost ?? payload.existing_cost ?? 0,
     total_estimated_cost: payload.total_estimated_cost ?? payload.requested_amount ?? payload.existing_cost ?? 0,
-    department: payload.department ?? payload.department_id ?? 1,
+    department: payload.department ?? payload.department_id,
     vendor: payload.vendor || payload.preferred_vendor || '',
     preferred_vendor: payload.preferred_vendor || payload.vendor || '',
   }
-  try {
-    const response = await apiClient.post('/team-lead/requests/', body)
-    return response.data
-  } catch {
-    const fallback = await apiClient.post('/requests/', body)
-    return fallback.data
-  }
+  const response = await apiClient.post('/team-lead/requests/', body)
+  return response.data
 }
 
 export const saveDraftRequest = async (payload: CreateRequestPayload & { id?: string | number }) => {
@@ -75,17 +70,12 @@ export const saveDraftRequest = async (payload: CreateRequestPayload & { id?: st
     status: 'DRAFT',
     requested_amount: payload.requested_amount ?? payload.total_estimated_cost ?? payload.existing_cost ?? 0,
     total_estimated_cost: payload.total_estimated_cost ?? payload.requested_amount ?? payload.existing_cost ?? 0,
-    department: payload.department ?? payload.department_id ?? 1,
+    department: payload.department ?? payload.department_id,
     vendor: payload.vendor || payload.preferred_vendor || '',
     preferred_vendor: payload.preferred_vendor || payload.vendor || '',
   }
-  try {
-    const response = await apiClient.post('/team-lead/requests/', body)
-    return response.data
-  } catch {
-    const fallback = await apiClient.post('/requests/', body)
-    return fallback.data
-  }
+  const response = await apiClient.post('/team-lead/requests/', body)
+  return response.data
 }
 
 export const submitDraftRequest = async (id: string | number, payload?: any) => {

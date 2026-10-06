@@ -35,6 +35,25 @@ export const getFinanceRequests = async (params?: ApiRequestParams) => {
   }
 }
 
+export const getRecommendedToAdminRequests = async () => {
+  const allRequests: any[] = []
+  let page = 1
+
+  while (true) {
+    const response = await apiClient.get('/finance/requests/recommended-to-admin/', {
+      params: { page, page_size: 1000 },
+    })
+    const data = response.data
+    const rows = Array.isArray(data) ? data : data?.results || []
+    allRequests.push(...rows)
+
+    if (Array.isArray(data) || !data?.next || rows.length === 0) break
+    page += 1
+  }
+
+  return allRequests
+}
+
 export const getPendingFinancialApprovals = async (params?: ApiRequestParams) => {
   return getFinanceRequests(params)
 }
@@ -216,26 +235,8 @@ export const recommendToAdminApi = async (
     recommended_amount: amount,
   }
 
-  try {
-    const res = await apiClient.post(`/finance/requests/${id}/recommend-admin/`, payload)
-    return res.data
-  } catch {
-    try {
-      const fallback = await apiClient.post(`/requests/${id}/recommend-admin/`, payload)
-      return fallback.data
-    } catch {
-      try {
-        const legacyFallback = await apiClient.post(`/requests/${id}/process_approval/`, {
-          action: 'RECOMMEND_ADMIN',
-          notes: payload.comments,
-          amount: payload.approved_amount,
-        })
-        return legacyFallback.data
-      } catch {
-        return { success: true }
-      }
-    }
-  }
+  const res = await apiClient.post(`/finance/requests/${id}/recommend-admin/`, payload)
+  return res.data
 }
 
 

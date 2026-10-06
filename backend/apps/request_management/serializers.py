@@ -636,41 +636,63 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
 
         else:
             # Hardware stages (10 Stages)
-            h_research = find_h(['RESEARCH_SAVED', 'MANAGER_RESEARCH'])
-            h_estimation = find_h(['PRE_ESTIMATION_COMPLETED', 'COST_ESTIMATION'])
-            h_fin_appr = find_h(['FINANCE_APPROVE'])
-            h_payment = find_h(['PAYMENT_COMPLETED'])
-            h_tl_conf = find_h(['TEAM_LEAD_CONFIRMED', 'COMPLETED', 'TEAM_LEAD_CONFIRM'])
+            h_rfq = find_h(['RFQ_SENT', 'CREATE_RFQ', 'SEND_RFQ'])
+            h_quotes = find_h(['QUOTES_RECEIVED', 'VENDOR_QUOTES_RECEIVED', 'RECEIVE_QUOTE'])
+            h_po = find_h(['PO_CREATED', 'PRODUCT_ORDER', 'GENERATE_PO', 'VENDOR_ACCEPTED'])
+            h_delivery = find_h(['DELIVERY', 'DELIVERED', 'GRN_CREATED'])
+            h_verify = find_h(['VERIFIED', 'INVOICED', 'INVOICE_VERIFIED', 'VERIFY_ORDER'])
+            h_payment = find_h(['PAYMENT_COMPLETED', 'PAYMENT', 'PAID'])
+            h_admin_appr = find_h(['ADMIN_APPROVE', 'APPROVE'])
+            h_fin_appr = find_h(['FINANCE_APPROVE', 'APPROVE'])
+
+            has_rfq = bool(obj.rfq_id or getattr(obj, 'rfqId', None) or (hasattr(obj, 'rfqs') and obj.rfqs.exists()) or st in ['RFQ_SENT', 'IN_PROCUREMENT', 'IN PROCUREMENT'])
+            has_quotes = bool(st in ['QUOTES_RECEIVED', 'VENDOR_QUOTES_RECEIVED', 'UNDER_EVALUATION'])
+            has_po = bool(getattr(obj, 'po_number', None) or getattr(obj, 'poNumber', None) or st in ['PRODUCT_ORDER', 'PO_CREATED'])
+            has_grn = bool(getattr(obj, 'grn_number', None) or getattr(obj, 'grnNumber', None) or st in ['DELIVERED', 'DELIVERY'])
+            has_verify = bool(getattr(obj, 'is_invoice_verified', False) or getattr(obj, 'isVerified', False) or st in ['VERIFIED', 'INVOICED', 'INVOICE'])
+            has_pay = bool((obj.payment_status or '').upper() == 'PAID' or st in ['COMPLETED', 'REQUEST_COMPLETED', 'PAYMENT_COMPLETED'])
 
             stages_info = [
-                (1, 'Request Created', 'Team Lead', h_create),
-                (2, 'Manager Review', 'Manager', None),
-                (3, 'Manager Research', 'Manager', h_research),
-                (4, 'Pre-Estimation Completed', 'Manager', h_estimation),
-                (5, 'Manager Approved', 'Manager', h_mgr_appr),
-                (6, 'Finance Review', 'Finance', None),
-                (7, 'Finance Approved', 'Finance', h_fin_appr),
-                (8, 'Payment Completed', 'Finance / Accounts', h_payment),
-                (9, 'Team Lead Confirmation', 'Team Lead', h_tl_conf),
-                (10, 'Request Completed', 'Procurement System', h_tl_conf if st in ['COMPLETED', 'REQUEST_COMPLETED'] else None),
+                (1, 'Create Request', 'Team Lead', h_create),
+                (2, 'Manager Approval', 'Manager', h_mgr_appr),
+                (3, 'Finance Approval', 'Finance', h_fin_appr),
+                (4, 'Admin Approval', 'Admin', h_admin_appr),
+                (5, 'RFQ Sent', 'Procurement Desk', h_rfq),
+                (6, 'Vendor Quotes Received', 'Vendor', h_quotes),
+                (7, 'Product Order', 'Vendor Partner', h_po),
+                (8, 'Delivery', 'Logistics & Dock', h_delivery),
+                (9, 'Verification and Order Complete', 'Procurement Audit', h_verify),
+                (10, 'Payment', 'Finance Treasury', h_payment),
             ]
 
             completed_stage_threshold = 1
-            if st in ['COMPLETED', 'REQUEST_COMPLETED']:
+            if has_pay or st in ['COMPLETED', 'REQUEST_COMPLETED']:
                 completed_stage_threshold = 10
-            elif st in ['PAYMENT_COMPLETED', 'TEAM_LEAD_CONFIRMED']:
+            elif has_verify:
                 completed_stage_threshold = 8
-            elif st in ['FINANCE_APPROVED']:
+            elif has_grn:
                 completed_stage_threshold = 7
-            elif st in ['FINANCE_REVIEW', 'FINANCE_RECOMMENDED', 'RECOMMENDED_TO_FINANCE']:
+            elif has_po:
+                completed_stage_threshold = 6
+            elif has_quotes:
                 completed_stage_threshold = 5
-            elif st in ['MANAGER_APPROVED']:
-                completed_stage_threshold = 5
-            elif st in ['PRE_ESTIMATION_COMPLETED', 'COST_ESTIMATION']:
+            elif has_rfq:
                 completed_stage_threshold = 4
-            elif st in ['MANAGER_RESEARCHING', 'FINANCE_RESEARCH']:
+            elif st in ['ADMIN_APPROVED']:
+                completed_stage_threshold = 4
+            elif st in ['FINANCE_APPROVED']:
                 completed_stage_threshold = 3
-            elif st in ['MANAGER_REVIEW', 'TEAM_LEAD_SUBMITTED', 'PENDING']:
+            elif st in ['MANAGER_APPROVED', 'APPROVED']:
+                completed_stage_threshold = 2
+            elif st in ['RECOMMENDED_TO_ADMIN', 'FINANCE_RECOMMENDED_TO_ADMIN', 'ADMIN_REVIEW']:
+                completed_stage_threshold = 3
+            elif st in ['RECOMMENDED_TO_FINANCE', 'MANAGER_RECOMMENDED_TO_FINANCE', 'FINANCE_REVIEW', 'FINANCE_RECOMMENDED', 'SENT_TO_FINANCE']:
+                completed_stage_threshold = 2
+            elif st in ['MANAGER_REVIEW', 'TEAM_LEAD_SUBMITTED', 'PENDING', 'PENDING_APPROVAL']:
+                completed_stage_threshold = 1
+            elif st in ['DRAFT', 'CREATED', 'TEAM_LEAD_REVIEW']:
+                completed_stage_threshold = 0
+            else:
                 completed_stage_threshold = 1
 
         timeline_result = []
@@ -974,18 +996,20 @@ class CreatePurchaseRequestSerializer(serializers.ModelSerializer):
         if not data.get('category') or str(data.get('category')).strip() == '':
             data['category'] = 'IT Hardware'
         dept_val = data.get('department')
-        if dept_val is not None and not isinstance(dept_val, int):
-            if str(dept_val).isdigit():
-                data['department'] = int(dept_val)
+        if isinstance(dept_val, str):
+            dept_str = dept_val.strip()
+            if not dept_str:
+                data['department'] = None
+            elif dept_str.isdigit():
+                data['department'] = int(dept_str)
             else:
                 from apps.users.models import Department
-                dept_str = str(dept_val).strip()
-                dept = (
-                    Department.objects.filter(name__iexact=dept_str).first() or
-                    Department.objects.filter(name__icontains=dept_str.replace('&', '').strip().split()[0]).first() or
-                    Department.objects.first()
-                )
-                data['department'] = dept.id if dept else None
+                dept = Department.objects.filter(name__iexact=dept_str).first()
+                if not dept:
+                    raise serializers.ValidationError({
+                        'department': f"No department matches '{dept_str}'. Select a department from the list."
+                    })
+                data['department'] = dept.pk
         return super().to_internal_value(data)
 
     def validate_requested_amount(self, value):
