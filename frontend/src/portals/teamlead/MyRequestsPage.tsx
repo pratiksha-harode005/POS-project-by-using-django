@@ -1764,7 +1764,7 @@ export const MyRequestsPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {isHardwareRequest(req) && (req.status === 'Returned' || req.status === 'Pending' || req.status === 'Draft') && (
+                    {!isHardwareRequest(req) && (req.status === 'Returned' || req.status === 'Pending' || req.status === 'Draft') && (
                       <button
                         onClick={() => handleOpenEdit(req)}
                         className={`flex items-center gap-1.5 font-bold text-xs px-4 py-2 rounded-xl shadow transition-all ${
