@@ -370,8 +370,10 @@ export const RequestArrivalPage: React.FC = () => {
           </div>
         ) : (
           paged.map((req) => {
-            const isApproved = statusFilter === 'APPROVED' || req.status === 'approved' || req.status === 'finance_approved' || (req.status as string) === 'payment_approved' || (req.status as string) === 'payment_justification_submitted' || (req.status as string) === 'payment_justified' || (req.status as string) === 'payment_completed' || (req.status as string) === 'completed'
-            const isRejected = statusFilter === 'REJECTED' || req.status === 'rejected' || req.status === 'finance_rejected'
+            const rawSt = ((req as any).raw_status || req.status || '').toUpperCase()
+            const st = (req.status || '').toLowerCase()
+            const isApproved = statusFilter === 'APPROVED' || st === 'approved' || st === 'finance_review' || rawSt === 'FINANCE_REVIEW' || st === 'finance_approved' || rawSt === 'FINANCE_APPROVED' || rawSt === 'MANAGER_APPROVED' || (req.status as string) === 'payment_approved' || (req.status as string) === 'payment_justification_submitted' || (req.status as string) === 'payment_justified' || (req.status as string) === 'payment_completed' || (req.status as string) === 'completed' || Boolean(req.approvedBy) || Boolean(req.approvalParams)
+            const isRejected = statusFilter === 'REJECTED' || st === 'rejected' || rawSt === 'REJECTED' || st === 'finance_rejected' || rawSt === 'FINANCE_REJECTED'
             const isPending = !isApproved && !isRejected
 
             return (

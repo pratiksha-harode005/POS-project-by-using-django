@@ -193,8 +193,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
         })}
       </nav>
 
-      {/* Need Help? Box at bottom (hidden in Team Lead Portal) */}
-      {role !== 'TEAM_LEAD' && !location.pathname.includes('/team_lead') && (
+      {/* Need Help? Box at bottom (hidden in Team Lead and Manager portals) */}
+      {role !== 'TEAM_LEAD' && role !== 'MANAGER' && !location.pathname.includes('/team_lead') && (
         <div className="p-3.5 m-3 rounded-xl bg-slate-800/60 border border-slate-700/60 text-xs text-slate-300 flex-shrink-0">
           <div className="flex items-start gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center flex-shrink-0 mt-0.5">

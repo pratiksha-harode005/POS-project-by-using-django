@@ -460,8 +460,29 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
         ) : (
           paged.map((req) => {
             const recInfo = getRecommendationStatus(req)
-            const isApproved = statusFilter === 'APPROVED' || req.status === 'approved' || req.status === 'finance_approved' || (req.status as string) === 'payment_approved' || (req.status as string) === 'payment_justified' || (req.status as string) === 'payment_completed' || (req.status as string) === 'completed'
-            const isRejected = statusFilter === 'REJECTED' || req.status === 'rejected' || req.status === 'finance_rejected'
+            const rawSt = ((req as any).raw_status || req.status || '').toUpperCase()
+            const st = (req.status || '').toLowerCase()
+
+            const isApproved =
+              statusFilter === 'APPROVED' ||
+              st === 'approved' ||
+              st === 'finance_review' ||
+              rawSt === 'FINANCE_REVIEW' ||
+              st === 'finance_approved' ||
+              rawSt === 'FINANCE_APPROVED' ||
+              rawSt === 'MANAGER_APPROVED' ||
+              rawSt.includes('APPROVED') ||
+              st === 'payment_approved' ||
+              st === 'payment_justified' ||
+              st === 'manager_verified' ||
+              st === 'manager_verified_pending_team_lead_acknowledgement' ||
+              st === 'payment_completed' ||
+              st === 'completed' ||
+              st === 'assigned_to_vendor' ||
+              Boolean(req.approvalParams) ||
+              Boolean(req.approvedBy) ||
+              Boolean(req.approvedDate)
+            const isRejected = statusFilter === 'REJECTED' || st === 'rejected' || rawSt === 'REJECTED' || st === 'finance_rejected' || rawSt === 'FINANCE_REJECTED'
             const isPending = !isApproved && !isRejected && !recInfo.isRecommended
             const isNew = isUnread(req.id) && (statusFilter === 'PENDING' || isPending)
 
@@ -510,9 +531,16 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                           </span>
                         </>
                       ) : isApproved ? (
-                        <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
-                          <CheckCircle size={11} /> Manager Approved
-                        </span>
+                        <>
+                          <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
+                            <CheckCircle size={11} /> Manager Approved
+                          </span>
+                          {(st === 'finance_review' || rawSt === 'FINANCE_REVIEW') && (
+                            <span className="text-[10px] font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
+                              Finance Review
+                            </span>
+                          )}
+                        </>
                       ) : isRejected ? (
                         <span className="text-[10px] font-black text-rose-900 bg-rose-100 px-3 py-0.5 rounded-full border border-rose-300 shadow-2xs flex items-center gap-1">
                           <XCircle size={11} /> Manager Rejected
@@ -804,7 +832,7 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
 
                     return (
                       <>
-                        {(statusFilter === 'PENDING' || (statusFilter === 'ALL' && isPending)) && (
+                        {isPending && (
                           <div className="flex items-center gap-2 flex-wrap">
                             <button
                               onClick={() => handleOpenViewDetails(req)}
@@ -833,7 +861,7 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                           </div>
                         )}
 
-                        {(statusFilter === 'APPROVED' || (statusFilter === 'ALL' && isApproved)) && (
+                        {isApproved && (
                           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                             <button
                               onClick={() => handleOpenViewDetails(req)}
@@ -852,7 +880,7 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                           </div>
                         )}
 
-                        {(statusFilter === 'REJECTED' || (statusFilter === 'ALL' && isRejected)) && (
+                        {isRejected && (
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => handleOpenViewDetails(req)}
