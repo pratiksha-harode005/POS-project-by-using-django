@@ -188,11 +188,19 @@ class RFQViewSet(viewsets.ModelViewSet):
                     existing_rfq.invited_vendors.add(*vendor_ids)
 
                 try:
+                    update_f = ['current_stage', 'status', 'updated_at']
                     if pr_obj.current_stage < 4:
                         pr_obj.current_stage = 4
                     if pr_obj.status in ['Pending', 'Recommended', 'Draft', 'Approved']:
                         pr_obj.status = 'In Procurement'
-                    pr_obj.save(update_fields=['current_stage', 'status', 'updated_at'])
+                    est_amt = data.get('estimated_amount') or data.get('estimatedAmount') or data.get('amount')
+                    if est_amt and (pr_obj.total_estimated_cost is None or float(pr_obj.total_estimated_cost) == 0.0):
+                        try:
+                            pr_obj.total_estimated_cost = float(est_amt)
+                            update_f.append('total_estimated_cost')
+                        except (ValueError, TypeError):
+                            pass
+                    pr_obj.save(update_fields=update_f)
                 except Exception as e:
                     print("Could not update PR stage on RFQ update:", e)
 
@@ -210,11 +218,19 @@ class RFQViewSet(viewsets.ModelViewSet):
         try:
             if rfq.purchase_request:
                 pr = rfq.purchase_request
+                update_f = ['current_stage', 'status', 'updated_at']
                 if pr.current_stage < 4:
                     pr.current_stage = 4
                 if pr.status in ['Pending', 'Recommended', 'Draft', 'Approved']:
                     pr.status = 'In Procurement'
-                pr.save(update_fields=['current_stage', 'status', 'updated_at'])
+                est_amt = self.request.data.get('estimated_amount') or self.request.data.get('estimatedAmount') or self.request.data.get('amount')
+                if est_amt and (pr.total_estimated_cost is None or float(pr.total_estimated_cost) == 0.0):
+                    try:
+                        pr.total_estimated_cost = float(est_amt)
+                        update_f.append('total_estimated_cost')
+                    except (ValueError, TypeError):
+                        pass
+                pr.save(update_fields=update_f)
         except Exception as e:
             print("Could not update PR stage on RFQ creation:", e)
 

@@ -410,7 +410,16 @@ export const ManagerRFQsPage: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 font-black text-slate-900 text-xs">{fmt(r.estimatedAmount)}</td>
+                    <td className="px-4 py-3.5 font-black text-slate-900 text-xs">
+                      {fmt(
+                        Number(r.estimatedAmount) ||
+                        Number((r as any).estimated_amount) ||
+                        Number((r as any).purchase_request_detail?.total_estimated_cost) ||
+                        Number((r as any).purchase_request_detail?.amount) ||
+                        (Array.isArray(r.items) ? r.items.reduce((acc, it) => acc + ((Number(it.quantity) || 1) * (Number(it.expectedPrice) || 0)), 0) : 0) ||
+                        0
+                      )}
+                    </td>
                     <td className="px-4 py-3.5 text-slate-700 font-medium flex items-center gap-1.5 mt-1">
                       <Calendar size={13} className="text-slate-400" />
                       <span>{r.deadline}</span>

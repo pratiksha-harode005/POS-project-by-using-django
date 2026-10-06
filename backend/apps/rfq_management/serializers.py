@@ -14,7 +14,25 @@ class PurchaseRequestSummarySerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         ret = super().to_representation(instance)
-        cost = float(instance.total_estimated_cost) if instance.total_estimated_cost is not None else 0.0
+        cost = 0.0
+        for val in [instance.total_estimated_cost, instance.requested_amount, instance.approved_amount, instance.existing_cost]:
+            if val is not None:
+                try:
+                    fval = float(val)
+                    if fval > 0:
+                        cost = fval
+                        break
+                except (ValueError, TypeError):
+                    pass
+        if cost == 0.0 and instance.extra_fields and isinstance(instance.extra_fields, dict):
+            for k in ['total_estimated_cost', 'requested_amount', 'existing_cost', 'amount', 'totalAmount', 'estimated_amount']:
+                v = instance.extra_fields.get(k)
+                try:
+                    if v and float(v) > 0:
+                        cost = float(v)
+                        break
+                except (ValueError, TypeError):
+                    pass
         ret['total_estimated_cost'] = cost
         ret['amount'] = cost
         ret['estimated_cost'] = cost
@@ -427,3 +445,31 @@ class RFQSerializer(serializers.ModelSerializer):
                     q_data[camel_k] = v
             results.append(q_data)
         return results
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        pr = instance.purchase_request
+        est_amount = 0.0
+        if pr:
+            for val in [pr.total_estimated_cost, pr.requested_amount, pr.approved_amount, pr.existing_cost]:
+                if val is not None:
+                    try:
+                        fval = float(val)
+                        if fval > 0:
+                            est_amount = fval
+                            break
+                    except (ValueError, TypeError):
+                        pass
+            if est_amount == 0.0 and pr.extra_fields and isinstance(pr.extra_fields, dict):
+                for k in ['total_estimated_cost', 'requested_amount', 'existing_cost', 'amount', 'totalAmount', 'estimated_amount']:
+                    v = pr.extra_fields.get(k)
+                    try:
+                        if v and float(v) > 0:
+                            est_amount = float(v)
+                            break
+                    except (ValueError, TypeError):
+                        pass
+        ret['estimated_amount'] = est_amount
+        ret['estimatedAmount'] = est_amount
+        ret['total_estimated_cost'] = est_amount
+        return ret

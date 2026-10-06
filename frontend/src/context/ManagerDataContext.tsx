@@ -1976,6 +1976,14 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           const cb = r.purchase_request_detail?.created_by_detail
           const createdByStr = cb ? `${cb.first_name || ''} ${cb.last_name || ''}`.trim() || cb.username : 'System'
 
+          const matchingPr = (allRequestsRef.current || []).find(pr => 
+            pr.id === r.purchase_request_detail?.request_id ||
+            pr.request_id === r.purchase_request_detail?.request_id ||
+            (r.purchase_request && (pr.id === String(r.purchase_request) || (pr as any).pk === r.purchase_request || (pr as any).rawRequest?.id === r.purchase_request)) ||
+            (r.terms && typeof r.terms === 'string' && r.terms.includes(pr.id)) ||
+            (r.remarks && typeof r.remarks === 'string' && r.remarks.includes(pr.id))
+          )
+
           const rawItems = Array.isArray(r.items) && r.items.length > 0
             ? r.items
             : Array.isArray(r.purchase_request_detail?.items) && r.purchase_request_detail.items.length > 0
@@ -1987,27 +1995,39 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 product: it.product || it.name || it.item_name || it.title || r.title || 'Required Item',
                 specification: it.specification || it.description || it.spec || r.purchase_request_detail?.description || 'Standard technical specifications',
                 quantity: Number(it.quantity || it.qty || r.purchase_request_detail?.quantity || 1),
-                expectedPrice: Number(it.expectedPrice || it.unitPrice || it.unit_price || it.estimated_price || (r.purchase_request_detail?.total_estimated_cost ? Number(r.purchase_request_detail.total_estimated_cost) / (Number(it.quantity || 1) || 1) : 0)),
+                expectedPrice: Number(it.expectedPrice || it.unitPrice || it.unit_price || it.estimated_price || (r.purchase_request_detail?.total_estimated_cost ? Number(r.purchase_request_detail.total_estimated_cost) / (Number(it.quantity || 1) || 1) : (matchingPr?.amount ? matchingPr.amount / (Number(it.quantity || 1) || 1) : 0))),
                 requiredBy: it.requiredBy || it.required_by || r.purchase_request_detail?.required_by || r.deadline || '2026-10-25'
               }))
             : [{
-                product: r.title || r.purchase_request_detail?.title || 'Required Items',
-                specification: r.description || r.purchase_request_detail?.description || r.terms || 'Standard enterprise technical specifications',
-                quantity: Number(r.purchase_request_detail?.quantity || r.quantity || 1),
-                expectedPrice: Number(r.purchase_request_detail?.total_estimated_cost || r.estimated_amount || r.estimatedAmount || 0),
+                product: r.title || r.purchase_request_detail?.title || matchingPr?.title || 'Required Items',
+                specification: r.description || r.purchase_request_detail?.description || r.terms || matchingPr?.description || 'Standard enterprise technical specifications',
+                quantity: Number(r.purchase_request_detail?.quantity || matchingPr?.quantity || r.quantity || 1),
+                expectedPrice: Number(r.purchase_request_detail?.total_estimated_cost || r.purchase_request_detail?.amount || matchingPr?.amount || r.estimated_amount || r.estimatedAmount || 0),
                 requiredBy: r.purchase_request_detail?.required_by || r.deadline || '2026-10-25'
               }]
+
+          const itemsSum = rfqItems.reduce((acc, it) => acc + ((Number(it.quantity) || 1) * (Number(it.expectedPrice) || 0)), 0)
+
+          const resolvedEstAmount = 
+            Number(r.estimatedAmount) ||
+            Number(r.estimated_amount) ||
+            Number(r.purchase_request_detail?.total_estimated_cost) ||
+            Number(r.purchase_request_detail?.amount) ||
+            Number(r.purchase_request_detail?.estimated_cost) ||
+            (matchingPr && matchingPr.amount > 0 ? matchingPr.amount : 0) ||
+            (itemsSum > 0 ? itemsSum : 0) ||
+            0
 
           return {
             ...r,
             id: r.rfq_id || r.id,
             pk: r.id,
             status: st,
-            department: r.purchase_request_detail?.department_detail?.name || 'IT',
+            department: r.purchase_request_detail?.department_detail?.name || matchingPr?.department || 'IT',
             createdBy: createdByStr,
             vendors,
             items: rfqItems,
-            estimatedAmount: r.estimatedAmount || r.purchase_request_detail?.total_estimated_cost || r.estimated_amount || 0
+            estimatedAmount: resolvedEstAmount
           }
         })
 
@@ -3032,6 +3052,9 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         terms: rfqData.remarks,
         status: 'Open',
         category: rfqData.category,
+        estimated_amount: rfqData.estimatedAmount,
+        estimatedAmount: rfqData.estimatedAmount,
+        items: rfqData.items,
         purchase_request: rfqData.remarks?.includes('Mapped from Approved PR: ')
             ? rfqData.remarks.split('Mapped from Approved PR: ')[1]
             : null,
