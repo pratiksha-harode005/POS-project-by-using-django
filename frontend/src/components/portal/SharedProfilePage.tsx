@@ -28,6 +28,12 @@ export const SharedProfilePage: React.FC = () => {
       if (saved) {
         const parsed = JSON.parse(saved)
         if (parsed.approvalLimit && parsed.monthlyCapexLimit) {
+          if (role === 'MANAGER') {
+            return {
+              approvalLimit: parsed.approvalLimit === '₹15,00,000' ? '₹5,00,000' : parsed.approvalLimit,
+              monthlyCapexLimit: parsed.monthlyCapexLimit === '₹50,00,000' ? '₹5,00,000' : parsed.monthlyCapexLimit,
+            }
+          }
           return parsed
         }
       }
@@ -46,8 +52,8 @@ export const SharedProfilePage: React.FC = () => {
         }
       case 'MANAGER':
         return {
-          approvalLimit: '₹15,00,000',
-          monthlyCapexLimit: '₹50,00,000',
+          approvalLimit: '₹5,00,000',
+          monthlyCapexLimit: '₹5,00,000',
         }
       case 'TEAM_LEAD':
         return {

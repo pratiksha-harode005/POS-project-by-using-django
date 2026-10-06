@@ -31,16 +31,17 @@ class NotificationViewSet(viewsets.ModelViewSet):
                 return Notification.objects.all()
 
             if user_param and role_param:
-                r_clean = str(role_param).strip().upper()
                 u_lookup = Q(username__iexact=str(user_param)) | Q(email__iexact=str(user_param))
                 if str(user_param).isdigit():
                     u_lookup |= Q(id=int(user_param))
 
                 target_user = User.objects.filter(u_lookup).first()
                 if target_user:
-                    return qs.filter(Q(user=target_user) | Q(user__role__iexact=r_clean)).distinct()
+                    # Notifications are stored per recipient, so a role-wide OR
+                    # here counts one event once for every user in that role.
+                    return qs.filter(user=target_user)
 
-                return qs.filter(Q(user__username__iexact=str(user_param)) | Q(user__email__iexact=str(user_param)) | Q(user__role__iexact=r_clean)).distinct()
+                return qs.none()
 
             if user_param:
                 if str(user_param).isdigit():
@@ -104,15 +105,14 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
         qs = Notification.objects.filter(is_read=False)
         if user_param and role_param:
-            r_clean = str(role_param).strip().upper()
             u_lookup = Q(username__iexact=str(user_param)) | Q(email__iexact=str(user_param))
             if str(user_param).isdigit():
                 u_lookup |= Q(id=int(user_param))
             target_user = User.objects.filter(u_lookup).first()
             if target_user:
-                qs = qs.filter(Q(user=target_user) | Q(user__role__iexact=r_clean))
+                qs = qs.filter(user=target_user)
             else:
-                qs = qs.filter(Q(user__username__iexact=str(user_param)) | Q(user__email__iexact=str(user_param)) | Q(user__role__iexact=r_clean))
+                qs = qs.none()
         elif user_param:
             if str(user_param).isdigit():
                 qs = qs.filter(user_id=int(user_param))

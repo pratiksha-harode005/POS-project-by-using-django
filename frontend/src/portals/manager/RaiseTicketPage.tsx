@@ -9,7 +9,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useManagerData, TicketProduct } from '../../context/ManagerDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentPdfViewerModal } from '../../components/portal/DocumentPdfViewerModal'
-import { markVendorInvoiceVerified, markVendorDeliveryVerified } from '../vendor/VendorPortalPages'
+import { markVendorInvoiceVerified, markVendorDeliveryVerified, markPaymentPaidForPO } from '../vendor/VendorPortalPages'
 import { verifyDocumentApi, apiClient } from '../../api/managerApi'
 import { formatDate } from '../../utils/formatDate'
 
@@ -303,11 +303,23 @@ export const RaiseTicketPage: React.FC = () => {
       console.warn(`Cannot verify ${docType}: no document ID resolved for product ${productId}`)
     }
 
-    // Sync verification to Vendor Portal by specific document type
+    // Sync verification to Vendor Portal by specific document type and all related identifiers
     if (docType === 'goodsReceipt') {
-      markVendorDeliveryVerified(documentId || product?.goodsReceipt?.id || ticket.goodsReceipt?.id || '', verifier)
+      const gId = documentId || product?.goodsReceipt?.id || ticket.goodsReceipt?.id || ''
+      markVendorDeliveryVerified(gId, verifier)
+      if (ticket.requestId) markVendorDeliveryVerified(ticket.requestId, verifier)
+      if (ticket.id) markVendorDeliveryVerified(ticket.id, verifier)
+      if (product?.id) markVendorDeliveryVerified(product.id, verifier)
+      if (product?.productOrder?.id) markVendorDeliveryVerified(product.productOrder.id, verifier)
+      if (ticket.productOrder?.id) markVendorDeliveryVerified(ticket.productOrder.id, verifier)
     } else if (docType === 'invoice') {
-      markVendorInvoiceVerified(documentId || product?.invoice?.id || ticket.invoice?.id || '', verifier)
+      const invId = documentId || product?.invoice?.id || ticket.invoice?.id || ''
+      markVendorInvoiceVerified(invId, verifier)
+      if (ticket.requestId) markVendorInvoiceVerified(ticket.requestId, verifier)
+      if (ticket.id) markVendorInvoiceVerified(ticket.id, verifier)
+      if (product?.id) markVendorInvoiceVerified(product.id, verifier)
+      if (product?.productOrder?.id) markVendorInvoiceVerified(product.productOrder.id, verifier)
+      if (ticket.productOrder?.id) markVendorInvoiceVerified(ticket.productOrder.id, verifier)
     }
 
     const docName = docType === 'goodsReceipt' ? 'Goods Receipt' : docType === 'invoice' ? 'Invoice' : 'Document'
@@ -331,6 +343,22 @@ export const RaiseTicketPage: React.FC = () => {
         verified_by: submitter
       }).catch(() => null)
     } catch (e) {}
+
+    // Ensure Vendor Portal flags are also synchronized
+    if (product.goodsReceipt?.id) markVendorDeliveryVerified(product.goodsReceipt.id, submitter)
+    if (product.invoice?.id) markVendorInvoiceVerified(product.invoice.id, submitter)
+    if (ticket.requestId) {
+      markVendorDeliveryVerified(ticket.requestId, submitter)
+      markVendorInvoiceVerified(ticket.requestId, submitter)
+    }
+    if (ticket.id) {
+      markVendorDeliveryVerified(ticket.id, submitter)
+      markVendorInvoiceVerified(ticket.id, submitter)
+    }
+    if (product.productOrder?.id) {
+      markVendorDeliveryVerified(product.productOrder.id, submitter)
+      markVendorInvoiceVerified(product.productOrder.id, submitter)
+    }
 
     if (submitProductTicket) {
       submitProductTicket(ticket.id, product.id, submitter)
@@ -380,6 +408,13 @@ export const RaiseTicketPage: React.FC = () => {
       transactionRef: utrRef.trim(),
       referenceNumber: utrRef.trim()
     })
+
+    // Immediately mark payment as paid in Vendor Portal as well
+    markPaymentPaidForPO(ticket.requestId)
+    if (ticket.id) markPaymentPaidForPO(ticket.id)
+    if (product?.id) markPaymentPaidForPO(product.id)
+    if (product?.productOrder?.id) markPaymentPaidForPO(product.productOrder.id)
+    if (ticket.productOrder?.id) markPaymentPaidForPO(ticket.productOrder.id)
 
     setPaymentResult({
       ...res,

@@ -4538,8 +4538,23 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // Save paid reference in localStorage for instant persistence across re-renders/syncs
     try {
       const existingPaid = JSON.parse(localStorage.getItem('kss_paid_requests') || '[]')
-      const toAdd = [requestId, ticketId, reqNorm, tckNorm, targetProductId, targetProdNorm].filter(Boolean)
-      localStorage.setItem('kss_paid_requests', JSON.stringify(Array.from(new Set([...existingPaid, ...toAdd]))))
+      const toAdd = [
+        requestId,
+        ticketId,
+        reqNorm,
+        tckNorm,
+        targetProductId,
+        targetProdNorm,
+        reqNorm ? `PO-${reqNorm}` : '',
+        reqNorm ? `REQ-${reqNorm}` : '',
+        tckNorm ? `PO-${tckNorm}` : '',
+        tckNorm ? `REQ-${tckNorm}` : '',
+        matchedReq?.poNumber
+      ].filter(Boolean)
+      const updated = Array.from(new Set([...existingPaid, ...toAdd]))
+      localStorage.setItem('kss_paid_requests', JSON.stringify(updated))
+      localStorage.setItem('kss_paid_payments', JSON.stringify(updated))
+      localStorage.setItem('kss_manager_released_payments', JSON.stringify(updated))
     } catch (e) {}
 
     // 1. Update request across all lists to 'completed' and 'Paid'

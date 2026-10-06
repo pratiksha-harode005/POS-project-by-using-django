@@ -266,8 +266,18 @@ export function setDocStatusOverride(vendorId: string, docId: string, status: st
 // ─── LOCAL STORAGE HELPERS FOR ENFORCED PO WORKFLOW ─────────────────────────
 export function getPaidPayments(): string[] {
   try {
-    const saved = localStorage.getItem('kss_manager_released_payments')
-    return saved ? JSON.parse(saved) : []
+    const list1 = JSON.parse(localStorage.getItem('kss_manager_released_payments') || '[]')
+    const list2 = JSON.parse(localStorage.getItem('kss_paid_payments') || '[]')
+    const list3 = JSON.parse(localStorage.getItem('kss_paid_requests') || '[]')
+    const list4 = JSON.parse(localStorage.getItem('kss_completed_payments') || '[]')
+    const list5 = JSON.parse(localStorage.getItem('kss_settled_payments') || '[]')
+    return Array.from(new Set([
+      ...(Array.isArray(list1) ? list1 : []),
+      ...(Array.isArray(list2) ? list2 : []),
+      ...(Array.isArray(list3) ? list3 : []),
+      ...(Array.isArray(list4) ? list4 : []),
+      ...(Array.isArray(list5) ? list5 : [])
+    ]))
   } catch {
     return []
   }
@@ -276,23 +286,35 @@ export function getPaidPayments(): string[] {
 export function isPaymentPaidForPO(poRef: string): boolean {
   if (!poRef) return false
   const paid = getPaidPayments()
-  const normRef = poRef.replace(/^(PO-|RFQ-|REQ-|TCK-)/, '').trim().toUpperCase()
+  const cleanRef = String(poRef).replace(/^(PO-|RFQ-|REQ-|TCK-|PRD-|PRD\s+|PAY-)/i, '').trim().toUpperCase()
+  const shortRef = cleanRef.slice(0, 8)
 
   return paid.some((k) => {
-    const normK = k.replace(/^(PO-|RFQ-|REQ-|TCK-)/, '').trim().toUpperCase()
-    return normK === normRef || poRef.includes(k) || k.includes(poRef)
+    if (!k) return false
+    const cleanK = String(k).replace(/^(PO-|RFQ-|REQ-|TCK-|PRD-|PRD\s+|PAY-)/i, '').trim().toUpperCase()
+    const shortK = cleanK.slice(0, 8)
+    return (
+      k === poRef ||
+      cleanK === cleanRef ||
+      (shortK && shortRef && (shortK === shortRef || shortRef.startsWith(shortK) || shortK.startsWith(shortRef))) ||
+      (cleanRef.length >= 4 && cleanK.includes(cleanRef)) ||
+      (cleanK.length >= 4 && cleanRef.includes(cleanK))
+    )
   })
 }
 
 export function markPaymentPaidForPO(poRef: string) {
   if (!poRef) return
   try {
+    const cleanRef = String(poRef).replace(/^(PO-|RFQ-|REQ-|TCK-|PRD-|PRD\s+|PAY-)/i, '').trim().toUpperCase()
     const current = getPaidPayments()
-    if (!current.includes(poRef)) {
-      const updated = [...current, poRef]
-      localStorage.setItem('kss_manager_released_payments', JSON.stringify(updated))
-      localStorage.setItem('kss_paid_payments', JSON.stringify(updated))
-    }
+    const toAdd = [poRef, cleanRef, `PO-${cleanRef}`, `REQ-${cleanRef}`].filter(Boolean)
+    const updated = Array.from(new Set([...current, ...toAdd]))
+    localStorage.setItem('kss_manager_released_payments', JSON.stringify(updated))
+    localStorage.setItem('kss_paid_payments', JSON.stringify(updated))
+    localStorage.setItem('kss_paid_requests', JSON.stringify(updated))
+    window.dispatchEvent(new Event('kss_backend_updated'))
+    window.dispatchEvent(new Event('storage'))
   } catch (e) {}
 }
 
@@ -394,7 +416,7 @@ export function saveVendorRfqAction(vendorId: string, rfqId: string, actionStatu
   return current
 }
 
-// ─── LOCAL VENDOR INVOICE STORAGE HELPERS ──────────────────────────────
+// ─── LOCAL VENDOR INVOICE & GRN STORAGE HELPERS ──────────────────────────────
 export function getVerifiedInvoiceRefs(): string[] {
   try {
     const saved = localStorage.getItem('kss_manager_verified_invoices')
@@ -407,22 +429,59 @@ export function getVerifiedInvoiceRefs(): string[] {
 export function isInvoiceVerifiedInSystem(refOrId?: string): boolean {
   if (!refOrId) return false
   const verifiedList = getVerifiedInvoiceRefs()
-  const cleanTarget = refOrId.replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
+  const cleanTarget = String(refOrId).replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-|PRD-|PRD\s+)/i, '').trim().toUpperCase()
   if (!cleanTarget) return false
+  const shortTarget = cleanTarget.slice(0, 8)
   return verifiedList.some((v) => {
-    const cleanV = v.replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
-    return cleanV === cleanTarget || v === refOrId
+    const cleanV = String(v).replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-|PRD-|PRD\s+)/i, '').trim().toUpperCase()
+    const shortV = cleanV.slice(0, 8)
+    return (
+      cleanV === cleanTarget ||
+      (shortV && shortTarget && (shortV === shortTarget || shortTarget.startsWith(shortV) || shortV.startsWith(shortTarget))) ||
+      v === refOrId ||
+      (cleanTarget.length >= 4 && cleanV.includes(cleanTarget)) ||
+      (cleanV.length >= 4 && cleanTarget.includes(cleanV))
+    )
+  })
+}
+
+export function getVerifiedGRNRefs(): string[] {
+  try {
+    const saved = localStorage.getItem('kss_manager_verified_grns')
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+export function isGRNVerifiedInSystem(refOrId?: string): boolean {
+  if (!refOrId) return false
+  const verifiedList = getVerifiedGRNRefs()
+  const cleanTarget = String(refOrId).replace(/^(REC-[A-Z0-9]+-|REC-|GRN-|PO-|RCP-|RFQ-|REQ-|PRD-|PRD\s+)/i, '').trim().toUpperCase()
+  if (!cleanTarget) return false
+  const shortTarget = cleanTarget.slice(0, 8)
+  return verifiedList.some((v) => {
+    const cleanV = String(v).replace(/^(REC-[A-Z0-9]+-|REC-|GRN-|PO-|RCP-|RFQ-|REQ-|PRD-|PRD\s+)/i, '').trim().toUpperCase()
+    const shortV = cleanV.slice(0, 8)
+    return (
+      cleanV === cleanTarget ||
+      (shortV && shortTarget && (shortV === shortTarget || shortTarget.startsWith(shortV) || shortV.startsWith(shortTarget))) ||
+      v === refOrId ||
+      (cleanTarget.length >= 4 && cleanV.includes(cleanTarget)) ||
+      (cleanV.length >= 4 && cleanTarget.includes(cleanV))
+    )
   })
 }
 
 export function markVendorInvoiceVerified(poRefOrInvId: string, verifiedBy: string = 'Sarah Manager') {
   if (!poRefOrInvId) return
-  const cleanKey = poRefOrInvId.replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
+  const cleanKey = String(poRefOrInvId).replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-|PRD-|PRD\s+)/i, '').trim().toUpperCase()
 
   // 1. Add to global verified invoices list
   try {
     const currentList = getVerifiedInvoiceRefs()
-    const updated = Array.from(new Set([...currentList, poRefOrInvId, cleanKey]))
+    const toAdd = [poRefOrInvId, cleanKey, `PO-${cleanKey}`, `REQ-${cleanKey}`, `INV-${cleanKey}`].filter(Boolean)
+    const updated = Array.from(new Set([...currentList, ...toAdd]))
     localStorage.setItem('kss_manager_verified_invoices', JSON.stringify(updated))
   } catch (e) {}
 
@@ -437,7 +496,7 @@ export function markVendorInvoiceVerified(poRefOrInvId: string, verifiedBy: stri
           if (Array.isArray(invList)) {
             let changed = false
             const updatedInvList = invList.map((inv: any) => {
-              const invClean = (inv.id || inv.invoiceNumber || inv.invoice_number || '').replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
+              const invClean = (inv.id || inv.invoiceNumber || inv.invoice_number || '').replace(/^(INV-[A-Z0-9]+-|INV-|PO-|RCP-|RFQ-|REQ-|PRD-|PRD\s+)/i, '').trim().toUpperCase()
               if (invClean === cleanKey || inv.id === poRefOrInvId || inv.invoiceNumber === poRefOrInvId || inv.invoice_number === poRefOrInvId) {
                 changed = true
                 return {
@@ -468,13 +527,14 @@ export function markVendorInvoiceVerified(poRefOrInvId: string, verifiedBy: stri
 
 export function markVendorDeliveryVerified(poRefOrGrnId: string, verifiedBy: string = 'Sarah Manager') {
   if (!poRefOrGrnId) return
-  const cleanKey = poRefOrGrnId.replace(/^(REC-[A-Z0-9]+-|REC-|GRN-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
+  const cleanKey = String(poRefOrGrnId).replace(/^(REC-[A-Z0-9]+-|REC-|GRN-|PO-|RCP-|RFQ-|REQ-|PRD-|PRD\s+)/i, '').trim().toUpperCase()
 
   // 1. Add to global verified GRNs list
   try {
     const saved = localStorage.getItem('kss_manager_verified_grns')
     const currentList = saved ? JSON.parse(saved) : []
-    const updated = Array.from(new Set([...currentList, poRefOrGrnId, cleanKey]))
+    const toAdd = [poRefOrGrnId, cleanKey, `PO-${cleanKey}`, `REQ-${cleanKey}`, `GRN-${cleanKey}`].filter(Boolean)
+    const updated = Array.from(new Set([...currentList, ...toAdd]))
     localStorage.setItem('kss_manager_verified_grns', JSON.stringify(updated))
   } catch (e) {}
 
@@ -487,7 +547,7 @@ export function markVendorDeliveryVerified(poRefOrGrnId: string, verifiedBy: str
         if (raw) {
           const doc = JSON.parse(raw)
           if (doc) {
-            const docClean = (doc.poRef || doc.deliveryId || doc.requestRef || '').replace(/^(REC-[A-Z0-9]+-|REC-|GRN-|PO-|RCP-|RFQ-|REQ-)/, '').trim().toUpperCase()
+            const docClean = (doc.poRef || doc.deliveryId || doc.requestRef || '').replace(/^(REC-[A-Z0-9]+-|REC-|GRN-|PO-|RCP-|RFQ-|REQ-|PRD-|PRD\s+)/i, '').trim().toUpperCase()
             if (docClean === cleanKey || (cleanKey.length >= 4 && docClean.includes(cleanKey)) || (docClean.length >= 4 && cleanKey.includes(docClean))) {
               doc.verified = true
               doc.status = 'Verified'
@@ -4661,10 +4721,28 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
               {filteredPos.map((po) => {
                 const currentStatus = getEffectiveStatus(po)
                 const isDelivered = currentStatus === 'Delivered' || currentStatus === 'Fulfilled' || po.status === 'Delivered' || po.status === 'Fulfilled'
+                const isInvoiceVerified = Boolean(
+                  po.document_verification?.is_invoice_verified ||
+                  po.document_verification?.invoice_status === 'Verified' ||
+                  isInvoiceVerifiedInSystem(po.id) ||
+                  isInvoiceVerifiedInSystem(po.poNumber) ||
+                  (po.requestRef && isInvoiceVerifiedInSystem(po.requestRef)) ||
+                  (po.rfqRef && isInvoiceVerifiedInSystem(po.rfqRef))
+                )
+                const isGRNVerified = Boolean(
+                  po.document_verification?.is_goods_receipt_verified ||
+                  po.document_verification?.goods_receipt_status === 'Verified' ||
+                  isGRNVerifiedInSystem(po.id) ||
+                  isGRNVerifiedInSystem(po.poNumber) ||
+                  (po.requestRef && isGRNVerifiedInSystem(po.requestRef)) ||
+                  (po.rfqRef && isGRNVerifiedInSystem(po.rfqRef))
+                )
                 const isDocsVerified = Boolean(
                   po.document_verification?.is_both_verified ||
                   po.document_verification_status === 'Documents Verified' ||
-                  (po.document_verification?.is_invoice_verified && (po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified'))
+                  (isInvoiceVerified && isGRNVerified) ||
+                  (isInvoiceVerified && (isDelivered || po.status === 'Delivered')) ||
+                  (isGRNVerified && (isDelivered || po.status === 'Delivered'))
                 )
                 const paymentPaid =
                   po.payment_status === 'Paid' ||
@@ -4782,14 +4860,14 @@ export const VendorPurchaseOrdersPage: React.FC = () => {
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
                                 <div className="bg-white p-2 rounded-lg border border-gray-200 flex items-center justify-between">
                                   <span className="text-gray-500 font-semibold">Goods Receipt:</span>
-                                  <span className={`font-bold flex items-center gap-1 ${po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified' ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                    {po.document_verification?.is_goods_receipt_verified || po.document_verification?.goods_receipt_status === 'Verified' ? '✓ Verified' : (isDelivered ? '⏳ Pending' : '⏳ Pending Delivery')}
+                                  <span className={`font-bold flex items-center gap-1 ${isGRNVerified || isDocsVerified ? 'text-emerald-700' : 'text-amber-600'}`}>
+                                    {isGRNVerified || isDocsVerified ? '✓ Verified' : (isDelivered ? '⏳ Pending' : '⏳ Pending Delivery')}
                                   </span>
                                 </div>
                                 <div className="bg-white p-2 rounded-lg border border-gray-200 flex items-center justify-between">
                                   <span className="text-gray-500 font-semibold">Invoice Receipt:</span>
-                                  <span className={`font-bold flex items-center gap-1 ${po.document_verification?.is_invoice_verified ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                    {po.document_verification?.is_invoice_verified ? '✓ Verified' : '⏳ Pending'}
+                                  <span className={`font-bold flex items-center gap-1 ${isInvoiceVerified || isDocsVerified ? 'text-emerald-700' : 'text-amber-600'}`}>
+                                    {isInvoiceVerified || isDocsVerified ? '✓ Verified' : '⏳ Pending'}
                                   </span>
                                 </div>
                               </div>
