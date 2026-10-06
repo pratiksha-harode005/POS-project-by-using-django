@@ -162,9 +162,28 @@ export const FinanceRaiseTicketPage: React.FC = () => {
     ) || financeTickets[0]
   }, [financeTickets, selectedTicketId])
 
+  const matchingRequest = useMemo(() => {
+    if (!ticket) return null
+    const normKey = (ticket.requestId || ticket.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+    return financeRequests.find(r => {
+      const rNorm = (r.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+      return r.id === ticket.requestId || (rNorm && normKey && rNorm === normKey) || (ticket.productOrder?.id && r.poNumber === ticket.productOrder.id)
+    })
+  }, [ticket, financeRequests])
+
+  const isTicketPaid = Boolean(
+    ticket?.submitted ||
+    (ticket?.products && ticket.products.length > 0 && ticket.products.every(p => p.submitted || p.paymentSettled)) ||
+    matchingRequest?.status === 'completed' ||
+    matchingRequest?.paymentStatus === 'Paid' ||
+    matchingRequest?.paymentTransactionRef ||
+    (matchingRequest as any)?.paymentReference ||
+    (matchingRequest as any)?.payment_reference
+  )
+
   useEffect(() => {
     if (ticket) {
-      const allSubmittedOrPaid = ticket.submitted || (ticket.products && ticket.products.length > 0 && ticket.products.every(p => p.submitted || p.paymentSettled))
+      const allSubmittedOrPaid = isTicketPaid || ticket.submitted || (ticket.products && ticket.products.length > 0 && ticket.products.every(p => p.submitted || p.paymentSettled))
       if (allSubmittedOrPaid) {
         setStep(3)
       } else if (ticket.products && ticket.products.length > 0 && ticket.products.every(p => p.goodsReceipt?.verified && p.invoice?.verified)) {
@@ -175,7 +194,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
         setStep(0)
       }
     }
-  }, [ticket])
+  }, [ticket, isTicketPaid])
 
   // Filtered products within active ticket
   const filteredProducts = useMemo(() => {
@@ -699,6 +718,27 @@ export const FinanceRaiseTicketPage: React.FC = () => {
             const all2Verified = verifiedDocs === 2
             const unverifiedCount = 2 - verifiedDocs
 
+            const isProductPaid = Boolean(
+              product.submitted ||
+              product.paymentSettled ||
+              isTicketPaid ||
+              (matchingRequest && (
+                matchingRequest.status === 'completed' ||
+                matchingRequest.paymentStatus === 'Paid' ||
+                matchingRequest.paymentTransactionRef ||
+                (matchingRequest as any)?.paymentReference ||
+                (matchingRequest as any)?.payment_reference
+              )) ||
+              financeRequests.some(r => {
+                const pNorm = (product.id || '').replace(/^(PRD-|REQ-|TCK-|PO-)/, '').slice(0, 8).trim().toUpperCase()
+                const rNorm = (r.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+                return (
+                  pNorm && rNorm && pNorm === rNorm &&
+                  (r.status === 'completed' || r.paymentStatus === 'Paid' || r.paymentTransactionRef || (r as any)?.paymentReference)
+                )
+              })
+            )
+
             const productDocs = [
               {
                 key: 'goodsReceipt' as DocType,
@@ -781,7 +821,11 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                   {/* Status Column */}
                   <div className="col-span-2">
                     <span className="sm:hidden text-gray-400 text-[10px] font-medium block mb-1">Status: </span>
-                    {product.submitted ? (
+                    {isProductPaid ? (
+                      <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        <Check size={11} /> Paid &amp; Settled
+                      </span>
+                    ) : product.submitted ? (
                       <span className="inline-flex items-center gap-1 bg-green-100 text-green-800 border border-green-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
                         <Check size={11} /> Submitted
                       </span>
@@ -928,9 +972,17 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                       </div>
 
                       {/* Product Actions: Once both documents verified, show Make Payment */}
-                      {product.submitted || product.paymentSettled ? (
-                        <div className="flex items-center gap-2 bg-emerald-100 text-emerald-800 border border-emerald-200 px-4 py-2 rounded-xl text-xs font-bold">
-                          <CheckCircle2 size={14} /> Payment Settled (Paid)
+                      {isProductPaid ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-4 py-2 rounded-xl text-xs font-bold">
+                          <span className="flex items-center gap-1.5 text-emerald-700">
+                            <CheckCircle2 size={14} className="text-emerald-600 shrink-0" /> Payment Settled (Paid)
+                          </span>
+                          {(product.paymentMethod || product.referenceNumber || product.utrRef || matchingRequest?.paymentMethod || matchingRequest?.paymentTransactionRef || (matchingRequest as any)?.paymentReference) && (
+                            <span className="text-[11px] font-semibold text-emerald-800 sm:border-l sm:border-emerald-200 sm:pl-2">
+                              {product.paymentMethod || matchingRequest?.paymentMethod || 'Online Bank Transfer'}
+                              {(product.referenceNumber || product.utrRef || matchingRequest?.paymentTransactionRef || (matchingRequest as any)?.paymentReference) ? ` • Ref: ${product.referenceNumber || product.utrRef || matchingRequest?.paymentTransactionRef || (matchingRequest as any)?.paymentReference}` : ''}
+                            </span>
+                          )}
                         </div>
                       ) : all2Verified ? (
                         <div className="flex items-center gap-2 flex-wrap">

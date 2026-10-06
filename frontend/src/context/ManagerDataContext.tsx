@@ -193,7 +193,9 @@ export interface ProcurementRequest {
   business_requirement?: string
   research_estimation?: any
   finance_approved_amount?: number
+  paymentMethod?: string
   payment_method?: string
+  paymentReference?: string
   payment_reference?: string
   payment_date?: string
   payment_notes?: string
@@ -1309,7 +1311,10 @@ export function buildDynamicTickets(
       matchingReq?.paymentStatus === 'Paid' ||
       matchingPo?.paymentStatus === 'Paid' ||
       matchingPo?.status === 'Closed' ||
-      (matchingReq?.currentStage && matchingReq.currentStage >= 9)
+      (matchingReq?.currentStage && matchingReq.currentStage >= 9) ||
+      matchingReq?.paymentTransactionRef ||
+      (matchingReq as any)?.paymentReference ||
+      (matchingReq as any)?.payment_reference
     )
 
     const isDelivered = Boolean(
@@ -1533,8 +1538,9 @@ export function buildDynamicTickets(
       },
       submitted: isPaid || matchingReq?.status === 'completed',
       paymentSettled: isPaid,
-      utrRef: matchingReq?.paymentTransactionRef,
-      paymentDate: matchingReq?.paidDate
+      utrRef: matchingReq?.paymentTransactionRef || (matchingReq as any)?.paymentReference || (matchingReq as any)?.payment_reference,
+      paymentDate: matchingReq?.paidDate || (matchingReq as any)?.payment_date,
+      paymentMethod: matchingReq?.paymentMethod || (matchingReq as any)?.payment_method
     }
 
     result.push({
@@ -4429,9 +4435,21 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const effectiveAmount = paymentDetails?.amount || matchedReq?.amount || 350000
     const effectiveVendor = matchedReq?.vendor || 'Dell Technologies India'
 
+    const reqNorm = (requestId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+    const tckNorm = (ticketId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+    const targetProdNorm = (targetProductId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+
     // 1. Update request across all lists to 'completed' and 'Paid'
     const markCompleted = (r: ProcurementRequest): ProcurementRequest => {
-      if (r.id === requestId || (ticketId && r.id === ticketId.replace('TKT-', 'REQ-'))) {
+      const rNorm = (r.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+      const isMatch =
+        r.id === requestId ||
+        (ticketId && (r.id === ticketId || r.id === ticketId.replace('TCK-', 'REQ-').replace('TKT-', 'REQ-'))) ||
+        (reqNorm && rNorm && reqNorm === rNorm) ||
+        (tckNorm && rNorm && tckNorm === rNorm) ||
+        (targetProdNorm && rNorm && targetProdNorm === rNorm)
+
+      if (isMatch) {
         return {
           ...r,
           status: 'completed',
@@ -4439,6 +4457,8 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           financeStatus: 'Completed — Payment Settled',
           paidDate: today,
           paymentTransactionRef: utrRef,
+          paymentReference: utrRef,
+          paymentMethod: selectedMethod,
         }
       }
       return r
@@ -4448,9 +4468,18 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     // 2. Mark linked ticket as completed and products as submitted & paid
     setTickets(prev => prev.map(t => {
-      if (t.requestId === requestId || t.id === ticketId) {
+      const tNorm = (t.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+      const tReqNorm = (t.requestId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+      const isMatch =
+        t.requestId === requestId ||
+        t.id === ticketId ||
+        (reqNorm && (tNorm === reqNorm || tReqNorm === reqNorm)) ||
+        (tckNorm && (tNorm === tckNorm || tReqNorm === tckNorm))
+
+      if (isMatch) {
         const updatedProducts = (t.products || []).map(p => {
-          if (!targetProductId || p.id === targetProductId) {
+          const pNorm = (p.id || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
+          if (!targetProductId || p.id === targetProductId || (targetProdNorm && pNorm === targetProdNorm)) {
             return {
               ...p,
               submitted: true,
@@ -4467,7 +4496,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           return p
         })
 
-        const allProdsPaid = updatedProducts.every(p => p.paymentSettled)
+        const allProdsPaid = updatedProducts.every(p => p.paymentSettled || p.submitted)
 
         return {
           ...t,
