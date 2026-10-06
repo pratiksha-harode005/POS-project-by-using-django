@@ -545,7 +545,15 @@ export const CreateRequestPage: React.FC = () => {
           </p>
         </div>
       ) : (
-        <form onSubmit={(e) => handleFormSubmit(e, false)} className="space-y-4 text-xs">
+        <form
+          onSubmit={(e) => handleFormSubmit(e, false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+              e.preventDefault()
+            }
+          }}
+          className="space-y-4 text-xs"
+        >
           {draftSaved && (
             <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center justify-between animate-fadeIn">
               <div className="flex items-center gap-2">
