@@ -209,7 +209,6 @@ export const CreateRequestPage: React.FC = () => {
   const [departmentLoadError, setDepartmentLoadError] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [submittedStatus, setSubmittedStatus] = useState<'Pending' | 'Draft'>('Pending')
-  const [draftSaved, setDraftSaved] = useState(false)
 
   const searchParams = new URLSearchParams(location.search)
   const queryDraftId = searchParams.get('draftId')
@@ -222,7 +221,6 @@ export const CreateRequestPage: React.FC = () => {
 
   const isEditMode = Boolean(draftToEdit)
   const editingDraftId = draftToEdit ? (draftToEdit.id || draftToEdit.dbId) : null
-  const [savedDraftId, setSavedDraftId] = useState<string | null>(editingDraftId ? String(editingDraftId) : null)
 
   const initialCat = draftToEdit?.category || routeState?.category || 'IT Hardware'
   const initialSubcatList = SUBCATEGORIES_BY_CATEGORY[initialCat]
@@ -398,11 +396,45 @@ export const CreateRequestPage: React.FC = () => {
     const existingCostNum = Number(formData.existingCost) || 0
     const effectiveCost = costNumber > 0 ? costNumber : (existingCostNum > 0 ? existingCostNum : 0)
     try {
-      if (isDraft) {
-        // SAVE AS DRAFT ONLY — Do not trigger approval workflow
-        const draftPayload = {
-          id: savedDraftId || (editingDraftId ? String(editingDraftId) : undefined),
-          title: formData.title || 'Untitled Draft Request',
+      if (!isDraft && isEditMode && editingDraftId) {
+        // Submitting an existing draft directly to approval workflow
+        await submitDraft(String(editingDraftId), {
+          title: formData.title,
+          category: formData.category,
+          subcategory: isSaaSOrCloud ? formData.subscriptionServiceName : formData.subcategory,
+          description: formData.description,
+          quantity: showQuantity ? quantityNumber : 1,
+          estimatedCost: effectiveCost,
+          requiredBy: formData.requiredBy,
+          department: departmentValue,
+          deliveryLocation: formData.deliveryLocation,
+          priority: formData.priority,
+          preferredVendor: formData.preferredVendor,
+          justification: formData.justification,
+          flowType: isSaaSOrCloud ? 'B' : 'A',
+          request_type: formData.requestType,
+          software_name: isSaaSOrCloud ? formData.subscriptionServiceName : undefined,
+          current_plan: formData.currentPlan,
+          required_plan: formData.requiredPlan,
+          existing_cost: Number(formData.existingCost) || 0,
+          business_requirement: formData.businessRequirement || formData.justification || formData.description,
+          extraFields: {
+            ...formData.extraFields,
+            ...(formData.subscriptionServiceName ? { subscriptionServiceName: formData.subscriptionServiceName } : {}),
+            renewalCycle: formData.extraFields?.renewalCycle || (formData.category === 'Software & SaaS' ? 'Monthly' : undefined),
+            subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
+            requestType: formData.requestType,
+            purchase_type: formData.requestType,
+            currentPlan: formData.currentPlan,
+            requiredPlan: formData.requiredPlan,
+            existingCost: formData.existingCost,
+            businessRequirement: formData.businessRequirement,
+          },
+        })
+      } else {
+        await addRequest({
+          id: isDraft && editingDraftId ? String(editingDraftId) : undefined,
+          title: formData.title || (isDraft ? 'Untitled Draft Request' : ''),
           category: formData.category,
           subcategory: isSaaSOrCloud
             ? formData.subscriptionServiceName
@@ -418,9 +450,9 @@ export const CreateRequestPage: React.FC = () => {
           justification: formData.justification,
           attachmentName: formData.attachment?.name,
           attachmentCount: formData.attachment ? 1 : 0,
-          status: 'Draft' as const,
-          currentStage: 0,
-          flowType: (isSaaSOrCloud ? 'B' : 'A') as 'A' | 'B',
+          status: isDraft ? 'Draft' : 'Pending',
+          currentStage: isDraft ? 0 : 1,
+          flowType: isSaaSOrCloud ? 'B' : 'A',
           request_type: formData.requestType,
           software_name: isSaaSOrCloud ? formData.subscriptionServiceName : undefined,
           current_plan: formData.currentPlan,
@@ -442,101 +474,18 @@ export const CreateRequestPage: React.FC = () => {
             existingCost: formData.existingCost,
             businessRequirement: formData.businessRequirement,
           },
-        }
-
-        const res = await addRequest(draftPayload)
-        if (res?.id) {
-          setSavedDraftId(res.id)
-        }
-        setDraftSaved(true)
-      } else {
-        // SUBMIT FOR APPROVAL — Enters Manager Approval workflow
-        const activeDraftId = savedDraftId || (editingDraftId ? String(editingDraftId) : null)
-        if (activeDraftId) {
-          await submitDraft(activeDraftId, {
-            title: formData.title,
-            category: formData.category,
-            subcategory: isSaaSOrCloud ? formData.subscriptionServiceName : formData.subcategory,
-            description: formData.description,
-            quantity: showQuantity ? quantityNumber : 1,
-            estimatedCost: effectiveCost,
-            requiredBy: formData.requiredBy,
-            department: departmentValue,
-            deliveryLocation: formData.deliveryLocation,
-            priority: formData.priority,
-            preferredVendor: formData.preferredVendor,
-            justification: formData.justification,
-            flowType: isSaaSOrCloud ? 'B' : 'A',
-            request_type: formData.requestType,
-            software_name: isSaaSOrCloud ? formData.subscriptionServiceName : undefined,
-            current_plan: formData.currentPlan,
-            required_plan: formData.requiredPlan,
-            existing_cost: Number(formData.existingCost) || 0,
-            business_requirement: formData.businessRequirement || formData.justification || formData.description,
-            extraFields: {
-              ...formData.extraFields,
-              ...(formData.subscriptionServiceName ? { subscriptionServiceName: formData.subscriptionServiceName } : {}),
-              renewalCycle: formData.extraFields?.renewalCycle || (formData.category === 'Software & SaaS' ? 'Monthly' : undefined),
-              subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
-              requestType: formData.requestType,
-              purchase_type: formData.requestType,
-              currentPlan: formData.currentPlan,
-              requiredPlan: formData.requiredPlan,
-              existingCost: formData.existingCost,
-              businessRequirement: formData.businessRequirement,
-            },
-          })
-        } else {
-          await addRequest({
-            title: formData.title,
-            category: formData.category,
-            subcategory: isSaaSOrCloud
-              ? formData.subscriptionServiceName
-              : formData.subcategory,
-            description: formData.description,
-            quantity: showQuantity ? quantityNumber : 1,
-            estimatedCost: effectiveCost,
-            requiredBy: formData.requiredBy,
-            department: departmentValue,
-            deliveryLocation: formData.deliveryLocation,
-            priority: formData.priority,
-            preferredVendor: formData.preferredVendor,
-            justification: formData.justification,
-            attachmentName: formData.attachment?.name,
-            attachmentCount: formData.attachment ? 1 : 0,
-            status: 'Pending',
-            currentStage: 2,
-            flowType: isSaaSOrCloud ? 'B' : 'A',
-            request_type: formData.requestType,
-            software_name: isSaaSOrCloud ? formData.subscriptionServiceName : undefined,
-            current_plan: formData.currentPlan,
-            required_plan: formData.requiredPlan,
-            existing_cost: Number(formData.existingCost) || 0,
-            business_requirement: formData.businessRequirement || formData.justification || formData.description,
-            subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
-            extraFields: {
-              ...formData.extraFields,
-              ...(formData.subscriptionServiceName
-                ? { subscriptionServiceName: formData.subscriptionServiceName }
-                : {}),
-              renewalCycle: formData.extraFields?.renewalCycle || (formData.category === 'Software & SaaS' ? 'Monthly' : undefined),
-              subscription_type: formData.extraFields?.renewalCycle === 'Yearly' ? 'Annual' : 'Monthly',
-              requestType: formData.requestType,
-              purchase_type: formData.requestType,
-              currentPlan: formData.currentPlan,
-              requiredPlan: formData.requiredPlan,
-              existingCost: formData.existingCost,
-              businessRequirement: formData.businessRequirement,
-            },
-          })
-        }
-
-        setSubmittedStatus('Pending')
-        setSubmitted(true)
-        setTimeout(() => {
-          navigate('/portal/team_lead/my-requests')
-        }, 1000)
+        })
       }
+
+      setSubmittedStatus(isDraft ? 'Draft' : 'Pending')
+      setSubmitted(true)
+      setTimeout(() => {
+        if (isDraft) {
+          navigate('/portal/team_lead/drafts')
+        } else {
+          navigate('/portal/team_lead/my-requests')
+        }
+      }, 1000)
     } catch (err: any) {
       alert(`Failed to save request to server: ${err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Server error'}`)
     } finally {
@@ -580,8 +529,8 @@ export const CreateRequestPage: React.FC = () => {
           </h2>
           <p className="text-xs mt-1">
             {submittedStatus === 'Draft'
-              ? 'Saved to your drafts list.'
-              : 'Moved to Manager Pending Approval Queue (Stage 1/10). Redirecting...'}
+              ? 'Saved to your drafts list. Redirecting...'
+              : 'Moved to Manager Pending Approval Queue (Stage 1). Redirecting...'}
           </p>
         </div>
       ) : (
@@ -594,23 +543,6 @@ export const CreateRequestPage: React.FC = () => {
           }}
           className="space-y-4 text-xs"
         >
-          {draftSaved && (
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center justify-between animate-fadeIn">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={16} className="text-emerald-600 shrink-0" />
-                <span>
-                  Request {savedDraftId ? <strong className="font-mono text-emerald-800 font-bold">{savedDraftId}</strong> : ''} saved permanently as a draft in database. It is accessible in <strong>Saved Drafts</strong>.
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate('/portal/team_lead/drafts')}
-                className="text-xs font-bold text-emerald-700 hover:text-emerald-900 underline ml-2 shrink-0 cursor-pointer"
-              >
-                Go to Saved Drafts &rarr;
-              </button>
-            </div>
-          )}
 
           {/* 1. Request Title */}
           <div>
@@ -965,21 +897,9 @@ export const CreateRequestPage: React.FC = () => {
               type="button"
               disabled={submitting}
               onClick={(e) => handleFormSubmit(e as any, true)}
-              className={`${
-                draftSaved
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300'
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300'
-              } font-semibold text-xs px-5 py-2.5 rounded-lg border flex items-center gap-1.5 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs px-5 py-2.5 rounded-lg border border-gray-300 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              {draftSaved ? (
-                <>
-                  <CheckCircle size={15} /> Saved as Draft
-                </>
-              ) : (
-                <>
-                  <Save size={15} /> Save as Draft
-                </>
-              )}
+              <Save size={15} /> Save as Draft
             </button>
             <button
               type="submit"
