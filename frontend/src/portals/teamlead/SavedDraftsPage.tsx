@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   FileEdit, PlusCircle, Search, Trash2, Send, Clock,
@@ -21,6 +21,14 @@ export const SavedDraftsPage: React.FC = () => {
   const [confirmDeleteReq, setConfirmDeleteReq] = useState<PurchaseRequest | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const hasRefreshedOnMount = useRef(false)
+  const refreshOnMount = useRef(refreshBackendRequests)
+
+  useEffect(() => {
+    if (hasRefreshedOnMount.current) return
+    hasRefreshedOnMount.current = true
+    void refreshOnMount.current()
+  }, [])
 
   // Filter only drafts
   const drafts = useMemo(() => {

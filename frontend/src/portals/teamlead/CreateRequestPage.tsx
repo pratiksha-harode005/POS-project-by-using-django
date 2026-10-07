@@ -1,7 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PlusCircle, Upload, CheckCircle, Save, Info, AlertTriangle } from 'lucide-react'
 import { useProcurement } from '../../context/ProcurementContext'
+import { useAuth } from '../../context/AuthContext'
+import { apiClient } from '../../api/client'
 
 export const CATEGORIES = [
   'IT Hardware',
@@ -25,18 +27,6 @@ export const SUBCATEGORIES_BY_CATEGORY: Record<string, string[]> = {
   'IT Services':              ['Consulting', 'System Integration'],
   // Software & SaaS and Cloud & Infrastructure keep free-text (handled separately as subscriptionServiceName)
 }
-
-export const DEPARTMENTS = [
-  'IT & Infrastructure',
-  'Finance & Accounts',
-  'Operations',
-  'HR',
-  'Sales & Marketing',
-  'Legal & Compliance',
-  'Engineering',
-  'Customer Support',
-  'Administration',
-] as const
 
 const PHYSICAL_CATEGORIES = new Set([
   'IT Hardware',
@@ -213,6 +203,10 @@ export const CreateRequestPage: React.FC = () => {
   } | null
 
   const { addRequest, submitDraft, requests, profile } = useProcurement()
+  const { user } = useAuth()
+  const [departmentOptions, setDepartmentOptions] = useState<Array<{ id: number; name: string }>>([])
+  const [departmentLoading, setDepartmentLoading] = useState(true)
+  const [departmentLoadError, setDepartmentLoadError] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [submittedStatus, setSubmittedStatus] = useState<'Pending' | 'Draft'>('Pending')
   const [draftSaved, setDraftSaved] = useState(false)
@@ -248,7 +242,7 @@ export const CreateRequestPage: React.FC = () => {
         quantity: draftToEdit.quantity || ('' as number | ''),
         estimatedCost: draftToEdit.estimatedCost || ('' as number | ''),
         requiredBy: draftToEdit.requiredBy || '',
-        department: draftToEdit.department || profile.department || 'IT & Infrastructure',
+        department: draftToEdit.department || user?.department_detail?.name || '',
         deliveryLocation: draftToEdit.deliveryLocation || profile.workLocation || 'Pune HQ, 4th Floor',
         priority: (draftToEdit.priority || 'Medium') as 'Low' | 'Medium' | 'High' | 'Urgent',
         preferredVendor: draftToEdit.preferredVendor || '',
@@ -271,7 +265,7 @@ export const CreateRequestPage: React.FC = () => {
       quantity: '' as number | '',
       estimatedCost: '' as number | '',
       requiredBy: '',
-      department: profile.department || 'IT & Infrastructure',
+      department: user?.department_detail?.name || '',
       deliveryLocation: profile.workLocation || 'Pune HQ, 4th Floor',
       priority: 'Medium' as 'Low' | 'Medium' | 'High' | 'Urgent',
       preferredVendor: '',
@@ -286,6 +280,44 @@ export const CreateRequestPage: React.FC = () => {
       businessRequirement: '',
     }
   })
+
+  useEffect(() => {
+    let active = true
+    apiClient.get('/users/departments/')
+      .then((response) => {
+        const data = response.data
+        const rows = Array.isArray(data) ? data : data?.results || []
+        if (!active) return
+        const options = rows
+          .filter((department: any) => Number.isInteger(Number(department.id)) && department.name)
+          .map((department: any) => ({ id: Number(department.id), name: String(department.name) }))
+        setDepartmentOptions(options)
+        setDepartmentLoadError(options.length === 0)
+      })
+      .catch(() => {
+        if (active) setDepartmentLoadError(true)
+      })
+      .finally(() => {
+        if (active) setDepartmentLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (departmentOptions.length === 0) return
+    setFormData((current) => {
+      if (departmentOptions.some((department) => department.name === current.department)) return current
+      const assignedDepartment = departmentOptions.find(
+        (department) => department.id === Number(user?.department || user?.department_detail?.id)
+      ) || departmentOptions.find(
+        (department) => department.name.toLowerCase() === String(user?.department_detail?.name || '').trim().toLowerCase()
+      )
+      return { ...current, department: assignedDepartment?.name || '' }
+    })
+  }, [departmentOptions, user?.department, user?.department_detail?.id, user?.department_detail?.name])
 
   const isCostRequired = false
   const isSaaSOrCloud =
@@ -353,6 +385,14 @@ export const CreateRequestPage: React.FC = () => {
       return
     }
 
+    const selectedDepartment = departmentOptions.find((department) => department.name === formData.department)
+    const hasAssignedDepartment = Number(user?.department || user?.department_detail?.id) > 0
+    if (!selectedDepartment && !hasAssignedDepartment) {
+      alert('Select a department before saving this request. Your account does not have an assigned department.')
+      return
+    }
+    const departmentValue = selectedDepartment?.name || ''
+
     isSubmittingRef.current = true
     setSubmitting(true)
     const existingCostNum = Number(formData.existingCost) || 0
@@ -371,7 +411,7 @@ export const CreateRequestPage: React.FC = () => {
           quantity: showQuantity ? quantityNumber : 1,
           estimatedCost: effectiveCost,
           requiredBy: formData.requiredBy,
-          department: formData.department,
+          department: departmentValue,
           deliveryLocation: formData.deliveryLocation,
           priority: formData.priority,
           preferredVendor: formData.preferredVendor,
@@ -421,7 +461,7 @@ export const CreateRequestPage: React.FC = () => {
             quantity: showQuantity ? quantityNumber : 1,
             estimatedCost: effectiveCost,
             requiredBy: formData.requiredBy,
-            department: formData.department,
+            department: departmentValue,
             deliveryLocation: formData.deliveryLocation,
             priority: formData.priority,
             preferredVendor: formData.preferredVendor,
@@ -457,7 +497,7 @@ export const CreateRequestPage: React.FC = () => {
             quantity: showQuantity ? quantityNumber : 1,
             estimatedCost: effectiveCost,
             requiredBy: formData.requiredBy,
-            department: formData.department,
+            department: departmentValue,
             deliveryLocation: formData.deliveryLocation,
             priority: formData.priority,
             preferredVendor: formData.preferredVendor,
@@ -829,14 +869,24 @@ export const CreateRequestPage: React.FC = () => {
               <select
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                disabled={departmentLoading || departmentOptions.length === 0}
+                required
                 className="w-full p-2.5 border rounded-lg bg-gray-50 border-gray-300 font-medium text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               >
-                {DEPARTMENTS.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
+                <option value="" disabled>
+                  {departmentLoading ? 'Loading departments…' : 'Select a department'}
+                </option>
+                {departmentOptions.map((department) => (
+                  <option key={department.id} value={department.name}>
+                    {department.name}
                   </option>
                 ))}
               </select>
+              {departmentLoadError && (
+                <p className="mt-1 text-[11px] text-rose-600">
+                  Departments could not be loaded. Refresh the page before submitting this request.
+                </p>
+              )}
             </div>
 
             <div>

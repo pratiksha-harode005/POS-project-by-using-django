@@ -645,7 +645,7 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
             h_admin_appr = find_h(['ADMIN_APPROVE', 'APPROVE'])
             h_fin_appr = find_h(['FINANCE_APPROVE', 'APPROVE'])
 
-            has_rfq = bool(obj.rfq_id or getattr(obj, 'rfqId', None) or (hasattr(obj, 'rfqs') and obj.rfqs.exists()) or st in ['RFQ_SENT', 'IN_PROCUREMENT', 'IN PROCUREMENT'])
+            has_rfq = bool(getattr(obj, 'rfq_id', None) or getattr(obj, 'rfqId', None) or (hasattr(obj, 'rfqs') and obj.rfqs.exists()) or st in ['RFQ_SENT', 'IN_PROCUREMENT', 'IN PROCUREMENT'])
             has_quotes = bool(st in ['QUOTES_RECEIVED', 'VENDOR_QUOTES_RECEIVED', 'UNDER_EVALUATION'])
             has_po = bool(getattr(obj, 'po_number', None) or getattr(obj, 'poNumber', None) or st in ['PRODUCT_ORDER', 'PO_CREATED'])
             has_grn = bool(getattr(obj, 'grn_number', None) or getattr(obj, 'grnNumber', None) or st in ['DELIVERED', 'DELIVERY'])
@@ -756,50 +756,51 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
 
     def get_recommendation_reason(self, obj):
         extra = obj.extra_fields if isinstance(obj.extra_fields, dict) else {}
-        st = (obj.status or '').upper()
-        if st in ['RECOMMENDED_TO_ADMIN', 'FINANCE_RECOMMENDED_TO_ADMIN']:
-            if extra.get('finance_recommendation_reason'):
-                return extra.get('finance_recommendation_reason')
-            if extra.get('finance_comments'):
-                return extra.get('finance_comments')
-            histories = self._get_cached_histories(obj)
-            h = next((x for x in histories if x.action in ['FINANCE_RECOMMEND_ADMIN', 'RECOMMEND_ADMIN']), None)
-            if h and h.comments:
-                return h.comments
+        if extra.get('finance_recommendation_reason'):
+            return extra.get('finance_recommendation_reason')
+        if extra.get('finance_comments'):
+            return extra.get('finance_comments')
+        histories = self._get_cached_histories(obj)
+        h = next((x for x in histories if x.action in ['FINANCE_RECOMMEND_ADMIN', 'RECOMMEND_ADMIN']), None)
+        if h and h.comments:
+            return h.comments
         if extra.get('recommendation_reason'):
             return extra.get('recommendation_reason')
-        histories = self._get_cached_histories(obj)
         h = next((x for x in histories if x.action in ['RECOMMEND_FINANCE', 'MANAGER_RECOMMEND_FINANCE', 'RECOMMEND']), None)
         if h and h.comments:
             return h.comments
         # Use cached steps to avoid N+1
         steps = self._get_cached_steps(obj)
-        step = next((x for x in steps if x.decision in ['RECOMMEND', 'RECOMMEND_ADMIN']), None)
+        step = next((x for x in steps if x.decision in ['RECOMMEND_ADMIN', 'RECOMMEND_TO_ADMIN']), None)
+        if step:
+            return step.notes or (step.reason.text if getattr(step, 'reason', None) else '')
+        step = next((x for x in steps if x.decision == 'RECOMMEND'), None)
         if step:
             return step.notes or (step.reason.text if getattr(step, 'reason', None) else '')
         return ''
 
     def get_recommended_by(self, obj):
         extra = obj.extra_fields if isinstance(obj.extra_fields, dict) else {}
-        st = (obj.status or '').upper()
-        if st in ['RECOMMENDED_TO_ADMIN', 'FINANCE_RECOMMENDED_TO_ADMIN']:
-            if extra.get('finance_recommended_by'):
-                return extra.get('finance_recommended_by')
-            histories = self._get_cached_histories(obj)
-            h = next((x for x in histories if x.action in ['FINANCE_RECOMMEND_ADMIN', 'RECOMMEND_ADMIN']), None)
-            if h and h.performed_by:
-                name = f"{h.performed_by.first_name} {h.performed_by.last_name}".strip()
-                return name or h.performed_by.username
+        if extra.get('finance_recommended_by'):
+            return extra.get('finance_recommended_by')
+        histories = self._get_cached_histories(obj)
+        h = next((x for x in histories if x.action in ['FINANCE_RECOMMEND_ADMIN', 'RECOMMEND_ADMIN']), None)
+        if h and h.performed_by:
+            name = f"{h.performed_by.first_name} {h.performed_by.last_name}".strip()
+            return name or h.performed_by.username
         if extra.get('recommended_by'):
             return extra.get('recommended_by')
-        histories = self._get_cached_histories(obj)
         h = next((x for x in histories if x.action in ['RECOMMEND_FINANCE', 'MANAGER_RECOMMEND_FINANCE', 'RECOMMEND']), None)
         if h and h.performed_by:
             name = f"{h.performed_by.first_name} {h.performed_by.last_name}".strip()
             return name or h.performed_by.username
         # Use cached steps to avoid N+1
         steps = self._get_cached_steps(obj)
-        step = next((x for x in steps if x.decision in ['RECOMMEND', 'RECOMMEND_ADMIN']), None)
+        step = next((x for x in steps if x.decision in ['RECOMMEND_ADMIN', 'RECOMMEND_TO_ADMIN']), None)
+        if step and step.actor:
+            name = f"{step.actor.first_name} {step.actor.last_name}".strip()
+            return name or step.actor.username
+        step = next((x for x in steps if x.decision == 'RECOMMEND'), None)
         if step and step.actor:
             name = f"{step.actor.first_name} {step.actor.last_name}".strip()
             return name or step.actor.username
@@ -807,23 +808,23 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
 
     def get_recommended_date(self, obj):
         extra = obj.extra_fields if isinstance(obj.extra_fields, dict) else {}
-        st = (obj.status or '').upper()
-        if st in ['RECOMMENDED_TO_ADMIN', 'FINANCE_RECOMMENDED_TO_ADMIN']:
-            if extra.get('finance_recommended_date'):
-                return extra.get('finance_recommended_date')
-            histories = self._get_cached_histories(obj)
-            h = next((x for x in histories if x.action in ['FINANCE_RECOMMEND_ADMIN', 'RECOMMEND_ADMIN']), None)
-            if h and h.created_at:
-                return h.created_at.isoformat()
+        if extra.get('finance_recommended_date'):
+            return extra.get('finance_recommended_date')
+        histories = self._get_cached_histories(obj)
+        h = next((x for x in histories if x.action in ['FINANCE_RECOMMEND_ADMIN', 'RECOMMEND_ADMIN']), None)
+        if h and h.created_at:
+            return h.created_at.isoformat()
         if extra.get('recommended_date'):
             return extra.get('recommended_date')
-        histories = self._get_cached_histories(obj)
         h = next((x for x in histories if x.action in ['RECOMMEND_FINANCE', 'MANAGER_RECOMMEND_FINANCE', 'RECOMMEND']), None)
         if h and h.created_at:
             return h.created_at.isoformat()
         # Use cached steps to avoid N+1
         steps = self._get_cached_steps(obj)
-        step = next((x for x in steps if x.decision in ['RECOMMEND', 'RECOMMEND_ADMIN']), None)
+        step = next((x for x in steps if x.decision in ['RECOMMEND_ADMIN', 'RECOMMEND_TO_ADMIN']), None)
+        if step and step.created_at:
+            return step.created_at.isoformat()
+        step = next((x for x in steps if x.decision == 'RECOMMEND'), None)
         if step and step.created_at:
             return step.created_at.isoformat()
         return None

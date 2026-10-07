@@ -305,24 +305,34 @@ export const AdminRequestsPage: React.FC = () => {
     setApprovalNote('')
   }
 
-  const handleConfirmApprovalDossier = (params: ApprovalParameters) => {
+  const handleConfirmApprovalDossier = async (params: ApprovalParameters) => {
     if (!approveModalReq) return
     const approvedId = approveModalReq.id
+    try {
+      await adminApproveRequest(
+        approvedId,
+        params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
+        'Executive Administrator',
+        params.approvedAmount
+      )
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || `Could not approve request ${approvedId}.`, 'error')
+      return
+    }
     setJustApprovedIds(prev => [...prev, approvedId])
-    adminApproveRequest(
-      approvedId,
-      params.approvalComments || 'Verified within Q3 budget cap. Authorized for PO release.',
-      'Executive Administrator',
-      params.approvedAmount
-    )
     showToast(`✓ Request ${approvedId} approved with executive authority!`, 'success')
     setApproveModalReq(null)
     setApprovalNote('')
   }
 
-  const handleApprove = (r: ProcurementRequest) => {
+  const handleApprove = async (r: ProcurementRequest) => {
+    try {
+      await adminApproveRequest(r.id, approvalNote.trim() || 'Verified within Q3 budget cap. Authorized for PO release.', 'Executive Administrator')
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || `Could not approve request ${r.id}.`, 'error')
+      return
+    }
     setJustApprovedIds(prev => [...prev, r.id])
-    adminApproveRequest(r.id, approvalNote.trim() || 'Verified within Q3 budget cap. Authorized for PO release.', 'Executive Administrator')
     showToast(`✓ Request ${r.id} approved with executive authority!`, 'success')
     setApproveModalReq(null)
     setApprovalNote('')
@@ -675,26 +685,19 @@ export const AdminRequestsPage: React.FC = () => {
             })
             const currentStage = prog.currentStageIndex + 1
             const totalStages = prog.totalStages
-            const rawStatus = ((req as any).raw_status || req.status || '').toLowerCase()
+            const rawStatus = String((req as any).raw_status || '').toUpperCase()
             const isApproved =
-              statusFilter === 'APPROVED' ||
-              rawStatus === 'approved' ||
-              rawStatus === 'admin_approved' ||
-              rawStatus === 'finance_approved' ||
-              req.status === 'approved' ||
+              rawStatus === 'APPROVED' ||
+              rawStatus === 'ADMIN_APPROVED' ||
               (req.status as string) === 'admin_approved' ||
-              req.status === 'finance_approved' ||
               req.status === 'payment_pending' ||
-              req.financeStatus === 'Approved' ||
               req.financeStatus === 'Admin Approved' ||
               req.financeStatus === 'Admin Approved - Queued for Payment' ||
               (req as any).status_display === 'Admin Approved' ||
-              (req as any).status_display === 'Approved' ||
               Boolean((req as any).extra_fields?.admin_approved) ||
-              Boolean((req as any).extra_fields?.finance_status === 'Approved') ||
               Boolean((req as any).extra_fields?.final_approval_by === 'ADMIN') ||
               Boolean(req.approvalLevel === 'Admin Approved') ||
-              Boolean(req.approvedDate && req.approvedBy) ||
+              (!rawStatus && req.status === 'approved' && req.approvalLevel === 'Admin Approved') ||
               justApprovedIds.includes(req.id)
             const isRejected = statusFilter === 'REJECTED' || req.status === 'rejected' || req.status === 'finance_rejected' || Boolean(req.financeStatus?.includes('Rejected'))
             const isReturned = statusFilter === 'RETURNED' || req.status === 'clarification_requested' || Boolean(req.financeStatus?.includes('Returned'))

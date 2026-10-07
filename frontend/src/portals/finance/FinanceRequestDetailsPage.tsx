@@ -22,6 +22,26 @@ import {
 
 const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN')}`
 
+const isAwaitingAdminApproval = (req: ProcurementRequest) => {
+  const rawStatus = String((req as any).raw_status || '').toUpperCase()
+  return req.status === 'recommended_to_admin' ||
+    rawStatus === 'RECOMMENDED_TO_ADMIN' ||
+    rawStatus === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
+    req.financeStatus === 'Recommended to Admin'
+}
+
+const isAdminApproved = (req: ProcurementRequest) => {
+  const rawStatus = String((req as any).raw_status || '').toUpperCase()
+  const extra = req.extra_fields || req.extraFields || {}
+  return req.status === 'admin_approved' ||
+    rawStatus === 'APPROVED' ||
+    rawStatus === 'ADMIN_APPROVED' ||
+    req.financeStatus === 'Admin Approved' ||
+    (!rawStatus && req.status === 'approved' && req.approvalLevel === 'Admin Approved') ||
+    Boolean(extra.admin_approved) ||
+    extra.final_approval_by === 'ADMIN'
+}
+
 const HARDWARE_STAGES_CONFIG = [
   { name: 'CREATE REQUEST', dept: 'Requester / Department' },
   { name: 'MANAGER APPROVAL', dept: 'Procurement Manager' },
@@ -91,11 +111,17 @@ export const FinanceRequestDetailsPage: React.FC = () => {
 
   const handleConfirmApproval = (params: ApprovalParameters) => {
     if (!request) return
+    if (isAwaitingAdminApproval(request)) {
+      showToast(`Request ${request.id} is awaiting Admin approval.`, 'error')
+      setApproveModalOpen(false)
+      return
+    }
     const isAlreadyApproved = Boolean(
       request.status === 'approved' ||
+      request.status === 'admin_approved' ||
       request.status === 'finance_approved' ||
+      isAdminApproved(request) ||
       request.financeStatus?.toLowerCase() === 'approved' ||
-      (request.currentStage !== undefined && request.currentStage >= 4) ||
       request.status === 'quotes_received' ||
       request.status === 'assigned_to_vendor' ||
       request.status === 'delivered' ||
@@ -475,13 +501,17 @@ export const FinanceRequestDetailsPage: React.FC = () => {
                   <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
                     request.status === 'pending_approval' || request.financeStatus === 'pending'
                       ? 'bg-amber-100 text-amber-900 border-amber-300'
-                      : request.status === 'approved' || request.status === 'finance_approved' || request.financeStatus?.toLowerCase() === 'approved' || (request.currentStage !== undefined && request.currentStage >= 4)
+                      : request.status === 'approved' || request.status === 'admin_approved' || request.status === 'finance_approved' || request.financeStatus?.toLowerCase() === 'approved'
                       ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                       : request.status === 'recommended_to_admin'
                       ? 'bg-purple-100 text-purple-900 border-purple-300'
                       : 'bg-rose-100 text-rose-900 border-rose-300'
                   }`}>
-                    {request.financeStatus
+                    {isAwaitingAdminApproval(request)
+                      ? 'Awaiting Admin Approval'
+                      : isAdminApproved(request)
+                      ? 'Admin Approved'
+                      : request.financeStatus
                       ? `Finance: ${request.financeStatus.toUpperCase()}`
                       : request.status.replace(/_/g, ' ').toUpperCase()}
                   </span>
@@ -497,6 +527,10 @@ export const FinanceRequestDetailsPage: React.FC = () => {
                 <span className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-300 shadow-2xs">
                   <CheckCircle size={14} className="text-emerald-700" /> Payment Disbursed: {(request as any).payment_reference || 'Paid'}
                 </span>
+              ) : isAwaitingAdminApproval(request) ? (
+                <span className="flex items-center gap-1.5 px-3.5 py-1.5 bg-purple-100 text-purple-900 font-bold text-xs rounded-xl border border-purple-300 shadow-2xs">
+                  <Clock size={14} /> Awaiting Admin Approval
+                </span>
               ) : (request.status === 'finance_approved' || request.financeStatus === 'approved' || (request as any).raw_status === 'FINANCE_APPROVED') ? (
                 <div className="flex items-center gap-2">
                   <span className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-50 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-300 shadow-2xs">
@@ -510,6 +544,10 @@ export const FinanceRequestDetailsPage: React.FC = () => {
                     <CreditCard size={14} /> Process Payment
                   </button>
                 </div>
+              ) : isAdminApproved(request) ? (
+                <span className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-300 shadow-2xs">
+                  <CheckCircle size={14} /> Admin Approved
+                </span>
               ) : (
                 <button
                   type="button"

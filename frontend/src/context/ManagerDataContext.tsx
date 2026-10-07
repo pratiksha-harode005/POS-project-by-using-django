@@ -773,7 +773,7 @@ interface ManagerDataContextType {
   holdFinanceRequest: (id: string, reason: string, actor?: string) => void
   requestClarification: (id: string, message: string, actor?: string) => void
   recommendToHigherAuthority: (id: string, reason: string, comment?: string, actor?: string) => Promise<void>
-  adminApproveRequest: (id: string, comment?: string, actor?: string, approvedAmount?: number) => void
+  adminApproveRequest: (id: string, comment?: string, actor?: string, approvedAmount?: number) => Promise<void>
   adminRejectRequest: (id: string, reason: string, comment?: string, actor?: string) => void
   adminReturnRequest: (id: string, feedback: string, actor?: string) => void
 
@@ -915,14 +915,18 @@ export function computePaymentAnalytics(
     if (amt <= 0 || req.status === 'rejected') return
 
     const isApproved =
-      (req.currentStage ?? 1) >= 4 ||
       req.status === 'approved' ||
+      req.status === 'admin_approved' ||
+      req.status === 'finance_approved' ||
       req.status === 'quotes_received' ||
       req.status === 'assigned_to_vendor' ||
       req.status === 'delivered' ||
       req.status === 'invoiced' ||
       req.status === 'completed' ||
-      Boolean(req.approvedBy)
+      Boolean(req.approvedBy) ||
+      Boolean(req.financeApprovedBy) ||
+      req.financeStatus === 'Approved' ||
+      req.financeStatus === 'Admin Approved'
 
     if (isApproved) {
       const dateStr = req.approvedDate || req.date || ''
@@ -3680,15 +3684,26 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const req = financeReview.find(r => r.id === id) || allRequests.find(r => r.id === id)
     if (!req) return
 
-    // Guard: Block if already approved or stage >= 4
+    const rawStatus = String((req as any).raw_status || '').toUpperCase()
+    const isAwaitingAdmin =
+      req.status === 'recommended_to_admin' ||
+      rawStatus === 'RECOMMENDED_TO_ADMIN' ||
+      rawStatus === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
+      req.financeStatus === 'Recommended to Admin'
+
+    // A workflow stage identifies progress, not whether this request was approved.
     if (
+      isAwaitingAdmin ||
       req.status === 'approved' ||
+      req.status === 'admin_approved' ||
       req.status === 'finance_approved' ||
-      (req.currentStage !== undefined && req.currentStage >= 4) ||
       req.financeApprovedBy ||
-      req.status === 'completed'
+      req.status === 'completed' ||
+      ['APPROVED', 'ADMIN_APPROVED', 'FINANCE_APPROVED', 'COMPLETED'].includes(rawStatus)
     ) {
-      console.warn(`Request ${id} is already approved. Duplicate approval blocked.`)
+      console.warn(isAwaitingAdmin
+        ? `Request ${id} is waiting for Admin approval; Finance approval is blocked.`
+        : `Request ${id} is already approved. Duplicate approval blocked.`)
       return
     }
 
@@ -3971,31 +3986,45 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     triggerGlobalDataSync('workflow_transition')
   }, [financeReview, allRequests])
 
-  const adminApproveRequest = useCallback((
+  const adminApproveRequest = useCallback(async (
     id: string,
     comment?: string,
     actor = 'Priyanka Sharma (Admin)',
     approvedAmountVal?: number
   ) => {
     const req = recommendedToAdmin.find(r => r.id === id) || financeReview.find(r => r.id === id) || allRequests.find(r => r.id === id)
-    if (!req) return
+    if (!req) throw new Error(`Request ${id} is not available in the current data.`)
     const today = new Date().toISOString().split('T')[0]
-    const reqAmount = approvedAmountVal || req.amount || 0
+    const reqAmount = approvedAmountVal ?? req.amount ?? 0
+    const updated = await approveAdminRequestApi(id, comment, reqAmount)
+    const rawStatus = String(updated?.status || '').toUpperCase()
+    if (!['APPROVED', 'ADMIN_APPROVED'].includes(rawStatus)) {
+      throw new Error('The server did not confirm Admin approval for this request.')
+    }
+    const responseExtra = updated.extra_fields && typeof updated.extra_fields === 'object'
+      ? updated.extra_fields
+      : {}
+    const approvedAmount = Number(updated.approved_amount ?? updated.total_estimated_cost ?? reqAmount)
 
     const approvedReq: ProcurementRequest = {
       ...req,
-      status: 'approved',
-      financeStatus: 'Approved',
-      approvalLevel: 'Admin Approved',
-      currentStage: Math.max(req.currentStage || 1, 4),
+      status: rawStatus === 'ADMIN_APPROVED' ? 'admin_approved' : 'approved',
+      raw_status: rawStatus,
+      financeStatus: updated.finance_status || responseExtra.finance_status || 'Approved',
+      approvalLevel: updated.current_approval_level || 'COMPLETED',
+      currentStage: updated.current_stage ?? req.currentStage,
+      amount: approvedAmount,
+      approvedAmount,
+      approved_amount: approvedAmount,
       approvedBy: actor,
       approvedDate: today,
-      financeApprovedBy: req.financeApprovedBy || actor,
-      financeApprovedDate: req.financeApprovedDate || today,
+      financeApprovedBy: req.financeApprovedBy,
+      financeApprovedDate: req.financeApprovedDate,
       financeComment: comment || 'Executive authority approval ratified.',
       paymentStatus: 'Pending',
       extra_fields: {
         ...(req.extra_fields || {}),
+        ...responseExtra,
         admin_approved: true,
         finance_status: 'Approved',
         final_approval_by: 'ADMIN',
@@ -4012,32 +4041,12 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ]
     }
 
-    // Single source optimistic update
-    setBackendRequests(prev => prev.map(r => (r.id === id || String(r.id) === String(id) || (r as any).request_id === id) ? approvedReq : r))
-
-    // 1. Dispatch backend API call
-    approveAdminRequestApi(id, comment, req.amount)
-      .then((updated) => {
-        if (updated && (updated.id || updated.request_id)) {
-          setBackendRequests(prev => prev.map(r => (r.id === id || String(r.id) === String(updated.id) || r.id === updated.request_id) ? {
-            ...r,
-            ...updated,
-            status: 'approved',
-            financeStatus: 'Approved',
-            approvalLevel: 'Admin Approved',
-            extra_fields: {
-              ...(r.extra_fields || {}),
-              ...(updated.extra_fields || {}),
-              admin_approved: true,
-              finance_status: 'Approved',
-              final_approval_by: 'ADMIN',
-            }
-          } : r))
-        }
-        refreshManagerBackendData()
-        triggerGlobalDataSync('workflow_transition')
-      })
-      .catch(e => console.warn('Admin approve API sync error:', e))
+    // Reflect the transition only after the Admin endpoint confirms it.
+    setBackendRequests(prev => prev.map(r =>
+      r.id === id || String(r.id) === String(updated.id) || (r as any).request_id === id
+        ? approvedReq
+        : r
+    ))
 
     // 3. Determine workflow type: Software vs Hardware
     const wfType = detectWorkflowType(req.category, req.title)
@@ -4067,9 +4076,6 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
     }
 
-    // 5. Update backendRequests directly
-    setBackendRequests(prev => prev.map(r => r.id === id ? approvedReq : r))
-
     setFinanceAuditHistory(prev => [
       {
         id: `AUD-${Date.now()}`,
@@ -4085,13 +4091,8 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ...prev,
     ])
 
-    // Sync with PostgreSQL backend API
-    approveRequestApi(id, comment, reqAmount).then(() => {
-      refreshManagerBackendData()
-      window.dispatchEvent(new Event('kss_backend_updated'))
-    }).catch(err => {
-      console.warn('Backend admin approval sync:', err)
-    })
+    refreshManagerBackendData()
+    triggerGlobalDataSync('workflow_transition')
   }, [recommendedToAdmin, financeReview, allRequests, refreshManagerBackendData])
 
   const adminRejectRequest = useCallback((
@@ -5129,7 +5130,7 @@ export const defaultManagerDataContextValue: ManagerDataContextType = {
   holdFinanceRequest: noop,
   requestClarification: noop,
   recommendToHigherAuthority: async () => {},
-  adminApproveRequest: noop,
+  adminApproveRequest: async () => {},
   adminRejectRequest: noop,
   adminReturnRequest: noop,
   updateVendorStatus: noop,

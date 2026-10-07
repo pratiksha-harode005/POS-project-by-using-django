@@ -523,9 +523,20 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         act = serializer.validated_data['action']
-        role = getattr(request.user, 'role', None)
+        role = str(getattr(request.user, 'role', '') or '').upper()
         expected_role_by_stage = {1: 'MANAGER', 2: 'FINANCE', 3: 'ADMIN'}
         expected_role = expected_role_by_stage.get(pr.current_stage)
+        admin_pending_statuses = [
+            PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN,
+            PurchaseRequest.STATUS_FINANCE_RECOMMENDED_TO_ADMIN,
+            PurchaseRequest.STATUS_ADMIN_REVIEW,
+        ]
+        is_admin_pending = (
+            pr.current_approval_level == PurchaseRequest.LEVEL_ADMIN or
+            pr.status in admin_pending_statuses
+        )
+        if is_admin_pending:
+            expected_role = 'ADMIN'
         if act == 'RECOMMEND' and pr.current_stage >= 3:
             return Response(self.get_serializer(pr).data, status=status.HTTP_200_OK)
         if act == 'RECOMMEND' and pr.current_stage not in (1, 2):
@@ -533,7 +544,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 {'detail': 'This request is no longer awaiting a recommendation.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if expected_role and role and role != expected_role and role != 'ADMIN' and not request.user.is_superuser:
+        if expected_role and role != expected_role and role != 'ADMIN' and not request.user.is_superuser:
             return Response(
                 {'detail': f"Only {expected_role.title()} can act on a request at stage {pr.current_stage}."},
                 status=status.HTTP_403_FORBIDDEN
@@ -578,7 +589,24 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 pr.current_stage = 8
                 pr.save(update_fields=['current_stage', 'updated_at'])
                 return Response(self.get_serializer(pr).data, status=status.HTTP_200_OK)
-            if pr.current_stage >= 4 or pr.status in ['In Procurement', 'Approved', 'Completed']:
+            if pr.current_stage >= 4 and not is_admin_pending:
+                return Response(self.get_serializer(pr).data, status=status.HTTP_200_OK)
+            already_approved_statuses = [
+                PurchaseRequest.STATUS_FINANCE_APPROVED,
+                PurchaseRequest.STATUS_ADMIN_APPROVED,
+                PurchaseRequest.STATUS_APPROVED,
+                PurchaseRequest.STATUS_PAYMENT_APPROVED,
+                PurchaseRequest.STATUS_PAYMENT_PROCESSED,
+                PurchaseRequest.STATUS_PAYMENT_COMPLETED,
+                PurchaseRequest.STATUS_PAYMENT_JUSTIFICATION_SUBMITTED,
+                PurchaseRequest.STATUS_PAYMENT_JUSTIFIED,
+                PurchaseRequest.STATUS_MANAGER_VERIFIED,
+                PurchaseRequest.STATUS_MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT,
+                PurchaseRequest.STATUS_TEAM_LEAD_ACKNOWLEDGED,
+                PurchaseRequest.STATUS_REQUEST_COMPLETED,
+                PurchaseRequest.STATUS_COMPLETED,
+            ]
+            if pr.status in already_approved_statuses or pr.status in ['In Procurement', 'Approved', 'Completed']:
                 return Response(self.get_serializer(pr).data, status=status.HTTP_200_OK)
             if amt_val is not None and orig_cost > 0 and amt_val > orig_cost and role == 'MANAGER':
                 return Response(
@@ -613,9 +641,28 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 if float(pr.total_estimated_cost or 0) == 0:
                     pr.total_estimated_cost = amt_val
         elif act == 'REJECT':
-            if pr.status in ['Rejected', 'Completed'] or pr.current_stage >= 4:
+            already_approved_statuses = [
+                PurchaseRequest.STATUS_FINANCE_APPROVED,
+                PurchaseRequest.STATUS_ADMIN_APPROVED,
+                PurchaseRequest.STATUS_APPROVED,
+                PurchaseRequest.STATUS_PAYMENT_APPROVED,
+                PurchaseRequest.STATUS_PAYMENT_PROCESSED,
+                PurchaseRequest.STATUS_PAYMENT_COMPLETED,
+                PurchaseRequest.STATUS_PAYMENT_JUSTIFICATION_SUBMITTED,
+                PurchaseRequest.STATUS_PAYMENT_JUSTIFIED,
+                PurchaseRequest.STATUS_MANAGER_VERIFIED,
+                PurchaseRequest.STATUS_MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT,
+                PurchaseRequest.STATUS_TEAM_LEAD_ACKNOWLEDGED,
+                PurchaseRequest.STATUS_REQUEST_COMPLETED,
+                PurchaseRequest.STATUS_COMPLETED,
+            ]
+            if (
+                (pr.current_stage >= 4 and not is_admin_pending) or
+                pr.status in ['Rejected', 'In Procurement', 'Approved', 'Completed', PurchaseRequest.STATUS_REJECTED] or
+                pr.status in already_approved_statuses
+            ):
                 return Response(
-                    {'detail': f"Request '{pr.request_id}' cannot be rejected (current status: '{pr.status}', stage {pr.current_stage})."},
+                    {'detail': f"Request '{pr.request_id}' cannot be rejected (current status: '{pr.status}')."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -816,7 +863,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
     )
     def recommend_admin(self, request, pk=None):
         pr = self.get_object()
-        user = request.user if (request.user and request.user.is_authenticated) else User.objects.filter(role='FINANCE').first()
+        user = request.user
         reason = request.data.get('reason', '')
         comments = request.data.get('comments') or request.data.get('notes') or reason or 'Recommended to Administrator for executive approval.'
         recommended_amount = request.data.get('recommended_amount') or request.data.get('approved_amount')

@@ -77,24 +77,11 @@ export const getAdminPurchaseOrders = async (params?: ApiRequestParams) => {
 }
 
 export const approveAdminRequestApi = async (id: string | number, notes?: string, approvedAmount?: number) => {
-  try {
-    const res = await apiClient.post(`/admin/requests/${id}/approve/`, {
-      comments: notes || 'Approved by Administrator.',
-      approved_amount: approvedAmount,
-    })
-    return res.data
-  } catch {
-    try {
-      const fallback = await apiClient.post(`/requests/${id}/process_approval/`, {
-        action: 'APPROVE',
-        notes: notes || 'Approved by Administrator.',
-        amount: approvedAmount,
-      })
-      return fallback.data
-    } catch {
-      return { success: false }
-    }
-  }
+  const res = await apiClient.post(`/admin/requests/${id}/approve/`, {
+    comments: notes || 'Approved by Administrator.',
+    approved_amount: approvedAmount,
+  })
+  return res.data
 }
 
 export const rejectAdminRequestApi = async (id: string | number, reasonOrComments: string) => {

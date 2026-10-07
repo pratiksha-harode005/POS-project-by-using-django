@@ -261,7 +261,7 @@ export interface RequestWorkflowInput {
  * - hadFinance: Finance role acted OR Manager recommended (escalated to Finance)
  * - hadAdmin:   Admin role acted OR Finance recommended (escalated to Admin)
  * Fallback: uses currentStage == 2 or 3 when no steps exist.
- * If currentStage >= 4 and no steps exist, assumes Manager directly approved.
+ * Stages 4+ describe later workflow progress and do not identify who approved.
  */
 function detectActualApprovalPath(
   approval_steps: any[],

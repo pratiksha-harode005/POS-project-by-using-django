@@ -89,9 +89,9 @@ export const AdminDashboard: React.FC = () => {
     if (!trackingReq) return null
     return allRequests.find(r => r.id === trackingReq.id) || trackingReq
   }, [trackingReq, allRequests])
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' } | null>(null)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null)
 
-  const showToast = (msg: string, type: 'success' | 'info' = 'success') => {
+  const showToast = (msg: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
   }
@@ -116,13 +116,19 @@ export const AdminDashboard: React.FC = () => {
     setApprovalModalReq(req)
   }
 
-  const handleConfirmApprovalDossier = (params: ApprovalParameters) => {
+  const handleConfirmApprovalDossier = async (params: ApprovalParameters) => {
     if (!approvalModalReq) return
-    adminApproveRequest(
-      approvalModalReq.id,
-      params.approvalComments || 'Administrative executive authorization granted from Admin Dashboard',
-      'Executive Administrator'
-    )
+    try {
+      await adminApproveRequest(
+        approvalModalReq.id,
+        params.approvalComments || 'Administrative executive authorization granted from Admin Dashboard',
+        'Executive Administrator',
+        params.approvedAmount
+      )
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || `Could not approve request ${approvalModalReq.id}.`, 'error')
+      return
+    }
     showToast(`✓ Request ${approvalModalReq.id} approved with executive authority!`, 'success')
     setApprovalModalReq(null)
   }
@@ -360,10 +366,10 @@ export const AdminDashboard: React.FC = () => {
       {/* Dynamic Toast Feedback */}
       {toast && (
         <div className={`p-4 rounded-xl text-xs font-bold border flex items-center justify-between gap-3 animate-fadeIn shadow-lg ${
-          toast.type === 'success' ? 'bg-emerald-50 text-emerald-900 border-emerald-300' : 'bg-blue-50 text-blue-900 border-blue-300'
+          toast.type === 'success' ? 'bg-emerald-50 text-emerald-900 border-emerald-300' : toast.type === 'error' ? 'bg-rose-50 text-rose-900 border-rose-300' : 'bg-blue-50 text-blue-900 border-blue-300'
         }`}>
           <div className="flex items-center gap-2">
-            <CheckCircle2 size={16} className={toast.type === 'success' ? 'text-emerald-600' : 'text-blue-600'} />
+            <CheckCircle2 size={16} className={toast.type === 'success' ? 'text-emerald-600' : toast.type === 'error' ? 'text-rose-600' : 'text-blue-600'} />
             <span>{toast.msg}</span>
           </div>
           <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">

@@ -50,15 +50,25 @@ rawAxios.interceptors.response.use(
 const _apiCache = new Map<string, { data: any; timestamp: number }>()
 const _inFlightRequests = new Map<string, Promise<AxiosResponse<any>>>()
 const CACHE_TTL_MS = 5000 // 5 seconds cache for instant tab transitions
+let _apiCacheGeneration = 0
 
 export function invalidateApiCache(resourcePrefix?: string) {
+  // A GET started before a write must not repopulate the cache with its stale
+  // response after that write completes.
+  _apiCacheGeneration += 1
   if (!resourcePrefix) {
     _apiCache.clear()
+    _inFlightRequests.clear()
     return
   }
   for (const key of _apiCache.keys()) {
     if (key.includes(resourcePrefix)) {
       _apiCache.delete(key)
+    }
+  }
+  for (const key of _inFlightRequests.keys()) {
+    if (key.includes(resourcePrefix)) {
+      _inFlightRequests.delete(key)
     }
   }
 }
@@ -99,12 +109,20 @@ export const apiClient = {
     }
 
     // 3. Make real network call to backend PostgreSQL API
-    const requestPromise = rawAxios.get<T>(url, config).then(res => {
-      _apiCache.set(key, { data: res.data, timestamp: Date.now() })
-      _inFlightRequests.delete(key)
+    const requestGeneration = _apiCacheGeneration
+    let requestPromise: Promise<AxiosResponse<T>>
+    requestPromise = rawAxios.get<T>(url, config).then(res => {
+      if (requestGeneration === _apiCacheGeneration) {
+        _apiCache.set(key, { data: res.data, timestamp: Date.now() })
+      }
+      if (_inFlightRequests.get(key) === requestPromise) {
+        _inFlightRequests.delete(key)
+      }
       return res
     }).catch(err => {
-      _inFlightRequests.delete(key)
+      if (_inFlightRequests.get(key) === requestPromise) {
+        _inFlightRequests.delete(key)
+      }
       throw err
     })
 
@@ -114,22 +132,22 @@ export const apiClient = {
 
   post: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
     invalidateApiCache()
-    return rawAxios.post<T>(url, data, config)
+    return rawAxios.post<T>(url, data, config).finally(() => invalidateApiCache())
   },
 
   put: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
     invalidateApiCache()
-    return rawAxios.put<T>(url, data, config)
+    return rawAxios.put<T>(url, data, config).finally(() => invalidateApiCache())
   },
 
   patch: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
     invalidateApiCache()
-    return rawAxios.patch<T>(url, data, config)
+    return rawAxios.patch<T>(url, data, config).finally(() => invalidateApiCache())
   },
 
   delete: async <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
     invalidateApiCache()
-    return rawAxios.delete<T>(url, config)
+    return rawAxios.delete<T>(url, config).finally(() => invalidateApiCache())
   },
 
   create: rawAxios.create.bind(rawAxios),

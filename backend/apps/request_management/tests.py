@@ -59,6 +59,40 @@ class ProcurementApprovalWorkflowTests(APITestCase):
         self.assertEqual(history.first().performed_by, self.employee)
         return pr
 
+    def test_team_lead_draft_without_department_uses_assigned_department(self):
+        self.client.force_authenticate(user=self.team_lead)
+        payload = {
+            'title': 'Team Lead dashboard data flow check',
+            'category': 'IT Hardware',
+            'description': 'Request used to verify Team Lead request loading.',
+            'quantity': 1,
+            'total_estimated_cost': '1200.00',
+            'is_draft': True,
+            'status': 'DRAFT',
+        }
+
+        created = self.client.post('/api/team-lead/requests/', payload, format='json')
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+
+        # Verify the POST persisted a draft with the authenticated Team Lead
+        # and their assigned department before checking the list response.
+        persisted = PurchaseRequest.objects.get(pk=created.data['id'])
+        self.assertEqual(persisted.request_id, created.data['request_id'])
+        self.assertEqual(persisted.status, PurchaseRequest.STATUS_DRAFT)
+        self.assertEqual(persisted.current_stage, 0)
+        self.assertEqual(persisted.created_by, self.team_lead)
+        self.assertEqual(persisted.department, self.dept_it)
+
+        listed = self.client.get('/api/team-lead/requests/', {'page_size': 500})
+        self.assertEqual(listed.status_code, status.HTTP_200_OK, listed.data)
+        results = listed.data.get('results', []) if isinstance(listed.data, dict) else listed.data
+        matching = next((item for item in results if item['request_id'] == created.data['request_id']), None)
+
+        self.assertIsNotNone(matching)
+        self.assertEqual(matching['id'], created.data['id'])
+        self.assertEqual(matching['status'], PurchaseRequest.STATUS_DRAFT)
+        self.assertEqual(matching['department_detail']['name'], self.dept_it.name)
+
     def test_workflow_1_employee_create_tl_approve_moves_to_manager(self):
         """Workflow: Employee -> Team Lead -> Approve -> Manager Review"""
         pr = self._create_employee_request()

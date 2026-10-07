@@ -1663,8 +1663,8 @@ export const MyRequestsPage: React.FC = () => {
 
       {/* Filter & Search Bar */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div className="relative lg:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="relative sm:col-span-2 lg:col-span-2">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
@@ -1699,14 +1699,6 @@ export const MyRequestsPage: React.FC = () => {
               <option value="All">All Categories</option>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-          </div>
-          <div className="flex items-center">
-            <button
-              onClick={() => { setSearch(''); setFilterStatus('All'); setFilterCategory('All'); setStartDate(''); setEndDate('') }}
-              className="w-full text-xs text-gray-600 hover:text-gray-900 font-semibold py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              Reset Filters
-            </button>
           </div>
         </div>
         <div className="flex items-center gap-3 pt-2 border-t border-gray-100 text-xs">

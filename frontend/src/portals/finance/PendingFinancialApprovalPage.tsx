@@ -16,6 +16,17 @@ import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst, getRecom
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
+const isAdminApprovedRequest = (request: ProcurementRequest) => {
+  const rawStatus = String((request as any).raw_status || '').toUpperCase()
+  const extra = request.extra_fields || request.extraFields || {}
+  return rawStatus === 'APPROVED' ||
+    rawStatus === 'ADMIN_APPROVED' ||
+    request.status === 'admin_approved' ||
+    request.financeStatus === 'Admin Approved' ||
+    Boolean(extra.admin_approved) ||
+    extra.final_approval_by === 'ADMIN'
+}
+
 type ActionType = 'APPROVE' | 'REJECT' | 'HOLD' | 'RECOMMEND_ADMIN' | 'SEND_BACK'
 
 const REJECTION_REASONS = [
@@ -127,8 +138,8 @@ export const PendingFinancialApprovalPage: React.FC = () => {
     markAsRead(req.id)
     const isApp = Boolean(
       req.status === 'approved' ||
+      req.status === 'admin_approved' ||
       req.status === 'finance_approved' ||
-      (req.currentStage !== undefined && req.currentStage >= 4) ||
       req.status === 'quotes_received' ||
       req.status === 'assigned_to_vendor' ||
       req.status === 'delivered' ||
@@ -215,6 +226,7 @@ export const PendingFinancialApprovalPage: React.FC = () => {
       }
       showToast(`✓ Request ${activeReq.id} recommended to Higher Authority (Admin) for executive approval.`, 'success')
     }
+    setIsSubmitting(false)
   }
 
   return (
@@ -407,7 +419,9 @@ export const PendingFinancialApprovalPage: React.FC = () => {
             const hasSufficientBudget = matchedBudget ? budgetAvailable >= req.amount : false
 
             const recInfo = getRecommendationStatus(req)
+            const isAdminApproved = isAdminApprovedRequest(req)
             const isApproved =
+              isAdminApproved ||
               req.status === 'approved' ||
               req.status === 'finance_approved' ||
               req.status === 'payment_approved' ||
@@ -468,6 +482,10 @@ export const PendingFinancialApprovalPage: React.FC = () => {
                       ) : recInfo.isRecommendedToFinance && !isApproved && !isRejected ? (
                         <span className="text-[10px] font-black text-emerald-950 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
                           <ArrowUpRight size={11} /> {recInfo.statusLabel}
+                        </span>
+                      ) : isAdminApproved ? (
+                        <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
+                          <CheckCircle size={11} /> Admin Approved
                         </span>
                       ) : isApproved ? (
                         <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs flex items-center gap-1">
@@ -985,8 +1003,8 @@ export const PendingFinancialApprovalPage: React.FC = () => {
           if (!viewingRequest) return undefined
           const isApp = Boolean(
             viewingRequest.status === 'approved' ||
+            viewingRequest.status === 'admin_approved' ||
             viewingRequest.status === 'finance_approved' ||
-            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 4) ||
             viewingRequest.status === 'quotes_received' ||
             viewingRequest.status === 'assigned_to_vendor' ||
             viewingRequest.status === 'delivered' ||
@@ -1011,8 +1029,8 @@ export const PendingFinancialApprovalPage: React.FC = () => {
           if (!viewingRequest) return undefined
           const isApp = Boolean(
             viewingRequest.status === 'approved' ||
+            viewingRequest.status === 'admin_approved' ||
             viewingRequest.status === 'finance_approved' ||
-            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 4) ||
             viewingRequest.status === 'quotes_received' ||
             viewingRequest.status === 'assigned_to_vendor' ||
             viewingRequest.status === 'delivered' ||
@@ -1037,8 +1055,8 @@ export const PendingFinancialApprovalPage: React.FC = () => {
           if (!viewingRequest) return undefined
           const isApp = Boolean(
             viewingRequest.status === 'approved' ||
+            viewingRequest.status === 'admin_approved' ||
             viewingRequest.status === 'finance_approved' ||
-            (viewingRequest.currentStage !== undefined && viewingRequest.currentStage >= 4) ||
             viewingRequest.status === 'quotes_received' ||
             viewingRequest.status === 'assigned_to_vendor' ||
             viewingRequest.status === 'delivered' ||

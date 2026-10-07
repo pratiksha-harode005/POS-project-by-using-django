@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import { ApiRequestParams } from './managerApi'
+import type { ApiRequestParams } from './managerApi'
 
 export const getFinanceDashboardStats = async () => {
   const role = (localStorage.getItem('user_role') || '').toUpperCase()

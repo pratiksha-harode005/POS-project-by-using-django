@@ -12,6 +12,17 @@ import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
+const isAdminApprovedRequest = (request: ProcurementRequest) => {
+  const rawStatus = String((request as any).raw_status || '').toUpperCase()
+  const extra = request.extra_fields || request.extraFields || {}
+  return rawStatus === 'APPROVED' ||
+    rawStatus === 'ADMIN_APPROVED' ||
+    request.status === 'admin_approved' ||
+    request.financeStatus === 'Admin Approved' ||
+    Boolean(extra.admin_approved) ||
+    extra.final_approval_by === 'ADMIN'
+}
+
 export const FinancePurchaseRequestsPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -42,10 +53,11 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
   const handleConfirmApproval = (params: ApprovalParameters) => {
     if (!approveModalReq) return
     const isAlreadyApp = Boolean(
+      isAdminApprovedRequest(approveModalReq) ||
       approveModalReq.financeStatus === 'Approved' ||
       approveModalReq.status === 'approved' ||
+      approveModalReq.status === 'admin_approved' ||
       approveModalReq.status === 'finance_approved' ||
-      (approveModalReq.currentStage !== undefined && approveModalReq.currentStage >= 4) ||
       approveModalReq.status === 'quotes_received' ||
       approveModalReq.status === 'assigned_to_vendor' ||
       approveModalReq.status === 'delivered' ||
@@ -369,11 +381,11 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
                 </tr>
               ) : (
                 paginatedRequests.map((r) => {
+                  const isAdminApproved = isAdminApprovedRequest(r)
                   const isFinanceApproved = Boolean(
+                    !isAdminApproved && (
                     r.financeStatus === 'Approved' ||
-                    r.status === 'approved' ||
                     r.status === 'finance_approved' ||
-                    (r.currentStage !== undefined && r.currentStage >= 4) ||
                     r.status === 'quotes_received' ||
                     r.status === 'assigned_to_vendor' ||
                     r.status === 'delivered' ||
@@ -381,6 +393,7 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
                     r.status === 'completed' ||
                     r.financeApprovedBy ||
                     r.financeApprovedDate
+                    )
                   )
                   const isFinanceRejected = Boolean(
                     r.financeStatus === 'Rejected' ||
@@ -458,10 +471,19 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
                       </td>
                       <td className="p-4 text-center whitespace-nowrap">
                         <div className="inline-flex items-center gap-2">
-                          {isFinanceApproved ? (
+                          {isAdminApproved ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-xl shadow-2xs">
+                              <CheckCircle2 size={12} className="text-emerald-700" />
+                              Admin Approved
+                            </span>
+                          ) : isFinanceApproved ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-xl shadow-2xs">
                               <CheckCircle2 size={12} className="text-emerald-700" />
                               Finance Approved
+                            </span>
+                          ) : r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin' ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-800 bg-purple-100 border border-purple-300 px-2.5 py-1 rounded-xl shadow-2xs">
+                              <Clock size={12} /> Awaiting Admin
                             </span>
                           ) : !isFinanceRejected ? (
                             <button

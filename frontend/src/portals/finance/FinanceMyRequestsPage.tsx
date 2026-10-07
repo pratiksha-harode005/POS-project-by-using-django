@@ -63,11 +63,18 @@ const mapRequestToFinanceOrder = (
   const realGrnNumber = r.grnNumber || r.grn_number || matchedReceipt?.grnNumber || matchedReceipt?.id
 
   // Status mapping
+  const normalizedStatus = String(r.status || '').toLowerCase()
+  const rawStatus = String(r.raw_status || '').toUpperCase()
+  const isRecommendedToAdmin =
+    normalizedStatus === 'recommended_to_admin' ||
+    rawStatus === 'RECOMMENDED_TO_ADMIN' ||
+    rawStatus === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
+    r.financeStatus === 'Recommended to Admin'
   let st: FinanceOrder['status'] = 'Pending'
-  if (r.status === 'completed' || (r.currentStage ?? 1) >= 9) st = 'Completed'
-  else if (r.status === 'rejected' || r.status === 'finance_rejected') st = 'Rejected'
-  else if ((r.currentStage ?? 1) >= 4 || r.status === 'approved' || r.status === 'quotes_received' || r.status === 'assigned_to_vendor' || r.status === 'delivered' || r.status === 'invoiced') st = 'In Procurement'
-  else if (r.status === 'finance_approved' || r.financeStatus === 'Approved') st = 'Approved'
+  if (normalizedStatus === 'completed' || rawStatus === 'COMPLETED' || (!isRecommendedToAdmin && (r.currentStage ?? 1) >= 9)) st = 'Completed'
+  else if (normalizedStatus === 'rejected' || normalizedStatus === 'finance_rejected' || rawStatus === 'REJECTED' || rawStatus === 'FINANCE_REJECTED') st = 'Rejected'
+  else if (!isRecommendedToAdmin && (normalizedStatus === 'approved' || normalizedStatus === 'admin_approved' || normalizedStatus === 'quotes_received' || normalizedStatus === 'assigned_to_vendor' || normalizedStatus === 'delivered' || normalizedStatus === 'invoiced')) st = 'In Procurement'
+  else if (!isRecommendedToAdmin && (normalizedStatus === 'finance_approved' || r.financeStatus === 'Approved')) st = 'Approved'
   else st = 'Pending'
 
   // Compute progression to get authoritative currentlyWith and stage details

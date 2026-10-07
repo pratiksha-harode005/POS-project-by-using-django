@@ -237,6 +237,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // Dynamic parallel fetch from Django REST API backend
   const isFetchingRef = React.useRef(false)
   const refreshQueuedRef = React.useRef(false)
+  const requestMutationVersionRef = React.useRef(0)
 
   // Dynamic fetch from Django REST API backend
   const refreshBackendRequests = async () => {
@@ -250,6 +251,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return
     }
     isFetchingRef.current = true
+    const requestVersionAtFetchStart = requestMutationVersionRef.current
 
     try {
       // PERFORMANCE FIX: Fetch requests and payments in parallel.
@@ -474,7 +476,12 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
       const sorted = sortRequestsNewestFirst(mapped)
       // console.log removed — was serializing entire array on every poll tick
-      setRequests(sorted)
+      if (requestVersionAtFetchStart === requestMutationVersionRef.current) {
+        setRequests(sorted)
+      } else {
+        // Ignore a list snapshot that began before a create finished, then refresh it.
+        refreshQueuedRef.current = true
+      }
 
       try {
         setPaymentsError(null)
@@ -655,7 +662,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       description: reqData.description,
       quantity: reqData.quantity,
       required_by: reqData.requiredBy || today,
-      department: reqData.department || profile.department || 'IT & Infrastructure',
+      department: reqData.department || undefined,
       delivery_location: reqData.deliveryLocation || 'Pune HQ',
       priority: reqData.priority || 'Medium',
       preferred_vendor: reqData.preferredVendor || '',
@@ -685,6 +692,8 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ...reqData,
       id: actualId,
       dbId: createdData?.id,
+      department: createdData?.department_detail?.name || reqData.department || '',
+      department_detail: createdData?.department_detail,
       createdAt: createdData?.created_at || new Date().toISOString(),
       date: createdData?.created_at ? createdData.created_at.split('T')[0] : today,
       lastUpdated: today,
@@ -704,6 +713,10 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ],
     }
 
+    requestMutationVersionRef.current += 1
+    if (isFetchingRef.current) {
+      refreshQueuedRef.current = true
+    }
     setRequests((prev) => sortRequestsNewestFirst([newReq, ...prev.filter(r => r.id !== actualId)]))
     triggerGlobalDataSync('request_created')
     // PERFORMANCE FIX: Removed duplicate refreshBackendRequests() call here.

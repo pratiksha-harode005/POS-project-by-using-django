@@ -87,9 +87,9 @@ export const RequestApprovalModal: React.FC<RequestApprovalModalProps> = ({
 
   const isAlreadyApproved = Boolean(
     request.status === 'approved' ||
+    request.status === 'admin_approved' ||
     request.status === 'finance_approved' ||
     request.financeStatus?.toLowerCase() === 'approved' ||
-    (request.currentStage !== undefined && request.currentStage >= 4) ||
     request.status === 'quotes_received' ||
     request.status === 'assigned_to_vendor' ||
     request.status === 'delivered' ||

@@ -37,6 +37,18 @@ const priorityColors: Record<string, string> = {
   Low: 'bg-slate-50 text-slate-700 border-slate-200',
 }
 
+const isAdminApprovedRequest = (request: ProcurementRequest) => {
+  const rawStatus = String((request as any).raw_status || '').toUpperCase()
+  const extra = request.extra_fields || request.extraFields || {}
+  return rawStatus === 'APPROVED' ||
+    rawStatus === 'ADMIN_APPROVED' ||
+    request.status === 'admin_approved' ||
+    request.financeStatus === 'Admin Approved' ||
+    Boolean(extra.admin_approved) ||
+    extra.final_approval_by === 'ADMIN' ||
+    (!rawStatus && request.status === 'approved' && request.approvalLevel === 'Admin Approved')
+}
+
 export const RecommendedToAdminPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -57,10 +69,10 @@ export const RecommendedToAdminPage: React.FC = () => {
   const [selectedReq, setSelectedReq] = useState<ProcurementRequest | null>(null)
   const [approveModalReq, setApproveModalReq] = useState<ProcurementRequest | null>(null)
   const [approvalNote, setApprovalNote] = useState('')
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null)
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null)
 
   // Show Toast Helper
-  const showToast = (text: string, type: 'success' | 'info' = 'success') => {
+  const showToast = (text: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToastMessage({ text, type })
     setTimeout(() => setToastMessage(null), 3500)
   }
@@ -85,9 +97,7 @@ export const RecommendedToAdminPage: React.FC = () => {
     const pending = recommendedToAdmin.filter(
       r => r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin'
     ).length
-    const approved = recommendedToAdmin.filter(
-      r => r.status === 'finance_approved' || r.financeStatus === 'Admin Approved'
-    ).length
+    const approved = recommendedToAdmin.filter(isAdminApprovedRequest).length
 
     return { total, totalAmount, pending, approved }
   }, [recommendedToAdmin])
@@ -107,13 +117,7 @@ export const RecommendedToAdminPage: React.FC = () => {
       const matchesDept = selectedDept === 'ALL' || r.department === selectedDept
       const matchesPriority = selectedPriority === 'ALL' || r.priority === selectedPriority
 
-      const isApproved = Boolean(
-        r.status === 'finance_approved' ||
-        r.status === 'approved' ||
-        r.financeStatus === 'Admin Approved' ||
-        r.financeStatus === 'Approved' ||
-        r.approvedBy
-      )
+      const isApproved = isAdminApprovedRequest(r)
       const isPending = (r.status === 'recommended_to_admin' || r.financeStatus === 'Recommended to Admin') && !isApproved
 
       let matchesTab = true
@@ -132,18 +136,24 @@ export const RecommendedToAdminPage: React.FC = () => {
   }, [recommendedToAdmin, search, selectedDept, selectedPriority, statusTab, requestType])
 
   // Admin Approval Handler
-  const handleConfirmFinancialDossier = (params: ApprovalParameters) => {
+  const handleConfirmFinancialDossier = async (params: ApprovalParameters) => {
     if (!approveModalReq) return
-    adminApproveRequest(
-      approveModalReq.id,
-      params.approvalComments || 'Ratified and approved by Executive Admin Committee.',
-      actorName
-    )
+    try {
+      await adminApproveRequest(
+        approveModalReq.id,
+        params.approvalComments || 'Ratified and approved by Executive Admin Committee.',
+        actorName,
+        params.approvedAmount
+      )
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || `Could not approve request ${approveModalReq.id}.`, 'error')
+      return
+    }
     showToast(`✓ Request ${approveModalReq.id} has been formally approved by Admin.`, 'success')
     if (selectedReq?.id === approveModalReq.id) {
       setSelectedReq({
         ...selectedReq,
-        status: 'finance_approved',
+        status: 'approved',
         financeStatus: 'Admin Approved',
         approvedBy: actorName,
         approvedDate: new Date().toISOString().split('T')[0],
@@ -153,13 +163,18 @@ export const RecommendedToAdminPage: React.FC = () => {
     setApprovalNote('')
   }
 
-  const handleAdminApprove = (req: ProcurementRequest, note?: string) => {
-    adminApproveRequest(req.id, note || 'Ratified and approved by Executive Admin Committee.', actorName)
+  const handleAdminApprove = async (req: ProcurementRequest, note?: string) => {
+    try {
+      await adminApproveRequest(req.id, note || 'Ratified and approved by Executive Admin Committee.', actorName)
+    } catch (error: any) {
+      showToast(error?.response?.data?.detail || error?.message || `Could not approve request ${req.id}.`, 'error')
+      return
+    }
     showToast(`✓ Request ${req.id} has been formally approved by Admin.`, 'success')
     if (selectedReq?.id === req.id) {
       setSelectedReq({
         ...selectedReq,
-        status: 'finance_approved',
+        status: 'approved',
         financeStatus: 'Admin Approved',
         approvedBy: actorName,
         approvedDate: new Date().toISOString().split('T')[0],
@@ -200,7 +215,7 @@ export const RecommendedToAdminPage: React.FC = () => {
       {toastMessage && (
         <div
           className={`fixed top-6 right-6 z-50 px-4 py-3 rounded-xl shadow-xl text-xs font-bold flex items-center gap-2 text-white animate-fadeIn ${
-            toastMessage.type === 'success' ? 'bg-emerald-600' : 'bg-indigo-600'
+            toastMessage.type === 'success' ? 'bg-emerald-600' : toastMessage.type === 'error' ? 'bg-rose-600' : 'bg-indigo-600'
           }`}
         >
           <CheckCircle size={16} />
@@ -446,14 +461,7 @@ export const RecommendedToAdminPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
                 {filteredList.map(req => {
-                  const isApproved = Boolean(
-                    req.status === 'finance_approved' ||
-                    req.status === 'approved' ||
-                    req.financeStatus === 'Admin Approved' ||
-                    req.financeStatus === 'Approved' ||
-                    (req.currentStage !== undefined && req.currentStage >= 4) ||
-                    req.approvedBy
-                  )
+                  const isApproved = isAdminApprovedRequest(req)
                   const isPending = (req.status === 'recommended_to_admin' || req.financeStatus === 'Recommended to Admin') && !isApproved
 
                   return (
@@ -693,7 +701,7 @@ export const RecommendedToAdminPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="text-[10px] font-bold uppercase text-slate-400 block">Current Admin State</span>
-                    {selectedReq.status === 'finance_approved' || selectedReq.financeStatus === 'Admin Approved' ? (
+                    {isAdminApprovedRequest(selectedReq) ? (
                       <span className="text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
                         <CheckCircle size={14} /> Approved by Admin ({selectedReq.approvedBy || 'Executive Committee'}) on {selectedReq.approvedDate || 'Today'}
                       </span>
@@ -734,12 +742,7 @@ export const RecommendedToAdminPage: React.FC = () => {
 
                 {Boolean(
                   (selectedReq.status === 'recommended_to_admin' || selectedReq.financeStatus === 'Recommended to Admin') &&
-                  selectedReq.status !== 'finance_approved' &&
-                  selectedReq.status !== 'approved' &&
-                  selectedReq.financeStatus !== 'Admin Approved' &&
-                  selectedReq.financeStatus !== 'Approved' &&
-                  (selectedReq.currentStage === undefined || selectedReq.currentStage < 4) &&
-                  !selectedReq.approvedBy
+                  !isAdminApprovedRequest(selectedReq)
                 ) && (
                   <button
                     onClick={() => {
@@ -760,7 +763,7 @@ export const RecommendedToAdminPage: React.FC = () => {
       <RequestApprovalModal
         isOpen={!!approveModalReq}
         request={approveModalReq}
-        portalType="FINANCE"
+        portalType="ADMIN"
         approverName={actorName}
         onClose={() => setApproveModalReq(null)}
         onConfirm={handleConfirmFinancialDossier}
