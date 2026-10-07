@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { History, Search, Filter, Download, ArrowUpDown, ChevronLeft, ChevronRight, FileSpreadsheet, FileText } from 'lucide-react'
+import { History, Search, Filter, ArrowUpDown, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useProcurement } from '../../context/ProcurementContext'
@@ -229,14 +229,8 @@ export const RequestHistoryPage: React.FC = () => {
         {/* Export Buttons */}
         <div className="flex items-center gap-2">
           <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl text-xs font-semibold border border-emerald-200 shadow-xs transition-colors"
-          >
-            <FileSpreadsheet size={15} /> Export CSV
-          </button>
-          <button
             onClick={handleExportPDF}
-            className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-semibold border border-rose-200 shadow-xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-semibold border border-rose-200 shadow-xs transition-colors cursor-pointer"
           >
             <FileText size={15} /> Export PDF
           </button>
