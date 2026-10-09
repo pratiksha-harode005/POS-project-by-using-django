@@ -322,7 +322,7 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
 
     # 8. REJECTED
     elif event_type == 'REQUEST_REJECTED':
-        reason_txt = details.get('reason', 'Policy reasons')
+        reason_txt = details.get('reason') or 'Policy reasons'
         if req_user:
             created_notes.append(create_notification(
                 user=req_user,
@@ -330,17 +330,24 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
                 message=f"Your request '{title}' was rejected by {actor_name} ({actor_role}). Reason: {reason_txt}.",
                 purchase_request=pr
             ))
+        if getattr(pr, 'assigned_team_lead', None) and pr.assigned_team_lead != req_user and pr.assigned_team_lead != actor:
+            created_notes.append(create_notification(
+                user=pr.assigned_team_lead,
+                title=f"Request {pr_id} Rejected",
+                message=f"Request '{title}' was rejected by {actor_name} ({actor_role}). Reason: {reason_txt}.",
+                purchase_request=pr
+            ))
         created_notes.extend(notify_roles(
             roles=['MANAGER', 'FINANCE', 'ADMIN'],
             title=f"Request {pr_id} Rejected",
             message=f"Request '{title}' was rejected by {actor_name} ({actor_role}). Reason: {reason_txt}.",
             purchase_request=pr,
-            exclude_users=[actor] if actor else None
+            exclude_users=[u for u in [actor, req_user, getattr(pr, 'assigned_team_lead', None)] if u]
         ))
 
     # 9. RETURNED FOR CLARIFICATION
     elif event_type == 'REQUEST_RETURNED':
-        reason_txt = details.get('reason', 'Clarification required')
+        reason_txt = details.get('reason') or 'Clarification required'
         if req_user:
             created_notes.append(create_notification(
                 user=req_user,
@@ -348,12 +355,42 @@ def notify_stage_event(event_type, purchase_request=None, actor=None, details=No
                 message=f"Your request '{title}' was returned by {actor_name} ({actor_role}). Reason: {reason_txt}. Please update and resubmit.",
                 purchase_request=pr
             ))
+        if getattr(pr, 'assigned_team_lead', None) and pr.assigned_team_lead != req_user and pr.assigned_team_lead != actor:
+            created_notes.append(create_notification(
+                user=pr.assigned_team_lead,
+                title=f"Request {pr_id} Returned for Revision",
+                message=f"Request '{title}' was returned by {actor_name} ({actor_role}). Reason: {reason_txt}.",
+                purchase_request=pr
+            ))
         created_notes.extend(notify_roles(
             roles=['MANAGER'],
             title=f"Request {pr_id} Returned to Requester",
-            message=f"Request '{title}' returned to Team Lead by {actor_name} ({actor_role}).",
+            message=f"Request '{title}' returned to Team Lead by {actor_name} ({actor_role}). Reason: {reason_txt}.",
             purchase_request=pr,
-            exclude_users=[actor] if actor else None
+            exclude_users=[u for u in [actor, req_user, getattr(pr, 'assigned_team_lead', None)] if u]
+        ))
+
+    # 10. RECEIPT SENT TO HIGHER AUTHORITY (Manager -> Finance & Admin)
+    elif event_type == 'RECEIPT_SENT_HIGHER_AUTHORITY':
+        extra = pr.extra_fields if isinstance(pr.extra_fields, dict) else {}
+        clean_id = (pr.request_id or str(pr.id)).replace('REQ-', '').replace('REP-', '')
+        rcp_id = details.get('receipt_id') or extra.get('software_receipt_id') or extra.get('receipt_no') or f"RCP-SW-{clean_id}"
+        notes_txt = details.get('notes') or 'Payment receipt transmitted by Manager for financial review and audit archive.'
+
+        # Notify Finance Directorate (Received Reports)
+        created_notes.extend(notify_roles(
+            roles=['FINANCE'],
+            title=f"Receipt Received | {pr_id}",
+            message=f"Manager {actor_name} forwarded payment receipt {rcp_id} for '{title}' to Finance Portal (Received Reports). Notes: {notes_txt}",
+            purchase_request=pr
+        ))
+
+        # Notify Admin Directorate (Receipts Archive)
+        created_notes.extend(notify_roles(
+            roles=['ADMIN'],
+            title=f"Receipt Received | {pr_id}",
+            message=f"Manager {actor_name} forwarded payment receipt {rcp_id} for '{title}' to Admin Portal (Receipts Archive). Notes: {notes_txt}",
+            purchase_request=pr
         ))
 
     # 10. RFQ PUBLISHED (Stage 4)

@@ -68,6 +68,9 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
         if not po:
             obj._cached_quotation = None
             return None
+        if hasattr(po, '_cached_quotation'):
+            obj._cached_quotation = po._cached_quotation
+            return po._cached_quotation
         if hasattr(po, '_state') and 'quotation' in getattr(po._state, 'fields_cache', {}):
             q = po._state.fields_cache['quotation']
             if q:
@@ -77,16 +80,24 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
             obj._cached_quotation = po.quotation
             return po.quotation
         pr = getattr(po, 'purchase_request', None)
+        v_id = getattr(po, 'vendor_id', None)
         if pr:
             if hasattr(pr, '_prefetched_objects_cache') and 'rfqs' in pr._prefetched_objects_cache:
                 for rfq in pr._prefetched_objects_cache['rfqs']:
                     if hasattr(rfq, '_prefetched_objects_cache') and 'quotations' in rfq._prefetched_objects_cache:
                         for q in rfq._prefetched_objects_cache['quotations']:
-                            if q.status == 'Selected' or q.vendor_id == po.vendor_id:
+                            if (q.status or '').upper() == 'SELECTED' or q.vendor_id == v_id:
                                 obj._cached_quotation = q
                                 return q
+            if not hasattr(self, '_quotation_lookup_cache'):
+                self._quotation_lookup_cache = {}
+            cache_key = (getattr(pr, 'id', None), v_id)
+            if cache_key in self._quotation_lookup_cache:
+                obj._cached_quotation = self._quotation_lookup_cache[cache_key]
+                return obj._cached_quotation
             from apps.rfq_management.models import Quotation
-            q = Quotation.objects.filter(rfq__purchase_request=pr, vendor=po.vendor).order_by('-created_at').first()
+            q = Quotation.objects.filter(rfq__purchase_request=pr, vendor_id=v_id).order_by('-created_at').first() if v_id else None
+            self._quotation_lookup_cache[cache_key] = q
             obj._cached_quotation = q
             return q
         obj._cached_quotation = None
@@ -412,16 +423,24 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             obj._cached_quotation = obj.quotation
             return obj.quotation
         pr = getattr(obj, 'purchase_request', None)
+        v_id = getattr(obj, 'vendor_id', None)
         if pr:
             if hasattr(pr, '_prefetched_objects_cache') and 'rfqs' in pr._prefetched_objects_cache:
                 for rfq in pr._prefetched_objects_cache['rfqs']:
                     if hasattr(rfq, '_prefetched_objects_cache') and 'quotations' in rfq._prefetched_objects_cache:
                         for q in rfq._prefetched_objects_cache['quotations']:
-                            if q.status == 'Selected' or q.vendor_id == obj.vendor_id:
+                            if (q.status or '').upper() == 'SELECTED' or q.vendor_id == v_id:
                                 obj._cached_quotation = q
                                 return q
+            if not hasattr(self, '_quotation_lookup_cache'):
+                self._quotation_lookup_cache = {}
+            cache_key = (getattr(pr, 'id', None), v_id)
+            if cache_key in self._quotation_lookup_cache:
+                obj._cached_quotation = self._quotation_lookup_cache[cache_key]
+                return obj._cached_quotation
             from apps.rfq_management.models import Quotation
-            q = Quotation.objects.filter(rfq__purchase_request=pr, vendor=obj.vendor).order_by('-created_at').first()
+            q = Quotation.objects.filter(rfq__purchase_request=pr, vendor_id=v_id).order_by('-created_at').first() if v_id else None
+            self._quotation_lookup_cache[cache_key] = q
             obj._cached_quotation = q
             return q
         obj._cached_quotation = None

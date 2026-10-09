@@ -74,14 +74,14 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children }) => {
   const roleDisplay = activeVendor ? `${activeVendor.category} Vendor` : currentRole.replace('_', ' ').toLowerCase()
 
   return (
-    <div className="fixed inset-0 w-screen h-screen flex bg-[#F8FAFC] overflow-hidden font-sans select-text">
+    <div className="w-screen h-screen flex bg-[#F8FAFC] overflow-hidden font-sans select-text">
       {/* Fixed Full-Height Role Sidebar */}
       <Sidebar role={currentRole} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         {/* Top Navbar — Seamless, Clean, Perfectly Aligned, Stationary */}
-        <header className="h-16 bg-white border-b border-slate-200/80 flex items-center justify-end px-6 z-20 flex-shrink-0">
+        <header className="h-16 bg-white border-b border-slate-200/80 flex items-center justify-end px-6 relative z-10 flex-shrink-0">
           {/* Right: Notifications & User Profile Chip */}
           <div className="flex items-center gap-5">
             {/* Topbar Notifications Dropdown */}

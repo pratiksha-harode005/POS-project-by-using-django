@@ -7,6 +7,7 @@ import { PaymentRecord } from '../../context/ProcurementContext'
 import { downloadSoftwareReceiptPdf } from '../../utils/softwareReceiptPdfGenerator'
 import { apiClient } from '../../api/client'
 import { isSoftwareRequest } from '../../utils/workflowUtils'
+import { ModalPortal } from './ModalPortal'
 
 interface UnifiedReceiptModalProps {
   payment: PaymentRecord
@@ -302,11 +303,12 @@ export const UnifiedReceiptModal: React.FC<UnifiedReceiptModalProps> = ({ paymen
   const isPaid = ['Paid', 'PAID', 'SUCCESS', 'MOCK_SUCCESS', 'Successful', 'Verified'].includes(paymentStatus)
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[60] overflow-y-auto">
-      <div
-        className="bg-[#f0f4f8] rounded-2xl w-full max-w-[760px] shadow-2xl overflow-hidden flex flex-col max-h-[94vh] my-auto"
-        style={{ fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}
-      >
+    <ModalPortal>
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[9999] overflow-hidden animate-fadeIn">
+        <div
+          className="bg-[#f0f4f8] rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col h-[94vh] max-h-[94vh] my-auto"
+          style={{ fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}
+        >
 
         {/* ════════════════════ TOP BAR ════════════════════ */}
         <div className="bg-white px-6 py-4 flex items-center justify-between border-b border-slate-200 shrink-0">
@@ -516,7 +518,8 @@ export const UnifiedReceiptModal: React.FC<UnifiedReceiptModalProps> = ({ paymen
         </div>
       </div>
     </div>
-  )
+  </ModalPortal>
+)
 }
 
 /* ═══════════════════════════════════════════════════════════

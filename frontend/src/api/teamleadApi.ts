@@ -29,17 +29,19 @@ export interface CreateRequestPayload {
   extra_fields?: Record<string, any>
 }
 
-export const getTeamLeadRequests = async (params?: { status?: string; search?: string; priority?: string; page_size?: number }) => {
+export const getTeamLeadRequests = async (params?: { status?: string; search?: string; priority?: string; page_size?: number; my_only?: boolean; throwOnError?: boolean }) => {
   const role = (localStorage.getItem('user_role') || '').toUpperCase()
   const primaryEndpoint = (role === 'TEAM_LEAD' || role === 'ADMIN') ? '/team-lead/requests/' : '/requests/'
+  const { throwOnError, ...queryParams } = params || {}
   try {
-    const response = await apiClient.get(primaryEndpoint, { params: { ...params, page_size: params?.page_size || 500 } })
+    const response = await apiClient.get(primaryEndpoint, { params: { ...queryParams, page_size: queryParams.page_size || 500 } })
     return response.data
-  } catch (err) {
+  } catch (primaryError) {
     try {
-      const fallback = await apiClient.get('/requests/', { params: { ...params, page_size: 500 } })
+      const fallback = await apiClient.get('/requests/', { params: { ...queryParams, page_size: queryParams.page_size || 500 } })
       return fallback.data
-    } catch {
+    } catch (fallbackError) {
+      if (throwOnError) throw fallbackError || primaryError
       return []
     }
   }

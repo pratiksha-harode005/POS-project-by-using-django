@@ -23,12 +23,15 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             'vendor',
             'vendor__category',
             'vendor__user',
+            'vendor__user__department',
             'purchase_request',
             'purchase_request__created_by',
             'purchase_request__created_by__department',
             'purchase_request__department',
             'purchase_request__assigned_team_lead',
+            'purchase_request__assigned_team_lead__department',
             'purchase_request__assigned_manager',
+            'purchase_request__assigned_manager__department',
             'quotation',
             'quotation__vendor',
             'quotation__rfq'
@@ -37,9 +40,13 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 'goods_receipts',
                 queryset=GoodsReceipt.objects.select_related(
                     'received_by',
+                    'received_by__department',
                     'purchase_order',
                     'purchase_order__vendor',
                     'purchase_order__purchase_request',
+                    'purchase_order__purchase_request__created_by',
+                    'purchase_order__purchase_request__created_by__department',
+                    'purchase_order__purchase_request__department',
                     'purchase_order__quotation'
                 )
             ),
@@ -52,8 +59,10 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 queryset=RFQ.objects.prefetch_related('quotations')
             ),
             'purchase_request__approval_steps__actor',
+            'purchase_request__approval_steps__actor__department',
             'purchase_request__approval_steps__reason',
-            'purchase_request__approval_history__performed_by'
+            'purchase_request__approval_history__performed_by',
+            'purchase_request__approval_history__performed_by__department'
         )
 
         status_param = self.request.query_params.get('status')

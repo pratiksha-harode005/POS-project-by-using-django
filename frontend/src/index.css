@@ -322,3 +322,44 @@ main::-webkit-scrollbar-thumb:hover {
   background: #FFFFFF;
 }
 
+/* ── Global Shared Modal Backdrop & Viewport System ── */
+
+/* Lock body scrolling when any modal is open */
+body:has([class*="fixed"][class*="inset-0"]),
+body:has([role="dialog"]),
+body:has([aria-modal="true"]),
+body:has(.modal-backdrop) {
+  overflow: hidden;
+}
+
+/* Ensure all full-screen modal overlays cover the exact full viewport from top: 0 with uniform light tint and blur */
+[class*="fixed"][class*="inset-0"],
+.modal-backdrop {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9999 !important;
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Universal modal dialog sizing: maximum viewport fit with shadow and layering */
+[class*="fixed"][class*="inset-0"] > div,
+.modal-backdrop > div {
+  max-height: calc(100vh - 2rem) !important;
+  margin: auto !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;
+  z-index: 10000 !important;
+}
+
+
+
+

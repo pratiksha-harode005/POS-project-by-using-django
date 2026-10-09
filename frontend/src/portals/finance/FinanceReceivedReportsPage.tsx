@@ -101,6 +101,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
   const [timePeriod, setTimePeriod] = useState<TimePeriodFilter>('ALL')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [submitterFilter, setSubmitterFilter] = useState<SubmitterFilter>('ALL')
+  const [procurementType, setProcurementType] = useState<ProcurementTypeFilter>('ALL')
   const [search, setSearch] = useState('')
   const [selectedDept, setSelectedDept] = useState('All')
   const [selectedReport, setSelectedReport] = useState<FinanceReportItem | null>(null)
@@ -265,9 +266,10 @@ export const FinanceReceivedReportsPage: React.FC = () => {
         const extra = req.extra_fields || req.extraFields || (req.rawRequest && req.rawRequest.extra_fields) || {}
         const rawSt = ((req.raw_status || req.status || '') as string).toUpperCase()
         const cat = (req.category || '').toLowerCase()
-        const isSw = isSoftwareRequest(req) || cat.includes('software') || cat.includes('saas') || Boolean(req.software_name) || req.flowType === 'B' || req.flow_type === 'B'
-        const hasReceipt = Boolean(extra.software_receipt_id || extra.receipt_no)
-        const isCompleted = ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean(req.confirmed_by_team_lead)
+        const isSw = isSoftwareRequest(req) || cat.includes('software') || cat.includes('saas') || cat.includes('cloud') || cat.includes('license') || cat.includes('subscription') || Boolean(req.software_name) || req.flowType === 'B' || req.flow_type === 'B'
+        const isSentToHigherAuth = Boolean(extra.is_sent_to_higher_authority || extra.sent_to_higher_authority || extra.sent_to_finance_received_reports || extra.sent_to_admin_receipts)
+        const hasReceipt = isSentToHigherAuth || Boolean(extra.software_receipt_id || extra.receipt_no || extra.mock_payment_ref || extra.payment_reference)
+        const isCompleted = ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED', 'MANAGER_VERIFIED', 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'PAYMENT_JUSTIFIED', 'PAYMENT_JUSTIFICATION_SUBMITTED', 'PAYMENT_PROCESSED', 'PAID', 'APPROVED'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean(req.confirmed_by_team_lead) || (req.payment_status || '').toUpperCase() === 'PAID' || isSentToHigherAuth
         return isSw && (hasReceipt || isCompleted)
       })
       .map((req: any) => {
@@ -330,6 +332,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
   // Derive reports dynamically from real procurement requests forwarded or managed
   const reports = useMemo<FinanceReportItem[]>(() => {
     const today = new Date()
+
     return allRequests.map((req: any, idx) => {
       const id = String(req.id || `REQ-${idx + 1}`)
       const reportId = id.startsWith('REP-') ? id : `REP-${id}`
@@ -341,14 +344,41 @@ export const FinanceReceivedReportsPage: React.FC = () => {
       if (diffDays > 30) periodCategory = 'Yearly'
       else if (diffDays > 7) periodCategory = 'Monthly'
 
-      const isTL = req.role === 'Team Lead' || String(req.requester_name || '').toLowerCase().includes('lead') || String(req.createdBy || '').toLowerCase().includes('lead')
-      const submitterType: 'Manager' | 'Team Lead' = isTL ? 'Team Lead' : 'Manager'
-      const submitterName = req.createdBy || req.requester_name || (isTL ? 'Team Lead' : 'Procurement Manager')
-      const submitterRole = isTL ? `${req.department || 'Operations'} Lead` : `${req.department || 'Procurement'} Manager`
+      const isSentByManager = Boolean(
+        req.extra_fields?.sent_to_higher_authority ||
+        req.extra_fields?.is_sent_to_higher_authority ||
+        req.extra_fields?.sent_to_finance_received_reports ||
+        req.extra_fields?.receipt_higher_authority_sent_by ||
+        req.extraFields?.sent_to_higher_authority ||
+        req.extraFields?.is_sent_to_higher_authority
+      )
+
+      const isTL = !isSentByManager && (req.role === 'Team Lead' || String(req.requester_name || '').toLowerCase().includes('lead') || String(req.createdBy || '').toLowerCase().includes('lead'))
+      const submitterType: 'Manager' | 'Team Lead' = isSentByManager ? 'Manager' : (isTL ? 'Team Lead' : 'Manager')
+      const submitterName = isSentByManager
+        ? (req.extra_fields?.receipt_higher_authority_sent_by || req.approvedBy || 'Procurement Manager')
+        : (req.createdBy || req.requester_name || (isTL ? 'Team Lead' : 'Procurement Manager'))
+      const submitterRole = isSentByManager
+        ? 'Procurement Manager'
+        : (isTL ? `${req.department || 'Operations'} Lead` : `${req.department || 'Procurement'} Manager`)
 
       const rawStatus = (req.status || req.raw_status || 'Pending').toLowerCase()
       let status: 'Pending' | 'Approved' | 'Rejected' = 'Pending'
-      if (rawStatus.includes('approved') || rawStatus === 'completed' || rawStatus === 'manager_approved' || rawStatus === 'finance_report') {
+      if (
+        isSentByManager ||
+        rawStatus.includes('approved') ||
+        rawStatus.includes('completed') ||
+        rawStatus.includes('verified') ||
+        rawStatus.includes('justified') ||
+        rawStatus.includes('acknowledged') ||
+        rawStatus === 'manager_approved' ||
+        rawStatus === 'finance_report' ||
+        rawStatus === 'paid' ||
+        Boolean(req.extra_fields?.is_sent_to_higher_authority) ||
+        Boolean(req.extra_fields?.sent_to_higher_authority) ||
+        Boolean(req.extraFields?.is_sent_to_higher_authority) ||
+        Boolean(req.extraFields?.sent_to_higher_authority)
+      ) {
         status = 'Approved'
       } else if (rawStatus.includes('rejected') || rawStatus === 'cancelled') {
         status = 'Rejected'
@@ -373,7 +403,16 @@ export const FinanceReceivedReportsPage: React.FC = () => {
           }]
 
       const re = req.research_estimation || {}
-      const isSoftware = isSoftwareRequest(req)
+      const isSoftware =
+        isSoftwareRequest(req) ||
+        (req.category || '').toLowerCase().includes('software') ||
+        (req.category || '').toLowerCase().includes('saas') ||
+        (req.category || '').toLowerCase().includes('cloud') ||
+        (req.category || '').toLowerCase().includes('license') ||
+        (req.category || '').toLowerCase().includes('subscription') ||
+        Boolean(req.software_name) ||
+        req.flowType === 'B' ||
+        req.flow_type === 'B'
 
       const baseReport: FinanceReportItem = {
         id: reportId,
@@ -707,7 +746,13 @@ export const FinanceReceivedReportsPage: React.FC = () => {
         (submitterFilter === 'MANAGER' && r.submitterType === 'Manager') ||
         (submitterFilter === 'TEAM_LEAD' && r.submitterType === 'Team Lead')
 
-      // 4. Search query
+      // 4. Procurement Type Filter (Software vs Hardware)
+      const matchProcurementType =
+        procurementType === 'ALL' ||
+        (procurementType === 'SOFTWARE' && r.isSoftware) ||
+        (procurementType === 'HARDWARE' && !r.isSoftware)
+
+      // 5. Search query
       const q = (search || '').toLowerCase().trim()
       const matchSearch =
         !q ||
@@ -716,12 +761,12 @@ export const FinanceReceivedReportsPage: React.FC = () => {
         String(r.submitterName || '').toLowerCase().includes(q) ||
         String(r.department || '').toLowerCase().includes(q)
 
-      // 5. Department filter
+      // 6. Department filter
       const matchDept = selectedDept === 'All' || r.department === selectedDept
 
-      return matchTime && matchStatus && matchSubmitter && matchSearch && matchDept
+      return matchTime && matchStatus && matchSubmitter && matchProcurementType && matchSearch && matchDept
     })
-  }, [reports, timePeriod, statusFilter, submitterFilter, search, selectedDept])
+  }, [reports, timePeriod, statusFilter, submitterFilter, procurementType, search, selectedDept])
 
   // Counts calculated across current time-period slice
   const countsForCurrentPeriod = useMemo(() => {
@@ -737,6 +782,8 @@ export const FinanceReceivedReportsPage: React.FC = () => {
       rejected: periodSlice.filter(r => r.status === 'Rejected').length,
       managerReports: periodSlice.filter(r => r.submitterType === 'Manager').length,
       teamLeadReports: periodSlice.filter(r => r.submitterType === 'Team Lead').length,
+      softwareReports: periodSlice.filter(r => r.isSoftware).length,
+      hardwareReports: periodSlice.filter(r => !r.isSoftware).length,
       totalSpend: periodSlice.reduce((s, r) => s + r.totalAmount, 0)
     }
   }, [reports, timePeriod])
@@ -1078,8 +1125,9 @@ export const FinanceReceivedReportsPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Submitter Selector (All, Managers, Team Leads) & Search */}
-        <div className="flex flex-wrap items-center gap-2 flex-1 lg:max-w-xl">
+        {/* Submitter & Procurement Type Selectors & Search */}
+        <div className="flex flex-wrap items-center gap-2 flex-1 lg:max-w-2xl">
+          {/* Submitter Selector (All, Managers, Team Leads) */}
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs">
             <button
               onClick={() => setSubmitterFilter('ALL')}
@@ -1104,6 +1152,34 @@ export const FinanceReceivedReportsPage: React.FC = () => {
               }`}
             >
               Team Leads ({countsForCurrentPeriod.teamLeadReports})
+            </button>
+          </div>
+
+          {/* Procurement Type Selector (All Types, Software, Hardware) */}
+          <div className="flex items-center gap-1 p-1 bg-purple-50/70 rounded-xl border border-purple-200/80 text-xs">
+            <button
+              onClick={() => setProcurementType('ALL')}
+              className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                procurementType === 'ALL' ? 'bg-white text-purple-900 shadow-2xs' : 'text-purple-700 hover:text-purple-950'
+              }`}
+            >
+              All Types
+            </button>
+            <button
+              onClick={() => setProcurementType('SOFTWARE')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                procurementType === 'SOFTWARE' ? 'bg-purple-600 text-white shadow-2xs' : 'text-purple-700 hover:text-purple-950'
+              }`}
+            >
+              <Laptop size={12} /> Software ({countsForCurrentPeriod.softwareReports})
+            </button>
+            <button
+              onClick={() => setProcurementType('HARDWARE')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                procurementType === 'HARDWARE' ? 'bg-purple-600 text-white shadow-2xs' : 'text-purple-700 hover:text-purple-950'
+              }`}
+            >
+              <Package size={12} /> Hardware ({countsForCurrentPeriod.hardwareReports})
             </button>
           </div>
 
@@ -1138,7 +1214,7 @@ export const FinanceReceivedReportsPage: React.FC = () => {
           <FileCheck size={48} className="mx-auto mb-3 text-slate-300" />
           <h3 className="text-base font-bold text-slate-800">No Reports Found</h3>
           <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-            No reports match the selected time period ({timePeriod}), status ({statusFilter}), and submitter filter.
+            No reports match the selected time period ({timePeriod}), status ({statusFilter}), submitter ({submitterFilter}), and type ({procurementType}) filter.
           </p>
         </div>
       ) : (

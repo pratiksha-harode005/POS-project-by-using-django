@@ -7,9 +7,11 @@ import {
 import { useManagerData } from '../../context/ManagerDataContext'
 import { formatDate } from '../../utils/formatDate'
 import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
-import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst, getManagerStatus } from '../../utils/workflowUtils'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
+
+export const getManagerStatusInfo = getManagerStatus
 
 export const ManagerPurchaseRequestsPage: React.FC = () => {
   const navigate = useNavigate()
@@ -18,6 +20,13 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
 
   useEffect(() => {
     refreshData?.()
+    const handleUpdate = () => refreshData?.()
+    window.addEventListener('kss_backend_updated', handleUpdate)
+    window.addEventListener('storage', handleUpdate)
+    return () => {
+      window.removeEventListener('kss_backend_updated', handleUpdate)
+      window.removeEventListener('storage', handleUpdate)
+    }
   }, [refreshData])
 
   // State
@@ -60,11 +69,12 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
 
         const matchesDept = deptFilter === 'ALL' || r.department === deptFilter
         const matchesPriority = priorityFilter === 'ALL' || r.priority === priorityFilter
+        const mgrStatus = getManagerStatusInfo(r)
         const matchesStatus =
           statusFilter === 'ALL' ||
-          (statusFilter === 'Pending' && (r.status.includes('pending') || r.status.includes('finance_review') || r.status.includes('sent_to_finance'))) ||
-          (statusFilter === 'Approved' && (r.status === 'approved' || r.status === 'finance_approved' || r.financeStatus === 'Approved')) ||
-          (statusFilter === 'Rejected' && (r.status === 'rejected' || r.status === 'finance_rejected' || r.status.toLowerCase().includes('reject')))
+          (statusFilter === 'Pending' && (mgrStatus.category === 'Pending' || mgrStatus.category === 'Finance')) ||
+          (statusFilter === 'Approved' && (mgrStatus.category === 'Approved' || mgrStatus.category === 'Procurement')) ||
+          (statusFilter === 'Rejected' && mgrStatus.category === 'Rejected')
 
         const matchesType = requestType === 'all'
           ? true
@@ -338,17 +348,16 @@ export const ManagerPurchaseRequestsPage: React.FC = () => {
                         {fmt(r.amount)}
                       </td>
                       <td className="p-4 whitespace-nowrap">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border shadow-2xs ${
-                            r.status === 'approved' || r.approvedBy
-                              ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                              : r.status === 'rejected'
-                              ? 'bg-rose-100 text-rose-900 border-rose-300'
-                              : 'bg-amber-100 text-amber-900 border-amber-300'
-                          }`}
-                        >
-                          {r.approvedBy ? 'Manager Approved' : r.status === 'rejected' ? 'Manager Rejected' : 'Pending Manager'}
-                        </span>
+                        {(() => {
+                          const mgrStatus = getManagerStatusInfo(r)
+                          return (
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border shadow-2xs ${mgrStatus.className}`}
+                            >
+                              {mgrStatus.label}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="p-4 whitespace-nowrap">
                         <span

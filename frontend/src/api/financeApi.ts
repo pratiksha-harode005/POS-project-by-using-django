@@ -76,36 +76,38 @@ export const approveFinanceRequestApi = async (
 ) => {
   let body: any = {}
   if (typeof commentsOrPayload === 'object' && commentsOrPayload !== null) {
+    const amt = commentsOrPayload.finance_approved_amount ?? commentsOrPayload.approved_amount ?? 0
     body = {
       ...commentsOrPayload,
-      finance_approved_amount: commentsOrPayload.finance_approved_amount ?? commentsOrPayload.approved_amount,
-      approved_amount: commentsOrPayload.approved_amount ?? commentsOrPayload.finance_approved_amount,
+      finance_approved_amount: amt,
+      approved_amount: amt,
     }
   } else {
+    const amt = approvedAmount ?? 0
     body = {
       comments: commentsOrPayload || 'Approved by Finance Department.',
-      approved_amount: approvedAmount,
-      finance_approved_amount: approvedAmount,
+      approved_amount: amt,
+      finance_approved_amount: amt,
     }
   }
 
   try {
     const res = await apiClient.post(`/finance/requests/${id}/approve/`, body)
     return res.data
-  } catch {
+  } catch (err: any) {
     try {
       const fallback = await apiClient.post(`/requests/${id}/process_approval/`, {
         action: 'APPROVE',
         notes: body.comments || 'Approved by Finance.',
-        amount: body.finance_approved_amount || body.approved_amount || undefined,
-        approved_amount: body.finance_approved_amount || body.approved_amount || undefined,
+        amount: body.finance_approved_amount ?? body.approved_amount ?? 0,
+        approved_amount: body.finance_approved_amount ?? body.approved_amount ?? 0,
         cost_center: body.cost_center,
         vendor: body.vendor,
         budget_available: body.budget_available ?? true,
       })
       return fallback.data
     } catch {
-      return { success: false }
+      throw err
     }
   }
 }
@@ -115,7 +117,7 @@ export const rejectFinanceRequestApi = async (id: string | number, reasonOrComme
   try {
     const res = await apiClient.post(`/finance/requests/${id}/reject/`, { comments })
     return res.data
-  } catch {
+  } catch (primaryErr) {
     try {
       const fallback = await apiClient.post(`/requests/${id}/process_approval/`, {
         action: 'REJECT',
@@ -123,7 +125,7 @@ export const rejectFinanceRequestApi = async (id: string | number, reasonOrComme
       })
       return fallback.data
     } catch {
-      return { success: false }
+      throw primaryErr
     }
   }
 }

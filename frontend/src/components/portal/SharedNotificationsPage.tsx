@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Bell, CheckCheck, Clock, ShieldAlert, ArrowRight, Settings, Check, X, Filter } from 'lucide-react'
 import { useLocation, useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { getNotifications, getUnreadNotificationCount, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
-import { subscribeGlobalDataSync } from '../../utils/syncUtils'
+import { getNotificationsWithCount, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
+import { subscribeGlobalDataSync, triggerGlobalDataSync } from '../../utils/syncUtils'
 
 export interface NotificationItem {
   id: number
@@ -53,19 +53,19 @@ export const SharedNotificationsPage: React.FC = () => {
     if (fetchInFlight.current) return
     fetchInFlight.current = true
     try {
-      setLoading(true)
-      let queryParams: { role?: string; user?: string; vendor?: string } = { role: currentRole }
-
-      if (isVendorPortal) {
-        queryParams = { vendor: activeVendorId }
-      } else if (user?.username) {
-        queryParams = { user: user.username, role: currentRole }
+      let queryParams: { role?: string; user?: string; vendor?: string; page_size?: number } = { 
+        role: currentRole,
+        page_size: 100
       }
 
-      const [data, unreadCount] = await Promise.all([
-        getNotifications({ ...queryParams, page_size: 1000 }),
-        getUnreadNotificationCount(queryParams),
-      ])
+      if (isVendorPortal) {
+        queryParams.vendor = activeVendorId
+      } else if (user?.username) {
+        queryParams.user = user.username
+        queryParams.role = currentRole
+      }
+
+      const { notifications: data, unreadCount } = await getNotificationsWithCount(queryParams)
       const mapped: NotificationItem[] = data.map((n) => {
         const readStatus = n.is_read !== undefined ? Boolean(n.is_read) : Boolean(n.isRead)
         const reqId = n.request_id || n.requestId || (n.purchase_request ? `REQ-${n.purchase_request}` : undefined)
@@ -82,7 +82,7 @@ export const SharedNotificationsPage: React.FC = () => {
         }
       })
       setNotifications(mapped)
-      if (unreadCount !== null) setUnreadTotal(unreadCount)
+      setUnreadTotal(unreadCount)
     } catch (err) {
       console.error('Failed to load notifications page data:', err)
     } finally {
@@ -94,15 +94,43 @@ export const SharedNotificationsPage: React.FC = () => {
   useEffect(() => {
     fetchRealNotifications()
 
-    const unsubscribeSync = subscribeGlobalDataSync(fetchRealNotifications)
-    const handleFocus = () => fetchRealNotifications()
-    window.addEventListener('focus', handleFocus)
+    // 1. Cross-tab and in-memory synchronization
+    const unsubscribeSync = subscribeGlobalDataSync(() => {
+      fetchRealNotifications()
+    })
 
-    const interval = setInterval(fetchRealNotifications, 3000)
+    // 2. Direct Window event listeners
+    const handleUpdate = () => {
+      fetchRealNotifications()
+    }
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchRealNotifications()
+      }
+    }
+
+    window.addEventListener('kss_backend_updated', handleUpdate)
+    window.addEventListener('kss_notifications_updated', handleUpdate)
+    window.addEventListener('kss_request_created', handleUpdate)
+    window.addEventListener('storage', handleUpdate)
+    window.addEventListener('focus', handleUpdate)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // 3. Heartbeat polling (10s) when tab is active
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchRealNotifications()
+      }
+    }, 10000)
 
     return () => {
       unsubscribeSync()
-      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('kss_backend_updated', handleUpdate)
+      window.removeEventListener('kss_notifications_updated', handleUpdate)
+      window.removeEventListener('kss_request_created', handleUpdate)
+      window.removeEventListener('storage', handleUpdate)
+      window.removeEventListener('focus', handleUpdate)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       clearInterval(interval)
     }
   }, [fetchRealNotifications])
@@ -113,7 +141,13 @@ export const SharedNotificationsPage: React.FC = () => {
         prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
       )
       setUnreadTotal((prev) => Math.max(0, prev - 1))
-      await markNotificationRead(item.id)
+      try {
+        await markNotificationRead(item.id)
+        window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+        triggerGlobalDataSync('notification_read')
+      } catch (err) {
+        console.warn('Failed to mark notification read:', err)
+      }
     }
     if (currentRole.toUpperCase() === 'TEAM_LEAD') return
     const titleMsg = `${item.title} ${item.message}`.toLowerCase()
@@ -178,12 +212,19 @@ export const SharedNotificationsPage: React.FC = () => {
   const markAllRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
     setUnreadTotal(0)
-    if (isVendorPortal) {
-      await markAllNotificationsRead({ vendor: activeVendorId })
-    } else if (user?.username) {
-      await markAllNotificationsRead({ user: user.username, role: currentRole })
-    } else {
-      await markAllNotificationsRead({ role: currentRole })
+    try {
+      if (isVendorPortal) {
+        await markAllNotificationsRead({ vendor: activeVendorId })
+      } else if (user?.username) {
+        await markAllNotificationsRead({ user: user.username, role: currentRole })
+      } else {
+        await markAllNotificationsRead({ role: currentRole })
+      }
+    } catch (err) {
+      console.warn('Failed to mark all notifications read:', err)
+    } finally {
+      window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+      triggerGlobalDataSync('notifications_cleared')
     }
   }
 

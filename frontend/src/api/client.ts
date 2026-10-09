@@ -88,18 +88,21 @@ function getCacheKey(url: string, params?: any): string {
 
 export const apiClient = {
   get: async <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
+    const isNotificationEndpoint = url.includes('/notifications/')
     const key = getCacheKey(url, config?.params)
     const now = Date.now()
 
-    // 1. Check in-memory fast cache (0ms latency)
-    const cached = _apiCache.get(key)
-    if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
-      return {
-        data: cached.data,
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config: config as any || {},
+    // 1. Check in-memory fast cache (0ms latency) - skipped for notifications to ensure real-time accuracy
+    if (!isNotificationEndpoint) {
+      const cached = _apiCache.get(key)
+      if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
+        return {
+          data: cached.data,
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config: config as any || {},
+        }
       }
     }
 
@@ -112,7 +115,7 @@ export const apiClient = {
     const requestGeneration = _apiCacheGeneration
     let requestPromise: Promise<AxiosResponse<T>>
     requestPromise = rawAxios.get<T>(url, config).then(res => {
-      if (requestGeneration === _apiCacheGeneration) {
+      if (!isNotificationEndpoint && requestGeneration === _apiCacheGeneration) {
         _apiCache.set(key, { data: res.data, timestamp: Date.now() })
       }
       if (_inFlightRequests.get(key) === requestPromise) {
@@ -132,22 +135,46 @@ export const apiClient = {
 
   post: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
     invalidateApiCache()
-    return rawAxios.post<T>(url, data, config).finally(() => invalidateApiCache())
+    const res = await rawAxios.post<T>(url, data, config)
+    invalidateApiCache()
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+      window.dispatchEvent(new CustomEvent('kss_notifications_updated'))
+    }
+    return res
   },
 
   put: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
     invalidateApiCache()
-    return rawAxios.put<T>(url, data, config).finally(() => invalidateApiCache())
+    const res = await rawAxios.put<T>(url, data, config)
+    invalidateApiCache()
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+      window.dispatchEvent(new CustomEvent('kss_notifications_updated'))
+    }
+    return res
   },
 
   patch: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
     invalidateApiCache()
-    return rawAxios.patch<T>(url, data, config).finally(() => invalidateApiCache())
+    const res = await rawAxios.patch<T>(url, data, config)
+    invalidateApiCache()
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+      window.dispatchEvent(new CustomEvent('kss_notifications_updated'))
+    }
+    return res
   },
 
   delete: async <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
     invalidateApiCache()
-    return rawAxios.delete<T>(url, config).finally(() => invalidateApiCache())
+    const res = await rawAxios.delete<T>(url, config)
+    invalidateApiCache()
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+      window.dispatchEvent(new CustomEvent('kss_notifications_updated'))
+    }
+    return res
   },
 
   create: rawAxios.create.bind(rawAxios),

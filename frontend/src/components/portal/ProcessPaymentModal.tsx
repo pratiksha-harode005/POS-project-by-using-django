@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { X, CreditCard, DollarSign, CheckCircle2, AlertCircle, Building2, Calendar, Hash } from 'lucide-react'
 import type { ProcurementRequest } from '../../context/ManagerDataContext'
 import { processPaymentApi } from '../../api/financeApi'
+import { ModalPortal } from './ModalPortal'
 
 const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN')}`
 
@@ -83,30 +84,31 @@ export const ProcessPaymentModal: React.FC<ProcessPaymentModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8 animate-fadeIn">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-700 to-teal-800 text-white">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/10 rounded-xl">
-              <CreditCard size={20} className="text-emerald-200" />
+    <ModalPortal isOpen={isOpen}>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md overflow-hidden animate-fadeIn">
+        <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[94vh] animate-scaleUp">
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-700 to-teal-800 text-white flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/10 rounded-xl">
+                <CreditCard size={20} className="text-emerald-200" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">Process Treasury Payment</h3>
+                <p className="text-xs text-emerald-100">Disburse funds & record banking UTR settlement (Stage 8)</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-base text-white">Process Treasury Payment</h3>
-              <p className="text-xs text-emerald-100">Disburse funds & record banking UTR settlement (Stage 8)</p>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <X size={18} />
-          </button>
-        </div>
 
-        {/* Content Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
+          {/* Content Form */}
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs overflow-y-auto min-h-0 flex-1">
           {error && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 font-medium flex items-center gap-2">
               <AlertCircle size={16} className="text-rose-600 flex-shrink-0" />
@@ -234,5 +236,6 @@ export const ProcessPaymentModal: React.FC<ProcessPaymentModalProps> = ({
         </form>
       </div>
     </div>
-  )
+  </ModalPortal>
+)
 }

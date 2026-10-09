@@ -18,22 +18,37 @@ export interface BackendNotification {
   updated_at?: string
 }
 
+export interface NotificationsFetchResult {
+  notifications: BackendNotification[]
+  unreadCount: number
+}
+
 export const getNotifications = async (params?: { role?: string; user?: string; vendor?: string; page_size?: number }): Promise<BackendNotification[]> => {
   invalidateApiCache('/notifications/')
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await apiClient.get('/notifications/', { params })
-      const data = res.data
-      return Array.isArray(data) ? data : data?.results || []
-    } catch (err: any) {
-      if (attempt === 0) {
-        await new Promise(r => setTimeout(r, 400))
-        continue
-      }
-      throw err
-    }
+  try {
+    const res = await apiClient.get('/notifications/', { params })
+    const data = res.data
+    return Array.isArray(data) ? data : data?.results || []
+  } catch (err) {
+    console.warn('Failed to get notifications:', err)
+    return []
   }
-  return []
+}
+
+export const getNotificationsWithCount = async (params?: { role?: string; user?: string; vendor?: string; page_size?: number }): Promise<NotificationsFetchResult> => {
+  invalidateApiCache('/notifications/')
+  try {
+    const res = await apiClient.get('/notifications/', { params })
+    const data = res.data
+    const list: BackendNotification[] = Array.isArray(data) ? data : (data?.results || [])
+    const unreadCount = typeof data?.unread_count === 'number'
+      ? data.unread_count
+      : list.filter(n => !(n.is_read || n.isRead)).length
+    return { notifications: list, unreadCount }
+  } catch (err) {
+    console.warn('Failed to get notifications with count:', err)
+    return { notifications: [], unreadCount: 0 }
+  }
 }
 
 export const getUnreadNotificationCount = async (params?: { role?: string; user?: string; vendor?: string }): Promise<number | null> => {

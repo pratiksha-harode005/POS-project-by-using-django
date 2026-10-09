@@ -1,5 +1,6 @@
 import datetime
 from django.db import models
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -83,6 +84,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return filtered_qs.order_by('-created_at')
         return qs.order_by('-created_at')
 
+    def get_object(self):
+        """Accept the public payment_id used by the portal as well as numeric database IDs."""
+        lookup_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = self.kwargs[lookup_kwarg]
+        lookup = Q(payment_id__iexact=lookup_value)
+        if str(lookup_value).isdigit():
+            lookup |= Q(pk=lookup_value)
+        payment = get_object_or_404(
+            self.filter_queryset(self.get_queryset()).filter(lookup)
+        )
+        self.check_object_permissions(self.request, payment)
+        return payment
+
     def perform_create(self, serializer):
         payment = serializer.save()
         if payment.status == 'Paid':
@@ -165,6 +179,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if pr:
             pr.current_stage = 9  # Payment
             pr.status = 'Completed'
+            pr.payment_status = 'PAID'
+            pr.payment_reference = payment.reference_number or ''
+            pr.payment_date = payment.payment_date or datetime.date.today()
+            pr.payment_method = payment.payment_method or ''
             pr.save()
 
             for po in pr.purchase_orders.all():

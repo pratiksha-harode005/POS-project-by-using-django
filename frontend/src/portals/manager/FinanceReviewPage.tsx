@@ -68,7 +68,7 @@ export const isRequestTransmittedToFinance = (r?: ProcurementRequest | null): bo
 type TabFilter = 'ALL' | 'PENDING' | 'TRANSMITTED' | 'SETTLED'
 
 export const FinanceReviewPage: React.FC = () => {
-  const { financeReview, sendToFinance, payments } = useManagerData()
+  const { financeReview, sendToFinance, sendReceiptToHigherAuthority, payments } = useManagerData()
   const { isUnread, markAsRead } = useActivity()
   const [activeTab, setActiveTab] = useState<TabFilter>('ALL')
   const [searchQuery, setSearchQuery] = useState('')
@@ -84,6 +84,8 @@ export const FinanceReviewPage: React.FC = () => {
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<'All' | 'Software' | 'Hardware'>('All')
   const [copiedUtr, setCopiedUtr] = useState<string | null>(null)
+  const [sendingReceiptId, setSendingReceiptId] = useState<string | null>(null)
+  const [sentReceipts, setSentReceipts] = useState<Set<string>>(() => new Set())
 
   const showToast = (msg: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -95,6 +97,71 @@ export const FinanceReviewPage: React.FC = () => {
     setCopiedUtr(text)
     showToast(`Copied UTR: ${text}`, 'info')
     setTimeout(() => setCopiedUtr(null), 2500)
+  }
+
+  const handleSendReceiptToHigherAuthority = async (r: ProcurementRequest) => {
+    setSendingReceiptId(r.id)
+    try {
+      await sendReceiptToHigherAuthority(r.id, `Transmitted by Manager to Finance Directorate (Received Reports) and Admin Directorate (Receipts Archive).`)
+      setSentReceipts(prev => {
+        const next = new Set(prev)
+        next.add(r.id)
+        next.add(r.id.replace(/^(REQ-|REP-)/, ''))
+        return next
+      })
+      showToast(`✓ Receipt for ${r.id} successfully sent to Higher Authority (Finance Received Reports & Admin Receipts)!`, 'success')
+    } catch (e: any) {
+      console.error('Failed to send receipt to higher authority:', e)
+      showToast('Failed to send receipt to higher authority', 'error')
+    } finally {
+      setSendingReceiptId(null)
+    }
+  }
+
+  const handleOpenReceiptModal = (r: ProcurementRequest) => {
+    const cleanId = r.id.replace(/^(REQ-|REP-)/, '')
+    const extra = r.extra_fields || (r as any).extraFields || {}
+    const pj = (r as any).payment_justification_detail || extra.payment_justification || {}
+    const rcpId = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${cleanId}`
+    const amt = Number(pj.actual_purchase_amount || extra.actual_purchase_amount || extra.final_payable_amount || r.approvedAmount || (r as any).finance_approved_amount || r.amount || 0)
+    const payDate = extra.receipt_generated_at?.split('T')[0] || extra.acknowledged_at?.split('T')[0] || pj.payment_date || (r as any).paidDate || r.date || new Date().toISOString().split('T')[0]
+    const payRef = extra.payment_reference || (r as any).paymentReference || (r as any).payment_reference || extra.mock_payment_ref || pj.payment_reference || rcpId
+    const payMethod = extra.payment_method || (r as any).paymentMethod || (r as any).payment_method || pj.payment_method || 'Corporate Digital Card'
+
+    let pay = payments.find((p: any) => p.requestId === r.id || p.requestId === cleanId || p.purchaseRequestDetail?.id === r.id || p.purchaseRequestDetail?.request_id === cleanId)
+
+    if (pay) {
+      setSelectedReceiptPayment({
+        ...pay,
+        purchaseRequestDetail: {
+          ...(pay.purchaseRequestDetail || r),
+          payment_justification_detail: pj || pay.purchaseRequestDetail?.payment_justification_detail,
+          extra_fields: extra || pay.purchaseRequestDetail?.extra_fields || {}
+        }
+      })
+    } else {
+      setSelectedReceiptPayment({
+        id: rcpId,
+        requestId: r.id,
+        amount: amt,
+        status: 'Paid',
+        dueDate: payDate,
+        payment_method: payMethod,
+        reference_number: payRef,
+        purchaseRequestDetail: {
+          ...r,
+          id: r.id,
+          request_id: r.id,
+          requested_amount: r.amount,
+          approved_amount: r.approvedAmount || amt,
+          finance_approved_amount: amt,
+          payment_justification_detail: pj,
+          extra_fields: extra,
+          software_name: (r as any).software_name || pj.software_name || r.title,
+          category: r.category || 'Software & SaaS'
+        }
+      })
+    }
   }
 
   // Correlate requests with payments
@@ -483,7 +550,34 @@ export const FinanceReviewPage: React.FC = () => {
             const isNew = isUnread(r.id)
             const isSettled = r.isPaid
             const isAlreadySent = isRequestTransmittedToFinance(r)
-            const isReceipt = Boolean((r as any).extraFields?.payment_justification || (r as any).extraFields?.payment_justification_detail || (r as any).raw_status === 'PAYMENT_JUSTIFICATION_SUBMITTED')
+            const isReceipt = Boolean(
+              (r as any).extraFields?.payment_justification ||
+              (r as any).extraFields?.payment_justification_detail ||
+              (r as any).extra_fields?.payment_justification ||
+              (r as any).extra_fields?.payment_justification_detail ||
+              (r as any).payment_justification_detail ||
+              (r as any).extraFields?.software_receipt_id ||
+              (r as any).extra_fields?.software_receipt_id ||
+              (r as any).extraFields?.receipt_no ||
+              (r as any).extra_fields?.receipt_no ||
+              (r as any).raw_status === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+              (r as any).raw_status === 'MANAGER_VERIFIED' ||
+              (r as any).raw_status === 'REQUEST_COMPLETED' ||
+              (r as any).raw_status === 'COMPLETED' ||
+              r.status === 'completed' ||
+              r.isPaid ||
+              (r as any).paymentReference ||
+              (r as any).payment_reference ||
+              (r as any).extraFields?.payment_reference
+            )
+            const isSentToHigherAuth = Boolean(
+              (r as any).extraFields?.sent_to_higher_authority ||
+              (r as any).extra_fields?.sent_to_higher_authority ||
+              (r as any).extraFields?.is_sent_to_higher_authority ||
+              (r as any).extra_fields?.is_sent_to_higher_authority ||
+              sentReceipts.has(r.id) ||
+              sentReceipts.has(r.id.replace(/^(REQ-|REP-)/, ''))
+            )
             
             return (
               <div
@@ -665,7 +759,41 @@ export const FinanceReviewPage: React.FC = () => {
                       : 'Manager technical scrutiny completed • Ready for formal finance dossier'}
                   </span>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* View Receipt button for receipts */}
+                    {isReceipt && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenReceiptModal(r)}
+                        className="flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs px-3.5 py-2 rounded-xl transition-colors border border-purple-200 cursor-pointer shadow-2xs"
+                        title="View Detailed Payment Receipt"
+                      >
+                        <FileText size={14} className="text-purple-600" />
+                        View Receipt
+                      </button>
+                    )}
+
+                    {/* Send to receipt higher authority button */}
+                    {isReceipt && (
+                      isSentToHigherAuth ? (
+                        <span className="inline-flex items-center gap-1.5 font-bold text-xs px-3.5 py-2 rounded-xl bg-purple-100 text-purple-800 border border-purple-300 shadow-2xs">
+                          <CheckCircle size={14} className="text-purple-600" />
+                          Receipt Sent to Higher Authority
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={sendingReceiptId === r.id}
+                          onClick={() => handleSendReceiptToHigherAuthority(r)}
+                          className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer disabled:opacity-50"
+                          title="Forward receipt to Finance Received Reports and Admin Receipts"
+                        >
+                          <ArrowRight size={14} />
+                          {sendingReceiptId === r.id ? 'Sending...' : 'Send to receipt higher authority'}
+                        </button>
+                      )
+                    )}
+
                     <button
                       type="button"
                       onClick={() => handleOpenSendModal(r)}

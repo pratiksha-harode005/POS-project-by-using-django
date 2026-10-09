@@ -75,7 +75,7 @@ export const AdminReceiptsPage: React.FC = () => {
 
   // Filtered Receipts based on Type Filter, Search, and Status Filter
   const filteredReceipts = useMemo(() => {
-    return receipts.filter(r => {
+    const list = receipts.filter(r => {
       // 1. Receipt Type Filter (SOFTWARE vs HARDWARE vs ALL)
       const isSw = isSoftwareReceipt(r)
       if (receiptTypeFilter === 'SOFTWARE' && !isSw) return false
@@ -100,7 +100,90 @@ export const AdminReceiptsPage: React.FC = () => {
         (r.department && r.department.toLowerCase().includes(term))
       )
     })
+
+    return list.sort((a, b) => {
+      const timeA = new Date((a as any).createdAt || (a as any).created_at || a.receivedDate || 0).getTime()
+      const timeB = new Date((b as any).createdAt || (b as any).created_at || b.receivedDate || 0).getTime()
+      if (timeA !== timeB) return timeB - timeA
+      return (b.id || '').localeCompare(a.id || '')
+    })
   }, [receipts, receiptTypeFilter, search, statusFilter])
+
+  // Helper to open Software Receipt with complete justification and payment data
+  const handleOpenSoftwareReceipt = (r: GoodsReceiptItem) => {
+    const rAny = r as any
+    const cleanId = String(rAny.requestId || rAny.id || '').replace(/^(REQ-|REP-|RCP-SW-|SR-)/, '')
+    let pay = payments.find((p: any) => 
+      p.requestId === rAny.requestId || 
+      p.requestId === rAny.id || 
+      p.requestId === cleanId || 
+      p.requestId === `REQ-${cleanId}` ||
+      p.purchaseRequestDetail?.id === rAny.id || 
+      p.purchaseRequestDetail?.request_id === rAny.requestId ||
+      p.purchaseRequestDetail?.request_id === cleanId
+    )
+    const reqObj = rAny.rawRequest || rAny
+    const pj = rAny.payment_justification_detail || reqObj.payment_justification_detail || reqObj.extra_fields?.payment_justification || {}
+    const extra = reqObj.extra_fields || reqObj.extraFields || rAny.extra_fields || {}
+    const amt = Number(rAny.amount || pj.actual_purchase_amount || extra.actual_purchase_amount || reqObj.finance_approved_amount || reqObj.approved_amount || 0)
+    const payRef = rAny.paymentReference || extra.payment_reference || reqObj.payment_reference || pj.payment_reference || `TXN-${cleanId}`
+    const rcpNo = r.grnNumber || extra.software_receipt_id || `RCP-SW-${cleanId}`
+    const payDate = r.receivedDate || extra.receipt_generated_at?.split('T')[0] || pj.payment_date || new Date().toISOString().split('T')[0]
+    const swTitle = r.softwareName || r.product || pj.software_name || reqObj.software_name || reqObj.title || 'Enterprise Software / SaaS'
+
+    if (pay) {
+      pay = {
+        ...pay,
+        amount: Number(pay.amount || amt),
+        payment_method: pay.payment_method || rAny.paymentMethod || extra.payment_method || 'Corporate Digital Card',
+        reference_number: pay.reference_number || payRef,
+        purchaseRequestDetail: {
+          ...(pay.purchaseRequestDetail || reqObj),
+          software_name: swTitle,
+          vendor: r.vendor || reqObj.vendor || pay.purchaseRequestDetail?.vendor,
+          requested_amount: reqObj.requested_amount ?? pj.requested_amount ?? extra.requested_amount,
+          approved_amount: reqObj.approved_amount ?? pj.finance_approved_amount ?? extra.approved_amount,
+          finance_approved_amount: amt,
+          payment_justification_detail: pj || pay.purchaseRequestDetail?.payment_justification_detail,
+          extra_fields: { ...(pay.purchaseRequestDetail?.extra_fields || {}), ...extra, software_receipt_id: rcpNo }
+        },
+        receiptDetails: {
+          fileName: rcpNo,
+          itemName: swTitle,
+        }
+      }
+    } else {
+      pay = {
+        id: payRef || `PAY-${cleanId}`,
+        requestId: cleanId,
+        amount: amt,
+        status: rAny.status === 'Verified' ? 'Paid' : 'Paid',
+        dueDate: payDate,
+        paymentDate: payDate,
+        payment_method: rAny.paymentMethod || extra.payment_method || pj.payment_method || 'Corporate Digital Card',
+        reference_number: payRef,
+        purchaseRequestDetail: {
+          ...reqObj,
+          id: cleanId,
+          request_id: cleanId,
+          software_name: swTitle,
+          title: reqObj.title || swTitle,
+          vendor: r.vendor,
+          category: r.category || 'Software & SaaS',
+          requested_amount: reqObj.requested_amount ?? pj.requested_amount ?? extra.requested_amount ?? amt,
+          approved_amount: reqObj.approved_amount ?? pj.finance_approved_amount ?? amt,
+          finance_approved_amount: amt,
+          payment_justification_detail: pj,
+          extra_fields: { ...extra, software_receipt_id: rcpNo }
+        },
+        receiptDetails: {
+          fileName: rcpNo,
+          itemName: swTitle,
+        }
+      } as any
+    }
+    setSelectedReceiptPayment(pay)
+  }
 
   // Handle Verify Action
   const handleVerify = (r: GoodsReceiptItem) => {
@@ -386,6 +469,11 @@ export const AdminReceiptsPage: React.FC = () => {
                         <span>{r.grnNumber}</span>
                       </div>
                       <span className="text-[10px] text-slate-400 font-normal block mt-0.5">{r.poNumber}</span>
+                      {((r as any).is_sent_to_higher_authority || (r as any).sent_to_higher_authority) && (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-300 flex items-center gap-1 w-fit mt-1 shadow-2xs">
+                          <Sparkles size={9} className="text-purple-600" /> Transmitted by Manager
+                        </span>
+                      )}
                     </td>
                     <td className="p-3.5 max-w-xs">
                       <p className="font-bold text-slate-900 leading-tight">
@@ -433,43 +521,8 @@ export const AdminReceiptsPage: React.FC = () => {
                     <td className="p-3.5 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => {
-                            const rAny = r as any
-                            let pay = payments.find((p: any) => p.requestId === rAny.requestId || p.requestId === rAny.id || p.purchaseRequestDetail?.id === rAny.id || p.purchaseRequestDetail?.request_id === rAny.requestId)
-                            const reqObj = rAny.rawRequest || rAny
-                            const pj = rAny.payment_justification_detail || reqObj.payment_justification_detail || reqObj.extra_fields?.payment_justification
-                            if (pay) {
-                              pay = {
-                                ...pay,
-                                purchaseRequestDetail: {
-                                  ...(pay.purchaseRequestDetail || reqObj),
-                                  payment_justification_detail: pj || pay.purchaseRequestDetail?.payment_justification_detail,
-                                  extra_fields: reqObj.extra_fields || pay.purchaseRequestDetail?.extra_fields || {}
-                                }
-                              }
-                            } else {
-                              pay = {
-                                id: rAny.paymentReference || `PAY-${rAny.requestId || rAny.id}`,
-                                requestId: rAny.requestId || rAny.id,
-                                amount: Number(rAny.actualAmount || rAny.amount || reqObj.finance_approved_amount || reqObj.approved_amount || 0),
-                                status: rAny.status || 'Paid',
-                                dueDate: rAny.date,
-                                payment_method: rAny.paymentMethod || 'Corporate Card',
-                                reference_number: rAny.paymentReference || `TXN-${rAny.id}`,
-                                purchaseRequestDetail: {
-                                  ...reqObj,
-                                  payment_justification_detail: pj,
-                                  extra_fields: reqObj.extra_fields || reqObj.extraFields || {}
-                                },
-                                receiptDetails: {
-                                  fileName: `RCP-${rAny.requestId || rAny.id}`,
-                                  itemName: rAny.itemName || rAny.title || rAny.softwareName || rAny.product || 'Software Item',
-                                }
-                              } as any
-                            }
-                            setSelectedReceiptPayment(pay)
-                          }}
-                          className="px-2.5 py-1 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200 cursor-pointer"
+                          onClick={() => handleOpenSoftwareReceipt(r)}
+                          className="px-2.5 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors border border-purple-700 cursor-pointer shadow-2xs"
                         >
                           <Eye size={12} className="inline mr-1" /> View Receipt
                         </button>
@@ -604,6 +657,11 @@ export const AdminReceiptsPage: React.FC = () => {
                       <td className="p-3.5 font-bold whitespace-nowrap">
                         <span className={isSw ? 'text-purple-700' : 'text-indigo-600'}>{r.grnNumber}</span>
                         <span className="text-[10px] text-slate-400 block font-normal">{r.poNumber}</span>
+                        {isSw && ((r as any).is_sent_to_higher_authority || (r as any).sent_to_higher_authority) && (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-300 flex items-center gap-1 w-fit mt-1 shadow-2xs">
+                            <Sparkles size={9} className="text-purple-600" /> Transmitted by Manager
+                          </span>
+                        )}
                       </td>
                       <td className="p-3.5 max-w-xs">
                         <p className="font-semibold text-slate-900 leading-tight">
@@ -652,37 +710,8 @@ export const AdminReceiptsPage: React.FC = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           {isSw ? (
                             <button
-                              onClick={() => {
-                                const rAny = r as any
-                                let pay = payments.find((p: any) => p.requestId === rAny.requestId || p.requestId === rAny.id || p.purchaseRequestDetail?.id === rAny.id || p.purchaseRequestDetail?.request_id === rAny.requestId)
-                                if (!pay) {
-                                  const reqObj = rAny.rawRequest || rAny
-                                  const pj = rAny.payment_justification_detail || reqObj.payment_justification_detail || reqObj.extra_fields?.payment_justification || {}
-                                  const extra = reqObj.extra_fields || reqObj.extraFields || rAny.extra_fields || {}
-                                  pay = {
-                                    id: rAny.paymentReference || `PAY-${rAny.requestId || rAny.id}`,
-                                    requestId: rAny.requestId || rAny.id,
-                                    amount: Number(rAny.actualAmount || rAny.amount || reqObj.finance_approved_amount || reqObj.approved_amount || 0),
-                                    status: rAny.status || 'Paid',
-                                    dueDate: rAny.date,
-                                    payment_method: rAny.paymentMethod || 'Corporate Card',
-                                    reference_number: rAny.paymentReference || `TXN-${rAny.id}`,
-                                    purchaseRequestDetail: {
-                                      ...reqObj,
-                                      requested_amount: reqObj.requested_amount ?? pj.requested_amount ?? extra.requested_amount,
-                                      approved_amount: reqObj.approved_amount ?? pj.finance_approved_amount,
-                                      payment_justification_detail: pj,
-                                      extra_fields: extra
-                                    },
-                                    receiptDetails: {
-                                      fileName: `RCP-${rAny.requestId || rAny.id}`,
-                                      itemName: rAny.itemName || rAny.title || rAny.softwareName || rAny.product || 'Software Item',
-                                    }
-                                  } as any
-                                }
-                                setSelectedReceiptPayment(pay)
-                              }}
-                              className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors border border-blue-700 cursor-pointer"
+                              onClick={() => handleOpenSoftwareReceipt(r)}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors border border-blue-700 cursor-pointer shadow-2xs"
                             >
                               View Receipt
                             </button>

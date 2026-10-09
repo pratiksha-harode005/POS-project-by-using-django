@@ -11,7 +11,6 @@ export type WorkflowType = 'SOFTWARE' | 'HARDWARE'
 
 export const PATH_A_MANAGER_STAGES = [
   'Request Created',
-  'Manager Review',
   'Manager Approval',
   'Payment Processed',
   'Payment Justification Submitted',
@@ -24,8 +23,7 @@ export const PATH_B_FINANCE_STAGES = [
   'Request Created',
   'Manager Review',
   'Recommended to Finance',
-  'Finance Review',
-  'Finance Approved',
+  'Finance Approval',
   'Payment Processed',
   'Payment Justification Submitted',
   'Manager Verified',
@@ -39,8 +37,7 @@ export const PATH_C_ADMIN_STAGES = [
   'Recommended to Finance',
   'Finance Review',
   'Recommended to Admin',
-  'Admin Review',
-  'Admin Approved / Final Approval',
+  'Admin Approval',
   'Payment Processed',
   'Payment Justification Submitted',
   'Manager Verified',
@@ -218,6 +215,7 @@ export interface WorkflowProgression {
 
 export interface RequestWorkflowInput {
   status?: string
+  raw_status?: string
   financeStatus?: string
   category?: string
   title?: string
@@ -273,19 +271,22 @@ function detectActualApprovalPath(
   let hadAdmin = false
 
   for (const step of steps) {
-    const role = (step.role || step.actorRole || '').toUpperCase()
+    const role = (step.role || step.actorRole || step.user_role || '').toUpperCase()
     const decision = (step.decision || step.action || '').toUpperCase()
-    if (role === 'FINANCE') hadFinance = true
-    if (role === 'ADMIN') { hadAdmin = true; hadFinance = true }
-    if (role === 'MANAGER' && decision === 'RECOMMEND') hadFinance = true
-    if (role === 'FINANCE' && decision === 'RECOMMEND') hadAdmin = true
+    if (role === 'ADMIN' || decision.includes('ADMIN') || decision === 'RECOMMEND_ADMIN' || decision === 'FINANCE_RECOMMEND_ADMIN') {
+      hadAdmin = true
+      hadFinance = true
+    } else if (role === 'FINANCE' || decision.includes('FINANCE') || decision === 'RECOMMEND_FINANCE' || decision === 'MANAGER_RECOMMEND_FINANCE') {
+      hadFinance = true
+    } else if (role === 'MANAGER' && (decision === 'RECOMMEND' || decision.includes('RECOMMEND'))) {
+      hadFinance = true
+    }
   }
 
   // Fallback: only when no steps recorded yet
   if (steps.length === 0 && typeof currentStage === 'number') {
     if (currentStage === 2) hadFinance = true
     if (currentStage === 3) { hadFinance = true; hadAdmin = true }
-    // stage 4+ with no steps = Manager directly approved, skip Finance/Admin
   }
 
   return { hadFinance, hadAdmin }
@@ -323,7 +324,7 @@ const SW_STAGE_NAMES: Record<number, string> = {
   3: 'Finance Review',
   4: 'Recommended to Admin',
   5: 'Admin Review',
-  6: 'Admin Approved / Final Approval',
+  6: 'Admin Approved',
   7: 'Payment Processed',
   8: 'Payment Justification Submitted',
   9: 'Manager Verified',
@@ -358,19 +359,20 @@ function mapBackendStageToIndex(backendStage: number, dynamicStages: string[], i
 export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgression {
   const workflowType = req.workflowTypeOverride || detectWorkflowType(req.category, req.title)
   const isSoftware = workflowType === 'SOFTWARE'
+  const hasRawBackendStatus = Boolean(req.raw_status)
 
-  const st = (req.status || '').toLowerCase()
+  const st = (req.raw_status || req.status || '').toLowerCase()
   const fst = (req.financeStatus || '').toLowerCase()
   const pst = (req.paymentStatus || '').toLowerCase()
 
   const isRejected =
     st === 'rejected' ||
     fst === 'rejected' ||
-    (req.status || '').toLowerCase().includes('reject')
+    st.includes('reject')
   const isReturned =
     st === 'returned' ||
     fst === 'returned' ||
-    (req.status || '').toLowerCase().includes('return')
+    st.includes('return')
 
   const hasRfq = Boolean(req.rfqId || req.rfq_id || (Array.isArray(req.rfqs) && req.rfqs.length > 0))
   const hasQuotes = Boolean(
@@ -385,7 +387,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     req.isVerified ||
     req.documentsVerified ||
     (req.is_invoice_verified === true) ||
-    (req.status === 'verified')
+    (st === 'verified')
   )
 
   const isCompleted =
@@ -397,7 +399,8 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
   // If backend timeline is present and populated, it is the PRIMARY SOURCE OF TRUTH
   if (req.timeline && Array.isArray(req.timeline) && req.timeline.length > 0) {
     const dynamicStages = req.timeline.map((t) => t.title)
-    let currentIdx = req.timeline.findIndex((t) => (t.status || '').toLowerCase() === 'current')
+    const activeTimelineStatuses = hasRawBackendStatus ? ['current', 'rejected', 'returned'] : ['current']
+    let currentIdx = req.timeline.findIndex((t) => activeTimelineStatuses.includes((t.status || '').toLowerCase()))
     if (currentIdx === -1) {
       if (req.timeline.every((t) => (t.status || '').toLowerCase() === 'completed')) {
         currentIdx = req.timeline.length - 1
@@ -442,9 +445,13 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
         currentlyWith = 'Vendor Partner / Receiving Dock'
       } else if (currentStageName === 'RFQ Sent' || currentStageName === 'Vendor Quotes Received') {
         currentlyWith = 'Procurement Sourcing Desk'
+      } else if (currentStageName === 'Product Order') {
+        currentlyWith = 'Vendor Partner'
       } else if (currentStageName === 'Admin Approval') {
         currentlyWith = 'Executive Administrator'
-      } else if (currentStageName === 'Finance Approval') {
+      } else if (hasRawBackendStatus && (currentStageName === 'Recommended to Admin' || currentStageName === 'Admin Review')) {
+        currentlyWith = 'Executive Administrator'
+      } else if (currentStageName === 'Finance Approval' || (hasRawBackendStatus && (currentStageName === 'Finance Review' || currentStageName === 'Recommended to Finance'))) {
         currentlyWith = 'Finance Directorate'
       } else {
         currentlyWith = 'Manager — Sarah Manager'
@@ -488,6 +495,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
 
   let dynamicStages: string[] = []
   let finalApprovalBy: 'MANAGER' | 'FINANCE' | 'ADMIN' = 'ADMIN'
+  let isDirectManagerProcurement = false
 
   if (isSoftware) {
     const explicitPath = (
@@ -501,7 +509,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       finalApprovalBy = explicitPath as any
     } else {
       const histActions = (req.history || []).map((h: any) => (h.action || h.stageName || '').toUpperCase())
-      const stUpper = (req.status || '').toUpperCase()
+      const stUpper = st.toUpperCase()
       if (
         histActions.some((a: string) => a.includes('ADMIN')) ||
         stUpper.includes('ADMIN')
@@ -510,6 +518,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       } else if (
         histActions.some((a: string) => a.includes('FINANCE')) ||
         stUpper.includes('FINANCE') ||
+        (hasRawBackendStatus && stUpper === 'RECOMMENDED') ||
         req.financeStatus
       ) {
         finalApprovalBy = 'FINANCE'
@@ -532,12 +541,59 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     }
   } else {
     // Hardware workflow: build dynamic stages based on portals that actually participated
+    const approvalPath = (
+      req.finalApprovalBy ||
+      req.approvalPath ||
+      req.extra_fields?.final_approval_by ||
+      ''
+    ).toUpperCase()
+    const directManagerProcurementStatuses = [
+      'manager_approved', 'approved', 'rfq_sent', 'in_procurement', 'in procurement',
+      'quotes_received', 'vendor_quotes_received', 'under_evaluation', 'product_order',
+      'po_created', 'vendor_accepted', 'delivered', 'delivery', 'verified', 'invoiced',
+      'invoice', 'payment', 'payment_pending', 'payment_completed', 'completed',
+      'request_completed',
+    ]
     const { hadFinance, hadAdmin } = detectActualApprovalPath(
       req.approval_steps || [],
       req.history || [],
       req.currentStage
     )
-    dynamicStages = buildDynamicStages(false, hadFinance, hadAdmin)
+    const financeStatuses = [
+      'recommended_to_finance',
+      'manager_recommended_to_finance',
+      'finance_recommended',
+      'recommended',
+      'sent_to_finance',
+      'finance_review',
+      'finance_research',
+      'cost_estimation',
+      'finance_report',
+      'pre_estimation_completed',
+      'finance_approved',
+    ]
+    const adminStatuses = [
+      'recommended_to_admin',
+      'finance_recommended_to_admin',
+      'admin_review',
+      'admin_research',
+      'admin_approved',
+    ]
+    const statusRequiresFinance = financeStatuses.includes(st)
+    const statusRequiresAdmin = adminStatuses.includes(st)
+
+    const isExplicitAdmin = approvalPath === 'ADMIN' || hadAdmin || statusRequiresAdmin
+    const isExplicitFinance = isExplicitAdmin || approvalPath === 'FINANCE' || hadFinance || statusRequiresFinance
+
+    isDirectManagerProcurement =
+      !isExplicitFinance && !isExplicitAdmin &&
+      (directManagerProcurementStatuses.includes(st) || approvalPath === 'MANAGER' || st === 'manager_approved')
+
+    dynamicStages = buildDynamicStages(
+      false,
+      !isDirectManagerProcurement && isExplicitFinance,
+      !isDirectManagerProcurement && isExplicitAdmin
+    )
   }
 
   let stageIndex = 0
@@ -564,6 +620,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       st === 'recommended_to_finance' ||
       st === 'manager_recommended_to_finance' ||
       st === 'finance_recommended' ||
+      (hasRawBackendStatus && st === 'recommended') ||
       st === 'sent_to_finance'
     ) {
       currentStageName = 'Recommended to Finance'
@@ -598,7 +655,7 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       } else if (finalApprovalBy === 'FINANCE') {
         currentStageName = 'Finance Approved'
       } else {
-        currentStageName = 'Admin Approved / Final Approval'
+        currentStageName = 'Admin Approved'
       }
       currentlyWith = 'Team Lead — Pay Now (Mock) Ready'
     } else if (st === 'payment_processed' || st === 'payment_completed') {
@@ -633,32 +690,41 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
       currentStageName = 'Payment'
       currentlyWith = 'Finance Treasury & Disbursement'
     } else if (areDocsVerified || st === 'verified' || st === 'invoiced' || st === 'invoice') {
-      currentStageName = 'Verification and Order Complete'
-      currentlyWith = 'Procurement Audit & Invoice Verification'
+      currentStageName = isDirectManagerProcurement ? 'Payment' : 'Verification and Order Complete'
+      currentlyWith = isDirectManagerProcurement ? 'Finance Treasury & Disbursement' : 'Procurement Audit & Invoice Verification'
     } else if (hasGrn || st === 'delivered' || st === 'delivery') {
-      currentStageName = 'Delivery'
-      currentlyWith = 'Logistics & Receiving Dock (GRN Verification)'
+      currentStageName = isDirectManagerProcurement ? 'Verification and Order Complete' : 'Delivery'
+      currentlyWith = isDirectManagerProcurement ? 'Procurement Audit & Invoice Verification' : 'Logistics & Receiving Dock (GRN Verification)'
     } else if (hasPo || st === 'product_order' || st === 'vendor_accepted') {
-      currentStageName = 'Product Order'
-      currentlyWith = 'Vendor Partner (PO Dispatched)'
+      currentStageName = isDirectManagerProcurement ? 'Delivery' : 'Product Order'
+      currentlyWith = isDirectManagerProcurement ? 'Logistics & Receiving Dock' : 'Vendor Partner (PO Dispatched)'
     } else if (hasQuotes || st === 'quotes_received' || st === 'vendor_quotes_received' || st === 'under_evaluation') {
-      currentStageName = 'Vendor Quotes Received'
-      currentlyWith = 'Procurement Sourcing Desk (Evaluating Quotes)'
+      currentStageName = isDirectManagerProcurement ? 'Product Order' : 'Vendor Quotes Received'
+      currentlyWith = isDirectManagerProcurement ? 'Vendor Partner' : 'Procurement Sourcing Desk (Evaluating Quotes)'
     } else if (hasRfq || st === 'rfq_sent' || st === 'in_procurement' || st === 'in procurement') {
-      currentStageName = 'RFQ Sent'
-      currentlyWith = 'Procurement Sourcing Desk — Sourcing Team (RFQ Sent)'
+      currentStageName = isDirectManagerProcurement ? 'Vendor Quotes Received' : 'RFQ Sent'
+      currentlyWith = isDirectManagerProcurement ? 'Vendor Sourcing Desk — Awaiting Quotations' : 'Procurement Sourcing Desk — Sourcing Team (RFQ Sent)'
     } else if (st === 'admin_approved') {
-      currentStageName = dynamicStages.includes('Admin Approval') ? 'Admin Approval' : 'Manager Approval'
+      currentStageName = 'RFQ Sent'
       currentlyWith = 'Procurement Desk — Awaiting RFQ Creation'
     } else if (st === 'finance_approved') {
-      currentStageName = dynamicStages.includes('Finance Approval') ? 'Finance Approval' : 'Manager Approval'
+      currentStageName = 'RFQ Sent'
       currentlyWith = 'Procurement Desk — Awaiting RFQ Creation'
     } else if (st === 'manager_approved' || st === 'approved') {
-      currentStageName = 'Manager Approval'
-      currentlyWith = 'Procurement Desk — Awaiting RFQ Creation'
+      if (isDirectManagerProcurement) {
+        currentStageName = 'RFQ Sent'
+        currentlyWith = 'Procurement Desk — Awaiting RFQ Creation'
+      } else if (dynamicStages.includes('Finance Approval')) {
+        currentStageName = 'Finance Approval'
+        currentlyWith = 'Finance — Mark Finance Officer'
+      } else {
+        currentStageName = 'RFQ Sent'
+        currentlyWith = 'Procurement Desk — Awaiting RFQ Creation'
+      }
     } else if (
       st === 'recommended_to_admin' ||
       st === 'finance_recommended_to_admin' ||
+      (hasRawBackendStatus && st === 'admin_research') ||
       fst === 'recommended to admin' ||
       st === 'admin_review'
     ) {
@@ -667,8 +733,10 @@ export function getWorkflowProgression(req: RequestWorkflowInput): WorkflowProgr
     } else if (
       st === 'recommended_to_finance' ||
       st === 'manager_recommended_to_finance' ||
+      (hasRawBackendStatus && (st === 'finance_recommended' || st === 'recommended')) ||
       st === 'sent_to_finance' ||
       st === 'finance_review' ||
+      (hasRawBackendStatus && ['finance_research', 'cost_estimation', 'finance_report', 'pre_estimation_completed'].includes(st)) ||
       st === 'finance_on_hold' ||
       st === 'clarification_requested' ||
       fst === 'awaiting finance action'
@@ -875,5 +943,171 @@ export const getRecommendationStatus = (req: any): RecommendationInfo => {
     actorName: '',
     reason: '',
     date: '',
+  }
+}
+
+/**
+ * Calculates the exact Manager Status badge and label for any procurement request in real time.
+ */
+export function getManagerStatus(r: any): {
+  label: string
+  className: string
+  category: 'Approved' | 'Pending' | 'Rejected' | 'Finance' | 'Procurement'
+} {
+  if (!r) {
+    return {
+      label: 'Pending Manager',
+      className: 'bg-amber-100 text-amber-900 border-amber-300',
+      category: 'Pending',
+    }
+  }
+
+  const rawSt = String(r.raw_status || '').toUpperCase().trim()
+  const st = String(r.status || '').toLowerCase().trim()
+  const finSt = String(r.financeStatus || r.finance_status || '').toUpperCase().trim()
+  const isManagerApprovedFlag = Boolean(
+    r.approvedBy ||
+    r.approvedDate ||
+    r.approvalParams ||
+    r.manager_approved ||
+    r.extra_fields?.manager_approved ||
+    r.extra_fields?.final_approval_by === 'MANAGER'
+  )
+
+  // 1. Rejected by Manager
+  if (
+    rawSt === 'REJECTED' ||
+    rawSt === 'MANAGER_REJECTED' ||
+    st === 'rejected' ||
+    st === 'manager_rejected' ||
+    ((rawSt === 'REJECTED' || st === 'rejected') && !r.financeApprovedBy && !r.financeApprovedDate && !finSt.includes('APPROVED'))
+  ) {
+    return {
+      label: 'Manager Rejected',
+      className: 'bg-rose-100 text-rose-900 border-rose-300',
+      category: 'Rejected',
+    }
+  }
+
+  // 2. Completed / Fulfilled
+  if (
+    rawSt === 'COMPLETED' ||
+    rawSt === 'REQUEST_COMPLETED' ||
+    rawSt === 'TEAM_LEAD_CONFIRMED' ||
+    rawSt === 'TEAM_LEAD_ACKNOWLEDGED' ||
+    rawSt === 'PAYMENT_COMPLETED' ||
+    st === 'completed' ||
+    st === 'payment_completed' ||
+    r.paymentStatus === 'Paid'
+  ) {
+    return {
+      label: 'Manager Approved',
+      className: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      category: 'Approved',
+    }
+  }
+
+  // 3. Recommended to Finance / Under Finance Review
+  if (
+    rawSt === 'RECOMMENDED_TO_FINANCE' ||
+    rawSt === 'MANAGER_RECOMMENDED_TO_FINANCE' ||
+    rawSt === 'FINANCE_REVIEW' ||
+    rawSt === 'FINANCE_RECOMMENDED' ||
+    rawSt === 'RECOMMENDED_TO_ADMIN' ||
+    rawSt === 'FINANCE_RECOMMENDED_TO_ADMIN' ||
+    rawSt === 'COST_ESTIMATION' ||
+    rawSt === 'FINANCE_REPORT' ||
+    st === 'recommended_to_finance' ||
+    st === 'finance_review' ||
+    st === 'sent_to_finance' ||
+    st === 'recommended_to_admin' ||
+    r.financeStatus === 'Awaiting Finance Action' ||
+    r.financeStatus === 'Recommended to Admin' ||
+    Boolean(r.isForwardedToFinance) ||
+    Boolean(r.recommendationReason) ||
+    Boolean(r.extra_fields?.recommendation_reason)
+  ) {
+    return {
+      label: 'Recommended to Finance',
+      className: 'bg-purple-100 text-purple-900 border-purple-300',
+      category: 'Finance',
+    }
+  }
+
+  // 4. In Procurement / Vendor Process (Manager approved)
+  if (
+    rawSt === 'IN PROCUREMENT' ||
+    rawSt === 'ASSIGNED_TO_VENDOR' ||
+    rawSt === 'RFQ_SENT' ||
+    rawSt === 'QUOTES_RECEIVED' ||
+    rawSt === 'VENDOR_ACCEPTED' ||
+    rawSt === 'DELIVERED' ||
+    rawSt === 'INVOICED' ||
+    st === 'assigned_to_vendor' ||
+    st === 'rfq_sent' ||
+    st === 'quotes_received' ||
+    st === 'vendor_accepted' ||
+    st === 'delivered' ||
+    st === 'invoiced'
+  ) {
+    return {
+      label: 'Manager Approved',
+      className: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      category: 'Approved',
+    }
+  }
+
+  // 5. Approved (Manager / Finance / Admin / Payment)
+  if (
+    isManagerApprovedFlag ||
+    rawSt === 'MANAGER_APPROVED' ||
+    rawSt === 'ADMIN_APPROVED' ||
+    rawSt === 'FINANCE_APPROVED' ||
+    rawSt === 'APPROVED' ||
+    rawSt === 'PAYMENT_APPROVED' ||
+    rawSt === 'PAYMENT_PROCESSED' ||
+    rawSt === 'PAYMENT_JUSTIFIED' ||
+    rawSt === 'MANAGER_VERIFIED' ||
+    rawSt === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT' ||
+    rawSt === 'PAYMENT PENDING' ||
+    st === 'approved' ||
+    st === 'manager_approved' ||
+    st === 'finance_approved' ||
+    st === 'admin_approved' ||
+    st === 'payment_approved' ||
+    r.financeStatus === 'Approved' ||
+    r.financeStatus === 'Completed' ||
+    r.financeStatus === 'Paid' ||
+    Boolean(r.financeApprovedBy) ||
+    Boolean(r.financeApprovedDate)
+  ) {
+    return {
+      label: 'Manager Approved',
+      className: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      category: 'Approved',
+    }
+  }
+
+  // 6. Clarification / Returned
+  if (
+    rawSt === 'CLARIFICATION_REQUESTED' ||
+    rawSt === 'SEND_BACK' ||
+    rawSt === 'RETURNED' ||
+    st === 'clarification_requested' ||
+    st === 'send_back' ||
+    st === 'returned'
+  ) {
+    return {
+      label: 'Returned for Revision',
+      className: 'bg-amber-100 text-amber-900 border-amber-300',
+      category: 'Pending',
+    }
+  }
+
+  // 7. Pending Manager (Default)
+  return {
+    label: 'Pending Manager',
+    className: 'bg-amber-100 text-amber-900 border-amber-300',
+    category: 'Pending',
   }
 }

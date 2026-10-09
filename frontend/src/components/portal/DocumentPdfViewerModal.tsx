@@ -6,6 +6,7 @@ import {
   CreditCard, Clock
 } from 'lucide-react'
 import { formatDate } from '../../utils/formatDate'
+import { ModalPortal } from './ModalPortal'
 
 export interface DocumentPdfData {
   key: 'productOrder' | 'goodsReceipt' | 'invoice'
@@ -170,70 +171,71 @@ export const DocumentPdfViewerModal: React.FC<DocumentPdfViewerModalProps> = ({
 
   if (doc.key === 'goodsReceipt') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4 overflow-y-auto animate-fadeIn">
-        <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp my-4">
-          {/* Top Header Bar Matching media_1790237346331.png */}
-          <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2 py-0.5 bg-blue-600 text-white font-bold text-xs rounded-md">
-                  PDF
-                </span>
-                <span className="px-2.5 py-0.5 bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[10px] font-bold rounded">
-                  Goods Receipt Note
-                </span>
-                {doc.verified ? (
-                  <span className="px-2 py-0.5 bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 font-bold text-[10px] rounded-md flex items-center gap-1">
-                    <CheckCircle size={11} className="text-emerald-400" />
-                    Verified
+      <ModalPortal>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-3 sm:p-4 md:p-6 overflow-hidden animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-3xl w-full h-[94vh] max-h-[94vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp my-auto">
+            {/* Top Header Bar Matching media_1790237346331.png */}
+            <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-0.5 bg-blue-600 text-white font-bold text-xs rounded-md">
+                    PDF
                   </span>
-                ) : (
-                  <span className="px-2 py-0.5 bg-amber-950/80 border border-amber-500/50 text-amber-300 font-bold text-[10px] rounded-md flex items-center gap-1">
-                    <Clock size={11} className="text-amber-400" />
-                    Pending Verification
+                  <span className="px-2.5 py-0.5 bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[10px] font-bold rounded">
+                    Goods Receipt Note
                   </span>
-                )}
+                  {doc.verified ? (
+                    <span className="px-2 py-0.5 bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 font-bold text-[10px] rounded-md flex items-center gap-1">
+                      <CheckCircle size={11} className="text-emerald-400" />
+                      Verified
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-amber-950/80 border border-amber-500/50 text-amber-300 font-bold text-[10px] rounded-md flex items-center gap-1">
+                      <Clock size={11} className="text-amber-400" />
+                      Pending Verification
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 font-mono">
+                  Document Ref: <b className="text-slate-200">{grnDocNumber || doc.id}</b> • Category: <b className="text-slate-200">{category}</b>
+                </p>
               </div>
-              <p className="text-[11px] text-slate-400 font-mono">
-                Document Ref: <b className="text-slate-200">{grnDocNumber || doc.id}</b> • Category: <b className="text-slate-200">{category}</b>
-              </p>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Layers size={13} /> Detailed Specs (Receipt View)
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Printer size={13} /> Print Paper PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  title="Download"
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Download size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  title="Close"
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-              >
-                <Layers size={13} /> Detailed Specs (Receipt View)
-              </button>
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-              >
-                <Printer size={13} /> Print Paper PDF
-              </button>
-              <button
-                type="button"
-                onClick={handleDownload}
-                title="Download"
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              >
-                <Download size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                title="Close"
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-          </div>
-
-          {/* Modal Main Content */}
-          <div className="p-6 space-y-6 text-xs text-slate-700 overflow-y-auto max-h-[75vh]">
+            {/* Modal Main Content */}
+            <div className="p-6 space-y-6 text-xs text-slate-700 overflow-y-auto flex-1 min-h-0">
             {/* Section 1: Overview 4-Column Card */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <div>
@@ -376,70 +378,72 @@ export const DocumentPdfViewerModal: React.FC<DocumentPdfViewerModalProps> = ({
               >
                 Close
               </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </ModalPortal>
     )
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4 overflow-y-auto animate-fadeIn">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden animate-scaleUp">
-        {/* Top Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-white flex-shrink-0">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 bg-slate-900 text-white font-mono text-[10px] font-bold rounded uppercase tracking-wider">
-                {doc.key === 'invoice' ? 'OFFICIAL TAX INVOICE RECEIPT' : 'OFFICIAL PURCHASE ORDER RECEIPT'}
-              </span>
+    <ModalPortal>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-3 sm:p-4 md:p-6 overflow-hidden animate-fadeIn">
+        <div className="bg-white rounded-2xl max-w-2xl w-full h-[94vh] max-h-[94vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden animate-scaleUp my-auto">
+          {/* Top Header */}
+          <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-white flex-shrink-0">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2.5 py-0.5 bg-slate-900 text-white font-mono text-[10px] font-bold rounded uppercase tracking-wider">
+                  {doc.key === 'invoice' ? 'OFFICIAL TAX INVOICE RECEIPT' : 'OFFICIAL PURCHASE ORDER RECEIPT'}
+                </span>
+              </div>
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">{doc.id}</h2>
+              <p className="text-xs text-slate-500 font-mono mt-0.5">
+                PO Ref: <b className="text-slate-700">{poRef}</b> | Date: <b className="text-slate-700">{formatDate(doc.date)}</b>
+              </p>
             </div>
-            <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">{doc.id}</h2>
-            <p className="text-xs text-slate-500 font-mono mt-0.5">
-              PO Ref: <b className="text-slate-700">{poRef}</b> | Date: <b className="text-slate-700">{formatDate(doc.date)}</b>
-            </p>
-          </div>
 
-          <div className="flex items-center gap-2">
-            {!doc.verified && onVerify && (
+            <div className="flex items-center gap-2">
+              {!doc.verified && onVerify && (
+                <button
+                  type="button"
+                  onClick={onVerify}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Verify Document"
+                >
+                  <ShieldCheck size={14} />
+                  <span>Verify Document</span>
+                </button>
+              )}
+              {doc.verified && (
+                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold text-xs rounded-lg flex items-center gap-1">
+                  <CheckCircle size={13} className="text-emerald-600" />
+                  <span>Verified</span>
+                </span>
+              )}
               <button
                 type="button"
-                onClick={onVerify}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
-                title="Verify Document"
+                onClick={handlePrint}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Print Document"
               >
-                <ShieldCheck size={14} />
-                <span>Verify Document</span>
+                <Printer size={13} />
+                <span>Print / Download</span>
               </button>
-            )}
-            {doc.verified && (
-              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold text-xs rounded-lg flex items-center gap-1">
-                <CheckCircle size={13} className="text-emerald-600" />
-                <span>Verified</span>
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Print Document"
-            >
-              <Printer size={13} />
-              <span>Print / Download</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-              title="Close"
-            >
-              <X size={18} />
-            </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Modal Main Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs text-slate-700 bg-white">
+          {/* Modal Main Content */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs text-slate-700 bg-white min-h-0">
           {/* Status Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono">
             <div className="flex items-center gap-2">
@@ -587,5 +591,6 @@ export const DocumentPdfViewerModal: React.FC<DocumentPdfViewerModalProps> = ({
         </div>
       </div>
     </div>
-  )
+  </ModalPortal>
+)
 }

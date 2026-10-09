@@ -9,6 +9,7 @@ import { formatDate } from '../../utils/formatDate'
 import { useManagerData } from '../../context/ManagerDataContext'
 import { TrackingStepper } from './TrackingStepper'
 import { getRecommendationStatus } from '../../utils/workflowUtils'
+import { ModalPortal } from './ModalPortal'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -217,10 +218,11 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
   const recInfo = request ? getRecommendationStatus(request) : null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden my-8 animate-fadeIn">
+    <ModalPortal isOpen={isOpen}>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-900/40 backdrop-blur-md overflow-hidden animate-fadeIn">
+        <div className="relative w-full max-w-4xl h-[94vh] max-h-[94vh] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-scaleUp">
         {/* Modal Header — Matches Image 1 */}
-        <div className="px-8 pt-6 pb-4 border-b border-gray-200 flex items-center justify-between bg-white">
+        <div className="flex-shrink-0 px-6 sm:px-8 pt-5 pb-4 border-b border-gray-200 flex items-center justify-between bg-white">
           <div className="flex items-center gap-3">
             <PlusCircle className="text-blue-600 flex-shrink-0" size={28} />
             <div>
@@ -268,8 +270,8 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
           </button>
         </div>
 
-        {/* Modal Form Body — Exact 1:1 Layout from Image 1 */}
-        <div className="p-8 space-y-4 text-xs max-h-[78vh] overflow-y-auto">
+        {/* Modal Form Body — Exact 1:1 Layout with full vertical scrolling */}
+        <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-4 text-xs min-h-0">
           {/* Recommendation Banner if present */}
           {recInfo?.isRecommended && (
             <div className={`p-3.5 rounded-xl border text-xs flex items-center justify-between shadow-2xs ${
@@ -689,7 +691,7 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
         </div>
 
         {/* Modal Actions Footer */}
-        <div className="px-8 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3">
+        <div className="flex-shrink-0 px-6 sm:px-8 py-3.5 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={onClose}
@@ -730,5 +732,6 @@ export const RequestDetailsModal: React.FC<RequestDetailsModalProps> = ({
         </div>
       </div>
     </div>
-  )
+  </ModalPortal>
+)
 }

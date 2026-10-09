@@ -263,9 +263,25 @@ export const SavedDraftsPage: React.FC = () => {
                 </div>
 
                 {/* Top Action Buttons */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEditDraft(draft)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors"
+                  >
+                    <FileEdit size={14} /> Edit Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmSubmitReq(draft)}
+                    disabled={submittingId !== null}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Send size={14} /> Submit Request for Approval
+                  </button>
                   <button
                     onClick={() => setConfirmDeleteReq(draft)}
+                    disabled={submittingId !== null || deletingId !== null}
                     className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                     title="Delete draft"
                   >

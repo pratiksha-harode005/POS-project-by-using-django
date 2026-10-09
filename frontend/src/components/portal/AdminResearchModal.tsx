@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import type { ProcurementRequest } from '../../context/ManagerDataContext'
 import { saveAdminResearchApi, saveAdminCostEstimationApi } from '../../api/adminApi'
+import { ModalPortal } from './ModalPortal'
 
 interface AdminResearchModalProps {
   isOpen: boolean
@@ -155,10 +156,11 @@ export const AdminResearchModal: React.FC<AdminResearchModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] my-auto">
-        {/* Header */}
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white flex-shrink-0">
+    <ModalPortal isOpen={isOpen}>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-900/40 backdrop-blur-md overflow-hidden animate-fadeIn">
+        <div className="bg-white rounded-2xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col h-[94vh] max-h-[94vh] my-auto animate-scaleUp">
+          {/* Header */}
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center shadow-inner">
               <ShieldCheck className="text-purple-300" size={22} />
@@ -190,7 +192,7 @@ export const AdminResearchModal: React.FC<AdminResearchModalProps> = ({
         </div>
 
         {/* Scrollable Body */}
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
           {errorMsg && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2 font-bold">
               <AlertCircle size={16} className="text-rose-600 flex-shrink-0" />
@@ -518,5 +520,6 @@ export const AdminResearchModal: React.FC<AdminResearchModalProps> = ({
         </div>
       </div>
     </div>
-  )
+  </ModalPortal>
+)
 }

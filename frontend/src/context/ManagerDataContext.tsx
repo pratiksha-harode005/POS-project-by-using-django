@@ -12,7 +12,7 @@ import {
   checkPermission,
   getAuditLogsApi
 } from '../api/permissionsApi'
-import { detectWorkflowType, sortRequestsNewestFirst, getRecommendationStatus } from '../utils/workflowUtils'
+import { detectWorkflowType, sortRequestsNewestFirst, getRecommendationStatus, isSoftwareRequest, isHardwareRequest } from '../utils/workflowUtils'
 import { triggerGlobalDataSync, subscribeGlobalDataSync } from '../utils/syncUtils'
 import {
   getDashboardStats,
@@ -573,6 +573,14 @@ export interface GoodsReceiptItem {
   licenseKey?: string
   rawRequest?: any
   payment_justification_detail?: any
+  is_sent_to_higher_authority?: boolean
+  sent_to_higher_authority?: boolean
+  receipt_higher_authority_sent_at?: string | null
+  createdAt?: string
+  created_at?: string
+  verified_by_name?: string
+  verifiedByName?: string
+  verified_at?: string | null
 }
 
 export interface ContractItem {
@@ -750,10 +758,11 @@ interface ManagerDataContextType {
   acceptRequest: (id: string) => void
   rejectRequest: (id: string, reason: string, notes?: string) => void
   recommendToFinance: (id: string, reason: string) => void
-  approveRequest: (id: string, notes?: string, approvalParams?: ApprovalParameters) => void
+  approveRequest: (id: string, notes?: string, approvalParams?: ApprovalParameters) => Promise<void> | void
   selectVendorQuotation: (quoteId: string, rfqId: string, product: string, notes?: string) => void
   addRFQ: (rfqData: RFQ) => void
   sendToFinance: (id: string, message?: string) => void
+  sendReceiptToHigherAuthority: (id: string, notes?: string) => Promise<void>
   verifyDocument: (
     ticketId: string,
     productIdOrDocType: string,
@@ -768,7 +777,7 @@ interface ManagerDataContextType {
   // Finance Actions
   approveFinanceRequest: (id: string, comment?: string, actor?: string, approvalParams?: ApprovalParameters) => void
   processRequestPayment: (id: string, payload: { final_payable_amount: number; payment_method?: string; payment_reference: string; payment_date?: string; payment_remarks?: string }) => Promise<void>
-  rejectFinanceRequest: (id: string, reason: string, comment?: string, actor?: string) => void
+  rejectFinanceRequest: (id: string, reason: string, comment?: string, actor?: string) => Promise<void> | void
   sendBackFinanceRequest: (id: string, comments: string, actor?: string) => void
   holdFinanceRequest: (id: string, reason: string, actor?: string) => void
   requestClarification: (id: string, message: string, actor?: string) => void
@@ -785,8 +794,8 @@ interface ManagerDataContextType {
   renewContract: (contractId: string, newEndDate: string) => void
 
   // Payment Actions
-  disbursePayment: (paymentId: string, actor?: string) => void
-  updatePaymentStatus: (paymentId: string, status: PaymentStatus, actor?: string, notes?: string) => void
+  disbursePayment: (paymentId: string, actor?: string) => Promise<void>
+  updatePaymentStatus: (paymentId: string, status: PaymentStatus, actor?: string, notes?: string) => Promise<void>
 
   // Vendor Lifecycle & Raise Ticket Pipeline Actions
   assignVendorToRequest: (requestId: string, vendorName: string, vendorId?: string, quoteAmount?: number, quoteId?: string) => void
@@ -809,7 +818,7 @@ interface ManagerDataContextType {
       notes?: string
       details?: Record<string, any>
     }
-  ) => {
+  ) => Promise<{
     utrRef: string
     referenceNumber?: string
     paymentMethod?: string
@@ -818,7 +827,7 @@ interface ManagerDataContextType {
     vendor: string
     notes?: string
     details?: Record<string, any>
-  }
+  }>
 
   // Complaint Actions
   addComplaint: (complaint: Omit<Complaint, 'id' | 'createdDate' | 'auditTrail' | 'status'> & Partial<Complaint>) => void
@@ -855,8 +864,8 @@ export function computePaymentAnalytics(
     6: 'Jul', 7: 'Aug', 8: 'Sep', 9: 'Oct', 10: 'Nov', 11: 'Dec'
   }
 
-  // Monthly buckets: 6-month standard window
-  const monthlyKeys = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
+  // Monthly buckets: 6-month window ending in current month (May - Oct)
+  const monthlyKeys = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct']
   const monthlyMap: Record<string, { approved: number; paid: number; pending: number }> = {}
   monthlyKeys.forEach(k => { monthlyMap[k] = { approved: 0, paid: 0, pending: 0 } })
 
@@ -866,7 +875,7 @@ export function computePaymentAnalytics(
   weeklyKeys.forEach(k => { weeklyMap[k] = { approved: 0, paid: 0, pending: 0 } })
 
   // Yearly buckets
-  const yearlyKeys = ['2024', '2025', '2026', '2027']
+  const yearlyKeys = ['2023', '2024', '2025', '2026']
   const yearlyMap: Record<string, { approved: number; paid: number; pending: number }> = {}
   yearlyKeys.forEach(k => { yearlyMap[k] = { approved: 0, paid: 0, pending: 0 } })
 
@@ -879,7 +888,7 @@ export function computePaymentAnalytics(
     const d = dateStr ? new Date(dateStr) : new Date()
     const validDate = !isNaN(d.getTime()) ? d : new Date()
 
-    const mName = MONTH_INDEX_MAP[validDate.getMonth()] || 'Sep'
+    const mName = MONTH_INDEX_MAP[validDate.getMonth()] || 'Oct'
     const day = validDate.getDate()
     const yr = String(validDate.getFullYear())
 
@@ -893,26 +902,60 @@ export function computePaymentAnalytics(
     const isPending = p.status === 'Pending' || p.status === 'Processing'
 
     if (isPaid) {
-      if (monthlyMap[mName]) monthlyMap[mName].paid += amt
-      else if (monthlyMap['Sep']) monthlyMap['Sep'].paid += amt
+      if (monthlyMap[mName]) {
+        monthlyMap[mName].paid += amt
+        monthlyMap[mName].approved += amt
+      } else if (monthlyMap['Oct']) {
+        monthlyMap['Oct'].paid += amt
+        monthlyMap['Oct'].approved += amt
+      }
 
-      if (weeklyMap[weekKey]) weeklyMap[weekKey].paid += amt
-      if (yearlyMap[yr]) yearlyMap[yr].paid += amt
-      else if (yearlyMap['2026']) yearlyMap['2026'].paid += amt
+      if (weeklyMap[weekKey]) {
+        weeklyMap[weekKey].paid += amt
+        weeklyMap[weekKey].approved += amt
+      }
+      if (yearlyMap[yr]) {
+        yearlyMap[yr].paid += amt
+        yearlyMap[yr].approved += amt
+      } else if (yearlyMap['2026']) {
+        yearlyMap['2026'].paid += amt
+        yearlyMap['2026'].approved += amt
+      }
     } else if (isPending) {
-      if (monthlyMap[mName]) monthlyMap[mName].pending += amt
-      else if (monthlyMap['Sep']) monthlyMap['Sep'].pending += amt
+      if (monthlyMap[mName]) {
+        monthlyMap[mName].pending += amt
+        monthlyMap[mName].approved += amt
+      } else if (monthlyMap['Oct']) {
+        monthlyMap['Oct'].pending += amt
+        monthlyMap['Oct'].approved += amt
+      }
 
-      if (weeklyMap[weekKey]) weeklyMap[weekKey].pending += amt
-      if (yearlyMap[yr]) yearlyMap[yr].pending += amt
-      else if (yearlyMap['2026']) yearlyMap['2026'].pending += amt
+      if (weeklyMap[weekKey]) {
+        weeklyMap[weekKey].pending += amt
+        weeklyMap[weekKey].approved += amt
+      }
+      if (yearlyMap[yr]) {
+        yearlyMap[yr].pending += amt
+        yearlyMap[yr].approved += amt
+      } else if (yearlyMap['2026']) {
+        yearlyMap['2026'].pending += amt
+        yearlyMap['2026'].approved += amt
+      }
     }
   })
 
-  // 2. Process all approved requests for budget committed / approved volume
+  // 2. Process all approved requests for budget committed / approved volume not yet tracked in payments
   allRequests.forEach((req) => {
     const amt = Number(req.amount) || 0
     if (amt <= 0 || req.status === 'rejected') return
+
+    // If already accounted for in payments, skip duplicate counting in approved
+    const reqNorm = (req.id || '').replace(/^(REQ-|PO-|TCK-|RFQ-)/, '').trim().toUpperCase()
+    const hasExistingPayment = payments.some(p => {
+      const pReqNorm = (p.requestId || p.id || '').replace(/^(REQ-|PO-|TCK-|RFQ-)/, '').trim().toUpperCase()
+      return p.requestId === req.id || (pReqNorm && reqNorm && pReqNorm === reqNorm)
+    })
+    if (hasExistingPayment) return
 
     const isApproved =
       req.status === 'approved' ||
@@ -933,7 +976,7 @@ export function computePaymentAnalytics(
       const d = dateStr ? new Date(dateStr) : new Date()
       const validDate = !isNaN(d.getTime()) ? d : new Date()
 
-      const mName = MONTH_INDEX_MAP[validDate.getMonth()] || 'Sep'
+      const mName = MONTH_INDEX_MAP[validDate.getMonth()] || 'Oct'
       const day = validDate.getDate()
       const yr = String(validDate.getFullYear())
 
@@ -944,7 +987,7 @@ export function computePaymentAnalytics(
       else weekKey = 'Week 4'
 
       if (monthlyMap[mName]) monthlyMap[mName].approved += amt
-      else if (monthlyMap['Sep']) monthlyMap['Sep'].approved += amt
+      else if (monthlyMap['Oct']) monthlyMap['Oct'].approved += amt
 
       if (weeklyMap[weekKey]) weeklyMap[weekKey].approved += amt
       if (yearlyMap[yr]) yearlyMap[yr].approved += amt
@@ -1149,16 +1192,19 @@ export function buildDynamicTickets(
   } catch (e) {}
 
   const candidateKeys = new Set<string>()
-  // 1. All valid requests from backend
-  allReqs.forEach(r => {
-    if (r.id && !isMockKey(r.id)) {
-      candidateKeys.add(r.id)
-    }
-  })
 
-  // 2. Real POs from backend
+  // 1. Real POs from backend (must be Hardware and valid sent/issued PO)
   pos.forEach(p => {
+    if (p.status === 'Draft' || p.status === 'Cancelled') return
     const rId = p.requestId || (p as any).requestRef
+    const req = rId ? allReqs.find(r => r.id === rId || (r.id && rId.includes(r.id)) || (r.id && r.id.includes(rId))) : undefined
+    
+    // Check if Software:
+    if (req && (isSoftwareRequest(req) || !isHardwareRequest(req))) return
+    if ((p as any).category && isSoftwareRequest({ category: (p as any).category, title: p.requestTitle || (p as any).title })) return
+    if (p.id && String(p.id).toUpperCase().startsWith('PO-SW-')) return
+    if (p.requestTitle && isSoftwareRequest({ title: p.requestTitle })) return
+
     if (rId && !isMockKey(rId)) {
       candidateKeys.add(rId)
     } else if (p.id && !isMockKey(p.id)) {
@@ -1166,35 +1212,57 @@ export function buildDynamicTickets(
     }
   })
 
-  // 3. Real quotes from backend
-  quotes.forEach(q => {
-    if (q.rfqId && !isMockKey(q.rfqId)) {
-      candidateKeys.add(q.rfqId)
+  // 2. Hardware requests that have an existing PO in pos or on the request
+  allReqs.forEach(r => {
+    if (!r.id || isMockKey(r.id)) return
+    if (isSoftwareRequest(r) || !isHardwareRequest(r)) return
+    
+    // Must have a PO sent/submitted
+    const normR = r.id.replace(/^(REQ-|RFQ-|PO-)/i, '').trim().toUpperCase()
+    const hasPo = pos.some(p => {
+      if (p.status === 'Draft' || p.status === 'Cancelled') return false
+      const pReq = (p.requestId || (p as any).requestRef || '').replace(/^(REQ-|RFQ-|PO-)/i, '').trim().toUpperCase()
+      const pId = (p.id || p.poNumber || '').replace(/^(REQ-|RFQ-|PO-)/i, '').trim().toUpperCase()
+      return pReq === normR || pId === normR || (p.requestId && p.requestId === r.id)
+    }) || Boolean(r.poNumber || (r as any).po_number || (r as any).po_id || ((r as any).purchase_orders && (r as any).purchase_orders.length > 0))
+
+    if (hasPo) {
+      candidateKeys.add(r.id)
     }
   })
 
-  // 4. Real receipts from backend
+  // 3. Real receipts from backend (only if matching a hardware PO)
   receiptsList.forEach(gr => {
-    if (gr.poNumber && !isMockKey(gr.poNumber)) {
-      candidateKeys.add(gr.poNumber)
-    }
-    if (gr.requestId && !isMockKey(gr.requestId)) {
-      candidateKeys.add(gr.requestId)
-    }
-    if (gr.grnNumber && !isMockKey(gr.grnNumber)) {
-      candidateKeys.add(gr.grnNumber)
-    }
+    const poNum = gr.poNumber || gr.requestId
+    if (!poNum || isMockKey(poNum)) return
+    const matchingPo = pos.find(p => p.id === poNum || p.poNumber === poNum || p.requestId === poNum)
+    const matchingReq = gr.requestId ? allReqs.find(r => r.id === gr.requestId) : undefined
+    if (matchingReq && (isSoftwareRequest(matchingReq) || !isHardwareRequest(matchingReq))) return
+    if (matchingPo && isSoftwareRequest(matchingPo as any)) return
+    if (gr.poNumber && !isMockKey(gr.poNumber)) candidateKeys.add(gr.poNumber)
+    if (gr.requestId && !isMockKey(gr.requestId)) candidateKeys.add(gr.requestId)
+    if (gr.grnNumber && !isMockKey(gr.grnNumber)) candidateKeys.add(gr.grnNumber)
   })
 
-  // 5. Delivery / invoice documents only if matching a real request or PO
+  // 4. Delivery / invoice documents only if matching a real hardware request or PO
   Object.keys(allDeliveryDocs).forEach(k => {
-    if (allReqs.some(r => r.id === k || r.id?.includes(k)) || pos.some(p => p.id === k || p.poNumber === k)) {
+    const matchingReq = allReqs.find(r => r.id === k || r.id?.includes(k))
+    const matchingPo = pos.find(p => p.id === k || p.poNumber === k)
+    if (matchingReq && (isSoftwareRequest(matchingReq) || !isHardwareRequest(matchingReq))) return
+    if (matchingPo && isSoftwareRequest(matchingPo as any)) return
+    if (matchingReq || matchingPo) {
       candidateKeys.add(k)
     }
   })
   allVendorInvoices.forEach(inv => {
-    if (inv.poRef && (allReqs.some(r => r.id === inv.poRef || r.id?.includes(inv.poRef)) || pos.some(p => p.id === inv.poRef || p.poNumber === inv.poRef))) {
-      candidateKeys.add(inv.poRef)
+    if (inv.poRef) {
+      const matchingReq = allReqs.find(r => r.id === inv.poRef || r.id?.includes(inv.poRef))
+      const matchingPo = pos.find(p => p.id === inv.poRef || p.poNumber === inv.poRef)
+      if (matchingReq && (isSoftwareRequest(matchingReq) || !isHardwareRequest(matchingReq))) return
+      if (matchingPo && isSoftwareRequest(matchingPo as any)) return
+      if (matchingReq || matchingPo) {
+        candidateKeys.add(inv.poRef)
+      }
     }
   })
 
@@ -1216,6 +1284,30 @@ export function buildDynamicTickets(
       (matchingPo?.requestId ? allReqs.find(r => r.id.toUpperCase() === matchingPo.requestId.toUpperCase()) : undefined)
 
     if (!matchingPo && !matchingReq) {
+      return
+    }
+
+    // STRICT FILTER 1: Exclude Software requests (Show only Hardware)
+    if (matchingReq && (isSoftwareRequest(matchingReq) || !isHardwareRequest(matchingReq))) {
+      return
+    }
+    if (matchingPo && isSoftwareRequest(matchingPo as any)) {
+      return
+    }
+    if (matchingPo?.id && String(matchingPo.id).toUpperCase().startsWith('PO-SW-')) {
+      return
+    }
+
+    // STRICT FILTER 2: Request must have a Vendor PO sent/submitted
+    const hasVendorPo = Boolean(
+      (matchingPo && matchingPo.status !== 'Draft' && matchingPo.status !== 'Cancelled') ||
+      matchingReq?.poNumber ||
+      (matchingReq as any)?.po_number ||
+      (matchingReq as any)?.po_id ||
+      ((matchingReq as any)?.purchase_orders && (matchingReq as any).purchase_orders.length > 0) ||
+      receiptsList.some(r => r.poNumber && r.poNumber.toUpperCase().includes(normKey))
+    )
+    if (!hasVendorPo) {
       return
     }
 
@@ -1696,16 +1788,16 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           })
         : Promise.resolve([])
 
-      // 2. Kick off other secondary datasets in parallel
+      // 2. Kick off other secondary datasets in parallel with full page_size to avoid pagination truncation
       const othersPromise = Promise.allSettled([
-        apiClient.get('/budgets/allocations/'),
-        apiClient.get('/rfq/'),
-        apiClient.get('/vendors/'),
-        apiClient.get('/procurement/purchase-orders/'),
-        apiClient.get('/invoices/'),
-        apiClient.get('/payments/'),
-        apiClient.get('/procurement/receipts/'),
-        apiClient.get('/rfq/quotations/')
+        apiClient.get('/budgets/allocations/', { params: { page_size: 1000 } }),
+        apiClient.get('/rfq/', { params: { page_size: 1000 } }),
+        apiClient.get('/vendors/', { params: { page_size: 1000 } }),
+        apiClient.get('/procurement/purchase-orders/', { params: { page_size: 1000 } }),
+        apiClient.get('/invoices/', { params: { page_size: 1000 } }),
+        apiClient.get('/payments/', { params: { page_size: 1000 } }),
+        apiClient.get('/procurement/receipts/', { params: { page_size: 1000 } }),
+        apiClient.get('/rfq/quotations/', { params: { page_size: 1000 } })
       ])
 
       let mapped: ProcurementRequest[] = []
@@ -1887,12 +1979,15 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
             recommendationReason: item.recommendation_reason || item.extra_fields?.recommendation_reason || existing?.recommendationReason,
             recommendedBy: item.recommended_by || item.extra_fields?.recommended_by || existing?.recommendedBy,
             recommendedDate: item.recommended_date || item.extra_fields?.recommended_date || existing?.recommendedDate,
+            rejectionReason: item.rejection_reason || item.extra_fields?.rejection_reason || existing?.rejectionReason,
+            rejectedBy: item.rejected_by || item.extra_fields?.rejected_by || existing?.rejectedBy,
+            rejectedDate: item.rejected_date || item.extra_fields?.rejected_date || existing?.rejectedDate,
             financeStatus: item.finance_status || (
               (item.status === 'FINANCE_APPROVED' || item.status === 'PAYMENT_APPROVED' || item.status === 'PAYMENT_PROCESSED' || item.status === 'PAYMENT_JUSTIFICATION_SUBMITTED' || item.status === 'PAYMENT_JUSTIFIED') ? 'Approved' :
               item.status === 'ADMIN_APPROVED' ? 'Admin Approved' :
               item.status === 'PAYMENT_COMPLETED' ? 'Paid' :
               (item.status === 'COMPLETED' || item.status === 'TEAM_LEAD_CONFIRMED') ? 'Completed' :
-              item.status === 'FINANCE_REJECTED' ? 'Rejected' :
+              (item.status === 'FINANCE_REJECTED' || item.status === 'REJECTED' || item.status === 'ADMIN_REJECTED') ? 'Rejected' :
               (item.status === 'RECOMMENDED_TO_ADMIN' || item.status === 'FINANCE_RECOMMENDED_TO_ADMIN') ? 'Recommended to Admin' :
               (item.status === 'RECOMMENDED_TO_FINANCE' || item.status === 'FINANCE_REVIEW' || item.status === 'FINANCE_RECOMMENDED' || item.status === 'FINANCE_RESEARCH' || item.status === 'COST_ESTIMATION' || item.status === 'FINANCE_REPORT' || item.status === 'Recommended' || item.status === 'SENT_TO_FINANCE') ? 'Awaiting Finance Action' :
               item.status === 'SENT_BACK' ? 'Sent Back' :
@@ -2454,21 +2549,140 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       })
       setQuotations(mappedBackendQuotes)
 
-      // ─── MAP AND SET BACKEND GOODS RECEIPTS ───────────────────────────────
+      // ─── MAP AND SET BACKEND GOODS RECEIPTS FOR ADMIN PORTAL ─────────────
+      // Single Source of Truth: Map only genuine forwarded/recommended requests to Admin Receipts.
+      // Strictly 1-to-1: Exactly one receipt record per procurement request.
       const rawGRs = getFulfilledData(grsRes)
-      const mappedBackendReceipts: GoodsReceiptItem[] = rawGRs.map((gr: any) => {
+      const receiptsByReqId = new Map<string, GoodsReceiptItem>()
+
+      const isForwardedToAdmin = (r: any): boolean => {
+        if (!r) return false
+        const extra = r.extra_fields || r.extraFields || {}
+        const rawSt = String(r.raw_status || r.status || '').toUpperCase()
+        const finSt = String(r.financeStatus || r.finance_status || '').toUpperCase()
+        const appLevel = String(r.approvalLevel || r.approval_level || r.current_approval_level || '').toUpperCase()
+        const hist = Array.isArray(r.history) ? r.history : (Array.isArray(r.approval_history) ? r.approval_history : [])
+
+        // 1. Explicit DB Flags & Higher Authority Transmissions
+        if (
+          extra.sent_to_admin_receipts === true ||
+          extra.sent_to_higher_authority === true ||
+          extra.is_sent_to_higher_authority === true ||
+          extra.sent_to_finance_received_reports === true ||
+          extra.admin_approved === true ||
+          extra.final_approval_by === 'ADMIN' ||
+          extra.final_approval_by === 'FINANCE' ||
+          extra.finance_approved === true
+        ) {
+          return true
+        }
+
+        // 2. Statuses indicating recommendation, finance approval, or admin action
+        const adminStatuses = [
+          'RECOMMENDED_TO_ADMIN',
+          'FINANCE_RECOMMENDED_TO_ADMIN',
+          'RECOMMENDED_TO_FINANCE',
+          'RECOMMENDED_TO_HIGHER_AUTHORITY',
+          'ADMIN_REVIEW',
+          'ADMIN_RESEARCH',
+          'ADMIN_APPROVED',
+          'ADMIN_REJECTED',
+          'ADMIN_RETURNED',
+          'CLARIFICATION_REQUESTED'
+        ]
+        if (adminStatuses.includes(rawSt)) return true
+
+        if (
+          finSt.includes('RECOMMENDED TO ADMIN') ||
+          finSt.includes('ADMIN APPROVED') ||
+          finSt.includes('ADMIN REJECTED') ||
+          finSt.includes('RECOMMENDED TO HIGHER AUTHORITY')
+        ) {
+          return true
+        }
+
+        if (appLevel.includes('ADMIN') || appLevel.includes('FINANCE') || appLevel.includes('HIGHER_AUTHORITY')) return true
+
+        // 3. Approval History actions in DB
+        const adminActions = [
+          'SENT_RECEIPT_HIGHER_AUTHORITY',
+          'RECEIPT_SENT_HIGHER_AUTHORITY',
+          'RECOMMEND_ADMIN',
+          'FINANCE_RECOMMEND_ADMIN',
+          'RECOMMEND_FINANCE',
+          'MANAGER_RECOMMEND_FINANCE',
+          'RECOMMEND_HIGHER_AUTHORITY',
+          'ADMIN_APPROVE',
+          'ADMIN_REVIEW',
+          'ADMIN_RESEARCH',
+          'ADMIN_REJECT',
+          'ADMIN_RETURN'
+        ]
+        if (hist.some((h: any) => adminActions.includes(String(h.action || '').toUpperCase()))) {
+          return true
+        }
+
+        // 4. Recommendation metadata (Manager -> Higher Authority / Finance, or Finance -> Admin)
+        if (
+          Boolean(extra.finance_recommendation_reason) ||
+          Boolean(extra.recommendation_reason) ||
+          Boolean(extra.receipt_higher_authority_sent_at) ||
+          Boolean(extra.finance_recommended_by) ||
+          Boolean(extra.recommended_by) ||
+          Boolean(r.recommendationReason) ||
+          Boolean(r.recommendedBy)
+        ) {
+          return true
+        }
+
+        // 5. Admin created request
+        const requester = String(r.requester || r.createdBy || '').toUpperCase()
+        if (requester.includes('ADMIN') || (r.created_by_detail && r.created_by_detail.role === 'ADMIN')) {
+          return true
+        }
+
+        return false
+      }
+
+      // 1. Process real PostgreSQL GoodsReceipt rows
+      rawGRs.forEach((gr: any) => {
         const poObj = gr.purchase_order_detail || (typeof gr.purchase_order === 'object' ? gr.purchase_order : null)
-        const prObj = poObj?.purchase_request_detail || gr.purchase_request_detail || mapped.find((r: ProcurementRequest) => r.id === poObj?.purchase_request || r.id === poObj?.request_id || r.id === gr.purchase_request || r.id === gr.request_id)
+        const prObj = poObj?.purchase_request_detail || gr.purchase_request_detail || mapped.find((r: ProcurementRequest) => 
+          r.id === poObj?.purchase_request || 
+          String((r as any).dbId) === String(poObj?.purchase_request) ||
+          String((r as any).id) === String(poObj?.purchase_request) ||
+          r.id === poObj?.request_id || 
+          r.id === gr.purchase_request || 
+          String((r as any).dbId) === String(gr.purchase_request) ||
+          String((r as any).id) === String(gr.purchase_request) ||
+          r.id === gr.request_id ||
+          (r.id && poObj?.po_id && poObj.po_id.includes(r.id.replace(/^(REQ-|REP-)/, '')))
+        )
         const vObj = poObj?.vendor_detail || gr.vendor_detail || (typeof gr.vendor === 'object' ? gr.vendor : null)
         const poNum = gr.po_id || poObj?.po_id || (gr.purchase_order ? (String(gr.purchase_order).startsWith('PO-') ? String(gr.purchase_order) : `PO-${gr.purchase_order}`) : '')
-        const reqId = gr.request_id || prObj?.request_id || prObj?.id || (poObj?.purchase_request ? `REQ-${poObj.purchase_request}` : '')
-        const vendorName = gr.vendor_name || vObj?.name || (typeof gr.vendor === 'string' && isNaN(Number(gr.vendor)) ? gr.vendor : '') || (poObj?.vendor_name || 'Vendor Partner')
-        const prodName = gr.product_name || prObj?.title || poObj?.title || 'Procured Equipment'
+        const rawReqId = gr.request_id || prObj?.request_id || prObj?.id || (poObj?.purchase_request ? `REQ-${poObj.purchase_request}` : '')
+        const cleanReqId = rawReqId ? String(rawReqId).replace(/^(REQ-|REP-)/, '') : (poNum ? poNum.replace(/^(PO-|PO-SW-)/, '') : String(gr.id || ''))
+
+        // Genuine PostgreSQL GoodsReceipt rows are always included; for linked requests, check higher authority routing
+        if (prObj && !isForwardedToAdmin(prObj) && !gr.id && !gr.receipt_id) {
+          return
+        }
+
+        const isSw = String(gr.receipt_id || '').startsWith('RCP-SW-') || 
+                     String(gr.receipt_id || '').includes('-SW-') || 
+                     (prObj && isSoftwareRequest(prObj)) ||
+                     String(gr.product_name || '').toLowerCase().includes('saas') ||
+                     String(gr.product_name || '').toLowerCase().includes('license') ||
+                     String(gr.delivery_location || '').toLowerCase().includes('digital') ||
+                     String(gr.delivery_location || '').toLowerCase().includes('cloud')
+
+        const vendorName = gr.vendor_name || vObj?.name || (typeof gr.vendor === 'string' && isNaN(Number(gr.vendor)) ? gr.vendor : '') || (poObj?.vendor_name || prObj?.vendor || 'Vendor Partner')
+        const prodName = gr.product_name || prObj?.title || poObj?.title || (isSw ? 'Enterprise Software / SaaS' : 'Procured Equipment')
         const ordQty = Number(gr.ordered_quantity) || Number(prObj?.quantity) || 1
         const recQty = Number(gr.received_quantity) || ordQty
         const damQty = Number(gr.damaged_quantity) || 0
-        const dateStr = (gr.delivery_date || gr.created_at || new Date().toISOString()).split('T')[0]
-        const grnNum = gr.receipt_id || (gr.id ? (String(gr.id).startsWith('REC-') || String(gr.id).startsWith('GRN-') ? String(gr.id) : `GRN-${gr.id}`) : `GRN-${poNum.replace('PO-', '')}`)
+        const dateStr = (gr.delivery_date || gr.created_at || prObj?.date || new Date().toISOString()).split('T')[0]
+        const grnNum = gr.receipt_id || (gr.id ? (String(gr.id).startsWith('REC-') || String(gr.id).startsWith('GRN-') || String(gr.id).startsWith('RCP-') ? String(gr.id) : (isSw ? `RCP-SW-${cleanReqId}` : `GRN-${gr.id}`)) : (isSw ? `RCP-SW-${cleanReqId}` : `GRN-${poNum.replace('PO-', '')}`))
         
         let st: GoodsReceiptItem['status'] = 'Pending Verification'
         const rawSt = (gr.status || '').toLowerCase()
@@ -2478,13 +2692,19 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           st = 'Rejected'
         }
 
-        const recBy = gr.received_by_detail ? `${gr.received_by_detail.first_name || ''} ${gr.received_by_detail.last_name || ''}`.trim() || gr.received_by_detail.username : (gr.received_by || 'Warehouse Team')
+        const recBy = gr.received_by_detail ? `${gr.received_by_detail.first_name || ''} ${gr.received_by_detail.last_name || ''}`.trim() || gr.received_by_detail.username : (gr.received_by || prObj?.requester || (isSw ? 'Team Lead' : 'Warehouse Team'))
+        const extra = prObj?.extra_fields || prObj?.extraFields || {}
+        const pj = prObj?.payment_justification_detail || extra.payment_justification || {}
+        const amt = Number(gr.total_amount || pj.actual_purchase_amount || extra.actual_purchase_amount || extra.final_payable_amount || prObj?.approvedAmount || prObj?.amount || poObj?.total_amount || 0)
+        const payRef = extra.payment_reference || prObj?.paymentReference || gr.notes || pj.payment_reference || grnNum
+        const payMethod = extra.payment_method || prObj?.paymentMethod || pj.payment_method || 'Corporate Digital Card'
 
-        return {
+        const receiptItem: GoodsReceiptItem = {
           id: grnNum,
+          receiptType: isSw ? 'SOFTWARE' : 'HARDWARE',
           grnNumber: grnNum,
-          poNumber: poNum,
-          requestId: reqId,
+          poNumber: poNum || (isSw ? `PO-SW-${cleanReqId}` : `PO-${cleanReqId}`),
+          requestId: rawReqId || (prObj?.id ? prObj.id : `REQ-${cleanReqId}`),
           vendor: vendorName,
           receivedDate: dateStr,
           product: prodName,
@@ -2494,14 +2714,141 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           inspectionStatus: damQty > 0 ? 'Discrepancy Found' : (st === 'Verified' ? 'Passed' : 'Inspection Pending'),
           receivedBy: recBy,
           status: st,
-          warehouseLocation: gr.delivery_location || 'Pune HQ Warehouse',
-          // Explicit manager verification data from /verify/ endpoint
+          warehouseLocation: gr.delivery_location || (isSw ? 'Cloud / Digital Provisioning' : 'Pune HQ Warehouse'),
+          category: prObj?.category || (isSw ? 'Software & SaaS' : (poObj?.category || 'IT Hardware')),
+          amount: amt,
+          softwareName: isSw ? (prObj?.software_name || prodName) : undefined,
+          requestType: prObj?.requestType || (isSw ? 'Software Subscription' : undefined),
+          currentPlan: (prObj as any)?.current_plan || (prObj as any)?.currentPlan,
+          requiredPlan: (prObj as any)?.required_plan || (prObj as any)?.requiredPlan || (isSw ? 'Enterprise License' : undefined),
+          paymentReference: isSw ? payRef : undefined,
+          paymentMethod: isSw ? payMethod : undefined,
+          requester: prObj?.requester || recBy,
+          department: prObj?.department || 'Engineering',
+          paymentJustification: pj.business_justification || extra.payment_justification?.business_justification || prObj?.justification,
+          receiptProof: pj.proof_description || `Receipt Proof - ${grnNum}.pdf`,
+          licenseKey: extra.license_key || (isSw ? `LIC-SW-${cleanReqId}` : undefined),
+          rawRequest: prObj,
+          payment_justification_detail: pj,
+          is_sent_to_higher_authority: Boolean(extra.sent_to_higher_authority || extra.is_sent_to_higher_authority || extra.sent_to_admin_receipts),
+          sent_to_higher_authority: Boolean(extra.sent_to_higher_authority || extra.is_sent_to_higher_authority || extra.sent_to_admin_receipts),
+          receipt_higher_authority_sent_at: extra.receipt_higher_authority_sent_at || null,
           verified_by_name: gr.verified_by_name || '',
           verifiedByName: gr.verified_by_name || '',
           verified_at: gr.verified_at || null,
+          createdAt: gr.created_at || prObj?.createdAt || (prObj?.date ? `${prObj.date}T00:00:00Z` : new Date().toISOString()),
+        }
+
+        receiptsByReqId.set(cleanReqId, receiptItem)
+      })
+
+      // 2. Process Forwarded/Recommended Requests that do not yet have a PostgreSQL GoodsReceipt row
+      mapped.forEach((req: ProcurementRequest) => {
+        if (!isForwardedToAdmin(req)) return
+
+        const cleanReqId = req.id.replace(/^(REQ-|REP-)/, '')
+        // If this request already has a receipt from DB, skip adding a duplicate!
+        if (receiptsByReqId.has(cleanReqId)) return
+
+        const extra = req.extra_fields || (req as any).extraFields || {}
+        const pj = (req as any).payment_justification_detail || extra.payment_justification || {}
+        const rawSt = String((req as any).raw_status || req.status || '').toUpperCase()
+        const isSw = isSoftwareRequest(req)
+        const isSentToHigherAuth = Boolean(extra.is_sent_to_higher_authority || extra.sent_to_higher_authority || extra.sent_to_admin_receipts)
+        const hasReceipt = isSentToHigherAuth || Boolean(extra.software_receipt_id || extra.receipt_no || extra.payment_reference || (req as any).paymentReference || pj.payment_reference)
+        const isCompleted = ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED', 'MANAGER_VERIFIED', 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'PAYMENT_JUSTIFIED', 'PAYMENT_JUSTIFICATION_SUBMITTED', 'PAYMENT_PROCESSED', 'PAID', 'APPROVED', 'ADMIN_APPROVED'].includes(rawSt) || Boolean(extra.team_lead_acknowledged) || Boolean((req as any).confirmed_by_team_lead) || Boolean((req as any).isPaid) || isSentToHigherAuth
+
+        if (isSw && (hasReceipt || isCompleted)) {
+          const rcpId = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${cleanReqId}`
+          const amt = Number(pj.actual_purchase_amount || extra.actual_purchase_amount || extra.final_payable_amount || req.approvedAmount || (req as any).finance_approved_amount || req.amount || 0)
+          const payDate = extra.receipt_generated_at?.split('T')[0] || extra.acknowledged_at?.split('T')[0] || pj.payment_date || (req as any).paidDate || req.date || (req.created_at ? req.created_at.split('T')[0] : new Date().toISOString().split('T')[0])
+          const swName = (req as any).software_name || pj.software_name || req.title || 'Enterprise Software / SaaS'
+          const payRef = extra.payment_reference || (req as any).paymentReference || (req as any).payment_reference || extra.mock_payment_ref || pj.payment_reference || rcpId
+          const payMethod = extra.payment_method || (req as any).paymentMethod || (req as any).payment_method || pj.payment_method || 'Corporate Digital Card'
+          const rawVendor = pj.vendor_name || extra.vendor_name || (req as any).preferred_vendor || (req as any).vendor || ''
+          let vendorName = rawVendor || 'Enterprise SaaS Provider'
+
+          receiptsByReqId.set(cleanReqId, {
+            id: rcpId,
+            receiptType: 'SOFTWARE',
+            grnNumber: rcpId,
+            poNumber: `PO-SW-${cleanReqId}`,
+            requestId: req.id,
+            vendor: vendorName,
+            receivedDate: payDate,
+            product: swName,
+            orderedQuantity: Number((req as any).quantity || 1),
+            receivedQuantity: Number((req as any).quantity || 1),
+            damagedQuantity: 0,
+            inspectionStatus: 'Passed',
+            receivedBy: (req as any).requester || (req as any).createdBy || 'Team Lead',
+            status: 'Verified',
+            warehouseLocation: 'Cloud / Digital Provisioning',
+            category: req.category || 'Software & SaaS',
+            amount: amt,
+            softwareName: swName,
+            requestType: (req as any).request_type || (req as any).requestType || 'Software Subscription',
+            currentPlan: (req as any).current_plan || (req as any).currentPlan,
+            requiredPlan: (req as any).required_plan || (req as any).requiredPlan || 'Enterprise License',
+            paymentReference: payRef,
+            paymentMethod: payMethod,
+            requester: (req as any).requester || (req as any).createdBy || 'Team Lead',
+            department: req.department || 'Engineering',
+            paymentJustification: pj.business_justification || extra.payment_justification?.business_justification || req.justification || 'Department operational need',
+            receiptProof: pj.proof_description || `Receipt Proof - ${rcpId}.pdf`,
+            licenseKey: extra.license_key || `LIC-SW-${cleanReqId}`,
+            rawRequest: req,
+            payment_justification_detail: pj,
+            is_sent_to_higher_authority: isSentToHigherAuth,
+            sent_to_higher_authority: isSentToHigherAuth,
+            receipt_higher_authority_sent_at: extra.receipt_higher_authority_sent_at || null,
+            createdAt: req.createdAt || (req as any).created_at || (req as any).rawRequest?.created_at || extra.receipt_generated_at || (req.date ? `${req.date}T00:00:00Z` : new Date().toISOString()),
+          })
+        } else if (!isSw) {
+          // Hardware request: check if matching PO was delivered
+          const po = combinedPOs.find(p => p.requestId === req.id || String(p.requestId).replace(/^(REQ-|REP-)/, '') === cleanReqId)
+          const isDelivered = po && (po.status === 'Delivered' || (po.status as any) === 'Fulfilled' || po.status === 'Closed' || req.status === 'completed' || rawSt === 'COMPLETED' || rawSt === 'REQUEST_COMPLETED')
+          if (isDelivered) {
+            const cleanPoId = po.poNumber.replace(/^PO-/, '')
+            const grnNum = `GRN-${cleanPoId}`
+            const rawReqDate = req.createdAt || req.date || po.poDate || new Date().toISOString()
+            receiptsByReqId.set(cleanReqId, {
+              id: grnNum,
+              grnNumber: grnNum,
+              poNumber: po.poNumber,
+              requestId: req.id,
+              vendor: po.vendor,
+              receivedDate: (po.deliveryDate || po.poDate || String(rawReqDate)).split('T')[0],
+              product: po.requestTitle || (po.items && po.items[0]?.product) || req.title || 'Procured Equipment',
+              orderedQuantity: Number(po.quantity || req.quantity || 1),
+              receivedQuantity: Number(po.quantity || req.quantity || 1),
+              damagedQuantity: 0,
+              inspectionStatus: 'Passed',
+              receivedBy: (po.submittedBy && !po.submittedBy.includes('Vendor')) ? po.submittedBy : (req.requester || 'Warehouse Team'),
+              status: 'Verified',
+              warehouseLocation: req.deliveryLocation || 'Main Warehouse Dock',
+              receiptType: 'HARDWARE',
+              category: po.category || req.category || 'IT Hardware',
+              amount: po.totalAmount || req.amount || 0,
+              verified_by_name: 'Warehouse Operations',
+              verifiedByName: 'Warehouse Operations',
+              verified_at: po.deliveryDate || null,
+              createdAt: req.createdAt || (po as any).created_at || rawReqDate,
+              rawRequest: req,
+            })
+          }
         }
       })
-      setReceipts(mappedBackendReceipts)
+
+      const finalReceiptsList = Array.from(receiptsByReqId.values())
+      finalReceiptsList.sort((a, b) => {
+        const timeA = new Date((a as any).createdAt || (a as any).created_at || a.receivedDate || 0).getTime()
+        const timeB = new Date((b as any).createdAt || (b as any).created_at || b.receivedDate || 0).getTime()
+        if (timeA !== timeB) return timeB - timeA
+        return (b.id || '').localeCompare(a.id || '')
+      })
+
+      setReceipts(finalReceiptsList)
 
       // ─── ENRICH REQUESTS WITH REAL PAYMENT & FULFILLMENT DATA ─────────────
       const baseRequests = mapped.length > 0 ? mapped : allRequestsRef.current
@@ -2523,7 +2870,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         })
 
         // Match GRN
-        const matchingGrn = mappedBackendReceipts.find(gr => {
+        const matchingGrn = finalReceiptsList.find((gr: GoodsReceiptItem) => {
           const grReqNorm = (gr.requestId || '').replace(/^(REQ-|PO-|TCK-|RFQ-)/, '').trim().toUpperCase()
           return gr.requestId === r.id || (grReqNorm && grReqNorm === reqNorm) || (matchingPo && gr.poNumber === matchingPo.poNumber)
         })
@@ -2667,9 +3014,13 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         st === 'pending_arrival' ||
         rawSt === 'PENDING_APPROVAL' ||
         rawSt === 'MANAGER_REVIEW' ||
+        rawSt === 'TEAM_LEAD_SUBMITTED' ||
+        rawSt === 'TEAM_LEAD_REVIEW' ||
         rawSt === 'PENDING' ||
         rawSt === 'SUBMITTED' ||
         rawSt === 'CREATED' ||
+        rawSt === 'MANAGER_RESEARCHING' ||
+        rawSt === 'PRE_ESTIMATION_COMPLETED' ||
         rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
         st === 'payment_justification_submitted'
       ) {
@@ -2914,10 +3265,23 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Computed: Rejected Finance Requests
   const rejectedFinanceRequests = useMemo(() => {
-    return allRequests.filter(r =>
-      r.status === 'finance_rejected' ||
-      (r.status === 'rejected' && (r.rejectedBy?.toLowerCase().includes('finance') || r.rejectionReason?.toLowerCase().includes('finance')))
-    )
+    return allRequests.filter(r => {
+      const st = (r.status || '').toLowerCase()
+      const rawSt = ((r as any).raw_status || '').toUpperCase()
+      const finSt = r.financeStatus || ''
+      const isRej = st === 'finance_rejected' || st === 'rejected' || rawSt === 'FINANCE_REJECTED' || rawSt === 'REJECTED' || finSt === 'Rejected'
+      if (!isRej) return false
+
+      return isFinanceRelevantRequest(r) ||
+        r.financeStatus === 'Rejected' ||
+        st === 'finance_rejected' ||
+        rawSt === 'FINANCE_REJECTED' ||
+        r.rejectedBy?.toLowerCase().includes('finance') ||
+        r.rejectionReason?.toLowerCase().includes('finance') ||
+        Boolean(r.isForwardedToFinance) ||
+        Boolean(r.recommendationReason) ||
+        r.history?.some(h => (h.actorRole || '').toUpperCase().includes('FINANCE') || (h.action || '').toUpperCase().includes('FINANCE'))
+    })
   }, [allRequests])
 
   // Finance-scoped payments and payment analytics
@@ -2995,56 +3359,8 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Real-time dynamic payment analytics for Manager & Finance dashboards
   const paymentData = useMemo(() => {
-    const weeklyMap: Record<string, { approved: number; paid: number; pending: number }> = {
-      Mon: { approved: 0, paid: 0, pending: 0 },
-      Tue: { approved: 0, paid: 0, pending: 0 },
-      Wed: { approved: 0, paid: 0, pending: 0 },
-      Thu: { approved: 0, paid: 0, pending: 0 },
-      Fri: { approved: 0, paid: 0, pending: 0 },
-      Sat: { approved: 0, paid: 0, pending: 0 },
-      Sun: { approved: 0, paid: 0, pending: 0 },
-    }
-
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    const monthlyMap: Record<string, { approved: number; paid: number; pending: number }> = {}
-    months.forEach(m => { monthlyMap[m] = { approved: 0, paid: 0, pending: 0 } })
-
-    const years = ['2023', '2024', '2025', '2026']
-    const yearlyMap: Record<string, { approved: number; paid: number; pending: number }> = {}
-    years.forEach(y => { yearlyMap[y] = { approved: 0, paid: 0, pending: 0 } })
-
-    payments.forEach(p => {
-      const amt = Number(p.amount) || 0
-      const isPaid = p.status === 'Paid'
-      const isPending = p.status === 'Pending' || p.status === 'Processing'
-      const pDate = p.paymentDate ? new Date(p.paymentDate) : new Date()
-      const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][pDate.getDay()]
-      const monthName = months[pDate.getMonth()]
-      const yearStr = String(pDate.getFullYear())
-
-      if (weeklyMap[dayName]) {
-        weeklyMap[dayName].approved += amt
-        if (isPaid) weeklyMap[dayName].paid += amt
-        if (isPending) weeklyMap[dayName].pending += amt
-      }
-      if (monthlyMap[monthName]) {
-        monthlyMap[monthName].approved += amt
-        if (isPaid) monthlyMap[monthName].paid += amt
-        if (isPending) monthlyMap[monthName].pending += amt
-      }
-      if (yearlyMap[yearStr]) {
-        yearlyMap[yearStr].approved += amt
-        if (isPaid) yearlyMap[yearStr].paid += amt
-        if (isPending) yearlyMap[yearStr].pending += amt
-      }
-    })
-
-    return {
-      weekly: Object.keys(weeklyMap).map(k => ({ period: k, ...weeklyMap[k] })),
-      monthly: Object.keys(monthlyMap).map(k => ({ period: k, ...monthlyMap[k] })),
-      yearly: Object.keys(yearlyMap).map(k => ({ period: k, ...yearlyMap[k] })),
-    }
-  }, [payments])
+    return computePaymentAnalytics(payments, allRequests)
+  }, [payments, allRequests])
 
   // ─── Manager Actions ────────────────────────────────────────────────────────
 
@@ -3102,9 +3418,13 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } : r))
   }, [refreshManagerBackendData])
 
-  const approveRequest = useCallback((id: string, notes?: string, approvalParams?: ApprovalParameters) => {
-    const req = pendingApprovals.find(r => r.id === id) || arrivedRequests.find(r => r.id === id) || allRequestsRef.current.find(r => r.id === id)
+  const approveRequest = useCallback(async (id: string, notes?: string, approvalParams?: ApprovalParameters) => {
+    const cleanId = id.replace(/^(REQ-|TCK-|PO-|PRD-)/, '')
+    const req = pendingApprovals.find(r => r.id === id || (r as any).request_id === id || r.id === `REQ-${cleanId}` || r.id === cleanId) ||
+      arrivedRequests.find(r => r.id === id || (r as any).request_id === id || r.id === `REQ-${cleanId}` || r.id === cleanId) ||
+      allRequestsRef.current.find(r => r.id === id || (r as any).request_id === id || r.id === `REQ-${cleanId}` || r.id === cleanId)
     if (!req) return
+    const targetId = req?.dbId || (req as any)?.rawRequest?.id || req?.id || id
     const today = new Date().toISOString().split('T')[0]
 
     const finalParams: ApprovalParameters = approvalParams || {
@@ -3126,7 +3446,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const isSoftware = req.category?.toLowerCase().includes('software') || req.category?.toLowerCase().includes('saas') || req.request_type === 'software'
 
     // Optimistic update: request stays with Manager in Manager Approved queue
-    setBackendRequests(prev => prev.map(r => r.id === id ? {
+    setBackendRequests(prev => prev.map(r => (r.id === id || (r as any).request_id === id || r.id === `REQ-${cleanId}` || r.id === cleanId) ? {
       ...r,
       status: 'approved',
       raw_status: 'MANAGER_APPROVED',
@@ -3149,22 +3469,22 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     } : r))
 
-    approveRequestApi(id, {
-      approved_amount: approvedAmountVal,
-      cost_center: finalParams.costCenter,
-      budget_available: finalParams.budgetAvailable === 'Yes',
-      vendor: finalParams.vendor,
-      comments: notes || finalParams.approvalComments,
-    })
-      .then(() => {
-        refreshManagerBackendData()
-        triggerGlobalDataSync('workflow_transition')
+    try {
+      await approveRequestApi(targetId, {
+        approved_amount: approvedAmountVal,
+        cost_center: finalParams.costCenter,
+        budget_available: finalParams.budgetAvailable === 'Yes',
+        vendor: finalParams.vendor,
+        comments: notes || finalParams.approvalComments,
       })
-      .catch(e => {
-        console.warn('Manager approve API sync error:', e)
-        refreshManagerBackendData()
-      })
-  }, [refreshManagerBackendData])
+      await refreshManagerBackendData()
+      triggerGlobalDataSync('workflow_transition')
+    } catch (e) {
+      console.warn('Manager approve API sync error:', e)
+      await refreshManagerBackendData()
+      throw e
+    }
+  }, [pendingApprovals, arrivedRequests, refreshManagerBackendData])
 
   const addRFQ = useCallback(async (rfqData: RFQ) => {
     try {
@@ -3346,6 +3666,118 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       } : r))
     }
   }, [])
+
+  const sendReceiptToHigherAuthority = useCallback(async (id: string, notes?: string) => {
+    const cleanId = id.replace(/^(REQ-|REP-|RCP-SW-|SR-)/, '')
+    const req = financeReview.find(r => r.id === id || r.id === `REQ-${cleanId}` || r.id === cleanId) ||
+      allRequestsRef.current.find(r => r.id === id || r.id === `REQ-${cleanId}` || r.id === cleanId)
+
+    const extra = (req as any)?.extra_fields || (req as any)?.extraFields || {}
+    const pj = (req as any)?.payment_justification_detail || extra.payment_justification || {}
+    const rcpId = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${cleanId}`
+    const amt = Number(pj.actual_purchase_amount || extra.actual_purchase_amount || extra.final_payable_amount || req?.approvedAmount || (req as any)?.finance_approved_amount || req?.amount || 0)
+    const payDate = extra.receipt_generated_at?.split('T')[0] || extra.acknowledged_at?.split('T')[0] || pj.payment_date || (req as any)?.paidDate || req?.date || new Date().toISOString().split('T')[0]
+    const swName = (req as any)?.software_name || pj.software_name || req?.title || 'Enterprise Software / SaaS'
+    const payRef = extra.payment_reference || (req as any)?.paymentReference || (req as any)?.payment_reference || extra.mock_payment_ref || pj.payment_reference || rcpId
+    const payMethod = extra.payment_method || (req as any)?.paymentMethod || (req as any)?.payment_method || pj.payment_method || 'Corporate Digital Card'
+    const vendorName = pj.vendor_name || (req as any)?.vendor || (req as any)?.preferred_vendor || 'Enterprise SaaS Provider'
+
+    const updatedExtra = {
+      ...extra,
+      sent_to_higher_authority: true,
+      is_sent_to_higher_authority: true,
+      sent_to_finance_received_reports: true,
+      sent_to_admin_receipts: true,
+      receipt_higher_authority_sent_at: new Date().toISOString(),
+      receipt_higher_authority_notes: notes || 'Receipt sent to Higher Authority (Finance Received Reports & Admin Receipts)',
+      software_receipt_id: rcpId,
+    }
+
+    // 1. Update backendRequests state so it reflects in Manager & Finance portals
+    setBackendRequests(prev => prev.map(r => {
+      const match = r.id === id || r.id === `REQ-${cleanId}` || r.id === cleanId
+      if (!match) return r
+      return {
+        ...r,
+        isForwardedToFinance: true,
+        financeStatus: 'Approved',
+        extra_fields: updatedExtra,
+        extraFields: updatedExtra
+      }
+    }))
+
+    // 2. Add or update in receipts state (for Admin Portal -> Receipts Page)
+    const newReceiptItem: GoodsReceiptItem = {
+      id: rcpId,
+      receiptType: 'SOFTWARE',
+      grnNumber: rcpId,
+      poNumber: `PO-SW-${cleanId}`,
+      requestId: req?.id || `REQ-${cleanId}`,
+      vendor: vendorName,
+      receivedDate: payDate,
+      product: swName,
+      orderedQuantity: Number((req as any)?.quantity || 1),
+      receivedQuantity: Number((req as any)?.quantity || 1),
+      damagedQuantity: 0,
+      inspectionStatus: 'Passed',
+      receivedBy: (req as any)?.requester || (req as any)?.createdBy || 'Team Lead',
+      status: 'Verified',
+      warehouseLocation: 'Cloud / Digital Provisioning',
+      category: req?.category || 'Software & SaaS',
+      amount: amt,
+      softwareName: swName,
+      requestType: (req as any)?.request_type || (req as any)?.requestType || 'Software Subscription',
+      currentPlan: (req as any)?.current_plan || (req as any)?.currentPlan,
+      requiredPlan: (req as any)?.required_plan || (req as any)?.requiredPlan || 'Enterprise License',
+      paymentReference: payRef,
+      paymentMethod: payMethod,
+      requester: (req as any)?.requester || (req as any)?.createdBy || 'Team Lead',
+      department: req?.department || 'Engineering',
+      paymentJustification: pj.business_justification || extra.payment_justification?.business_justification || req?.justification || 'Department operational need',
+      receiptProof: pj.proof_description || `Receipt Proof - ${rcpId}.pdf`,
+      licenseKey: extra.license_key || `LIC-SW-${cleanId}`,
+      rawRequest: req,
+      payment_justification_detail: pj,
+      is_sent_to_higher_authority: true,
+      sent_to_higher_authority: true,
+      receipt_higher_authority_sent_at: updatedExtra.receipt_higher_authority_sent_at
+    }
+
+    setReceipts(prev => {
+      const filtered = prev.filter(gr => 
+        gr.id !== rcpId && 
+        gr.grnNumber !== rcpId && 
+        String(gr.requestId || '').replace(/^(REQ-|REP-)/, '') !== cleanId &&
+        gr.poNumber !== `PO-SW-${cleanId}`
+      )
+      return [newReceiptItem, ...filtered]
+    })
+
+    // 4. Send API update to backend
+    try {
+      await apiClient.post(`/api/manager/requests/${cleanId}/send-receipt-higher-authority/`, {
+        notes: notes || 'Receipt sent to Higher Authority (Finance Received Reports & Admin Receipts)'
+      })
+    } catch (apiErr) {
+      try {
+        await apiClient.post(`/api/requests/${cleanId}/send-receipt-higher-authority/`, {
+          notes: notes || 'Receipt sent to Higher Authority (Finance Received Reports & Admin Receipts)'
+        })
+      } catch (err2) {
+        console.warn('Backend send-receipt-higher-authority endpoint error:', err2)
+      }
+    }
+
+    try {
+      await refreshManagerBackendData()
+    } catch (e) {
+      console.warn('Post-transmission refresh error:', e)
+    }
+
+    triggerGlobalDataSync('workflow_transition')
+    window.dispatchEvent(new Event('kss_backend_updated'))
+    window.dispatchEvent(new Event('storage'))
+  }, [financeReview, refreshManagerBackendData])
 
   const verifyDocument = useCallback((
     ticketId: string,
@@ -3675,13 +4107,13 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }))
   }, [])
 
-  const approveFinanceRequest = useCallback((
+  const approveFinanceRequest = useCallback(async (
     id: string,
     comment?: string,
     actor = 'Mark Finance Officer',
     approvalParams?: ApprovalParameters
   ) => {
-    const req = financeReview.find(r => r.id === id) || allRequests.find(r => r.id === id)
+    const req = allRequests.find(r => r.id === id || (r as any).request_id === id) || financeReview.find(r => r.id === id)
     if (!req) return
 
     const rawStatus = String((req as any).raw_status || '').toUpperCase()
@@ -3710,25 +4142,10 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const now = new Date().toISOString()
     const today = now.split('T')[0]
 
-    const effectiveApprovedAmount = approvalParams?.approvedAmount ?? ((req as any).finance_approved_amount || req.amount)
+    const effectiveApprovedAmount = approvalParams?.approvedAmount ?? ((req as any).finance_approved_amount || req.amount || 0)
 
-    // 1. Dispatch backend API call with persisted finance_approved_amount
-    approveFinanceRequestApi(id, {
-      finance_approved_amount: effectiveApprovedAmount,
-      approved_amount: effectiveApprovedAmount,
-      cost_center: approvalParams?.costCenter || req.costCenter,
-      budget_code: (approvalParams as any)?.budgetCode || (req as any).budget_code || (req as any).budgetCode,
-      vendor: approvalParams?.vendor || req.vendor,
-      comments: comment || approvalParams?.approvalComments,
-    })
-      .then(() => {
-        refreshManagerBackendData()
-        triggerGlobalDataSync('workflow_transition')
-      })
-      .catch(e => console.warn('Finance approve API sync error:', e))
-
-    // 2. Optimistic update via single source of truth
-    setBackendRequests(prev => prev.map(r => r.id === id ? {
+    // 1. Optimistic update via single source of truth
+    setBackendRequests(prev => prev.map(r => (r.id === id || (r as any).request_id === id) ? {
       ...r,
       amount: effectiveApprovedAmount,
       status: 'finance_approved',
@@ -3736,16 +4153,17 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       financeStatus: 'Approved',
       financeApprovedBy: actor,
       financeApprovedDate: today,
-      financeComment: comment || 'Budget verified and approved by Finance.',
+      financeComment: comment || approvalParams?.approvalComments || 'Budget verified and approved by Finance.',
       extra_fields: {
         ...(r.extra_fields || {}),
         finance_approved: true,
         final_approval_by: 'FINANCE',
         finance_status: 'Approved',
+        finance_approved_amount: effectiveApprovedAmount,
       }
     } : r))
 
-    // 3. Add to finance audit history
+    // 2. Add to finance audit history
     setFinanceAuditHistory(prev => [
       {
         id: `AUD-${Date.now()}`,
@@ -3754,13 +4172,30 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         actor,
         action: 'APPROVED',
         timestamp: `${today} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-        comment: comment || 'Budget verified and approved by Finance.',
+        comment: comment || approvalParams?.approvalComments || 'Budget verified and approved by Finance.',
         amount: effectiveApprovedAmount,
         paymentStatus: 'Pending',
       },
       ...prev,
     ])
-  }, [refreshManagerBackendData])
+
+    // 3. Dispatch backend API call with persisted finance_approved_amount
+    try {
+      await approveFinanceRequestApi(id, {
+        finance_approved_amount: effectiveApprovedAmount,
+        approved_amount: effectiveApprovedAmount,
+        cost_center: approvalParams?.costCenter || req.costCenter,
+        budget_code: (approvalParams as any)?.budgetCode || (req as any).budget_code || (req as any).budgetCode,
+        vendor: approvalParams?.vendor || req.vendor,
+        comments: comment || approvalParams?.approvalComments || 'Approved by Finance Department.',
+      })
+      await refreshManagerBackendData()
+      triggerGlobalDataSync('workflow_transition')
+    } catch (e) {
+      console.warn('Finance approve API sync error:', e)
+      await refreshManagerBackendData()
+    }
+  }, [allRequests, financeReview, refreshManagerBackendData])
 
   const processRequestPayment = useCallback(async (
     id: string,
@@ -3782,23 +4217,18 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [refreshManagerBackendData])
 
-  const rejectFinanceRequest = useCallback((id: string, reason: string, comment?: string, actor = 'Mark Finance Officer') => {
-    const req = financeReview.find(r => r.id === id)
-    if (!req) return
+  const rejectFinanceRequest = useCallback(async (id: string, reason: string, comment?: string, actor = 'Mark Finance Officer') => {
+    const cleanId = id.replace(/^(REQ-|TCK-|PO-|PRD-)/, '')
+    const req = allRequests.find(r => r.id === id || (r as any).request_id === id || r.id === `REQ-${cleanId}` || r.id === cleanId) ||
+      financeReview.find(r => r.id === id || r.id === `REQ-${cleanId}`)
+    const targetId = req?.dbId || (req as any)?.rawRequest?.id || req?.id || id
     const today = new Date().toISOString().split('T')[0]
 
-    // 1. Dispatch backend API call
-    rejectFinanceRequestApi(id, reason, comment)
-      .then(() => {
-        refreshManagerBackendData()
-        triggerGlobalDataSync('workflow_transition')
-      })
-      .catch(e => console.warn('Finance reject API sync error:', e))
-
-    // 2. Optimistic update via single source of truth
-    setBackendRequests(prev => prev.map(r => r.id === id ? {
+    // 1. Optimistic update via single source of truth
+    setBackendRequests(prev => prev.map(r => (r.id === id || (r as any).request_id === id || r.id === `REQ-${cleanId}` || r.id === cleanId) ? {
       ...r,
       status: 'finance_rejected',
+      raw_status: 'FINANCE_REJECTED',
       rejectionReason: reason,
       rejectedBy: actor,
       rejectedDate: today,
@@ -3806,56 +4236,75 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       financeComment: comment,
     } : r))
 
-    // 3. Add to finance audit history
-    setFinanceAuditHistory(prev => [
-      {
-        id: `AUD-${Date.now()}`,
-        requestId: req.id,
-        requestTitle: req.title,
-        actor,
-        action: 'REJECTED',
-        timestamp: `${today} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-        reason,
-        comment,
-        amount: req.amount,
-      },
-      ...prev,
-    ])
-  }, [])
+    // 2. Add to finance audit history
+    if (req) {
+      setFinanceAuditHistory(prev => [
+        {
+          id: `AUD-${Date.now()}`,
+          requestId: req.id,
+          requestTitle: req.title,
+          actor,
+          action: 'REJECTED',
+          timestamp: `${today} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          reason,
+          comment,
+          amount: req.amount,
+        },
+        ...prev,
+      ])
+    }
+
+    // 3. Dispatch backend API call
+    try {
+      await rejectFinanceRequestApi(targetId, reason, comment)
+      await refreshManagerBackendData()
+      triggerGlobalDataSync('workflow_transition')
+    } catch (e) {
+      console.warn('Finance reject API sync error:', e)
+      await refreshManagerBackendData()
+      throw e
+    }
+  }, [allRequests, financeReview, refreshManagerBackendData])
 
   const sendBackFinanceRequest = useCallback((id: string, comments: string, actor = 'Mark Finance Officer') => {
-    const req = financeReview.find(r => r.id === id) || allRequests.find(r => r.id === id)
-    if (!req) return
+    const cleanId = id.replace(/^(REQ-|TCK-|PO-|PRD-)/, '')
+    const req = financeReview.find(r => r.id === id || r.id === `REQ-${cleanId}`) || allRequests.find(r => r.id === id || r.id === `REQ-${cleanId}` || (r as any).request_id === id)
     const today = new Date().toISOString().split('T')[0]
 
-    sendBackFinanceRequestApi(id, comments)
+    sendBackFinanceRequestApi(cleanId, comments)
       .then(() => {
         refreshManagerBackendData()
         triggerGlobalDataSync('workflow_transition')
       })
-      .catch(e => console.warn('Finance send back API sync error:', e))
+      .catch(e => {
+        console.warn('Finance send back API sync error:', e)
+        refreshManagerBackendData()
+      })
 
-    setBackendRequests(prev => prev.map(r => r.id === id ? {
+    setBackendRequests(prev => prev.map(r => (r.id === id || (r as any).request_id === id || r.id === `REQ-${cleanId}` || r.id === cleanId) ? {
       ...r,
       status: 'clarification_requested',
+      raw_status: 'SENT_BACK',
       financeStatus: 'Sent Back by Finance',
     } : r))
 
-    setFinanceAuditHistory(prev => [
-      {
-        id: `AUD-${Date.now()}`,
-        requestId: req.id,
-        requestTitle: req.title,
-        actor,
-        action: 'SENT_BACK',
-        timestamp: `${today} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-        reason: 'Sent back for correction',
-        comment: comments,
-        amount: req.amount,
-      },
-      ...prev,
-    ])
-  }, [financeReview, allRequests])
+    if (req) {
+      setFinanceAuditHistory(prev => [
+        {
+          id: `AUD-${Date.now()}`,
+          requestId: req.id,
+          requestTitle: req.title,
+          actor,
+          action: 'SENT_BACK',
+          timestamp: `${today} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          reason: 'Sent back for correction',
+          comment: comments,
+          amount: req.amount,
+        },
+        ...prev,
+      ])
+    }
+  }, [financeReview, allRequests, refreshManagerBackendData])
 
   const holdFinanceRequest = useCallback((id: string, reason: string, actor = 'Mark Finance Officer') => {
     const today = new Date().toISOString().split('T')[0]
@@ -3949,6 +4398,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       recommendedBy: updated.recommended_by || serverExtra.finance_recommended_by || actor,
       recommendedDate: updated.recommended_date || serverExtra.finance_recommended_date || today,
       extra_fields: serverExtra,
+      isForwardedToFinance: true,
       history: Array.isArray(updated.approval_history)
         ? updated.approval_history.map((h: any) => ({
             date: h.created_at || h.timestamp || '',
@@ -4250,107 +4700,48 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // ─── Payment Actions ────────────────────────────────────────────────────────
 
-  const disbursePayment = useCallback((paymentId: string, actor = 'Mark Finance Officer') => {
-    const today = new Date().toISOString().split('T')[0]
-    let paidRequestId = ''
-    let paidPoNumber = ''
-    let paidAmount = 0
-    let paidVendor = ''
+  const disbursePayment = useCallback(async (paymentId: string, actor = 'Mark Finance Officer') => {
+    const payment = payments.find(item => item.id === paymentId)
+    if (!payment) throw new Error('Payment record was not found. Refresh the payment list and retry.')
 
-    setPayments(prev => prev.map(p => {
-      if (p.id !== paymentId) return p
-      paidRequestId = p.requestId
-      paidPoNumber = p.poNumber
-      paidAmount = p.amount
-      paidVendor = p.vendor
-      return {
-        ...p,
-        status: 'Paid',
-        paymentDate: today,
-        history: [
-          ...(p.history || []),
-          { timestamp: `${today} ${new Date().toLocaleTimeString()}`, actor, action: 'Payment Disbursed' },
-        ],
-      }
-    }))
-
-    // Persist to PostgreSQL backend via Django REST API
-    disbursePaymentApi(paymentId).catch(() => null)
-    createPaymentApi({
-      requestId: paidRequestId,
-      poNumber: paidPoNumber,
-      amount: paidAmount,
-      vendor: paidVendor,
-      status: 'Paid'
-    }).then(() => {
-      window.dispatchEvent(new Event('kss_backend_updated'))
-    }).catch(() => null)
-
-    // Synchronize request status to completed
-    if (paidRequestId) {
-      const matchId = paidRequestId.split('-PROD-')[0]
-      setBackendRequests(prev => prev.map(r => {
-        if (r.id === paidRequestId || r.id === matchId) {
-          return { ...r, status: 'completed', paymentStatus: 'Paid', financeStatus: 'Completed' }
-        }
-        return r
-      }))
+    const savedPayment = await disbursePaymentApi(paymentId)
+    if (!savedPayment || !['PAID', 'SUCCESS', 'MOCK_SUCCESS'].includes(String(savedPayment.status || '').toUpperCase())) {
+      throw new Error('The server did not confirm payment completion. The request was left unchanged.')
     }
-  }, [])
 
-  const updatePaymentStatus = useCallback((paymentId: string, status: PaymentStatus, actor = 'Mark Finance Officer', notes?: string) => {
     const today = new Date().toISOString().split('T')[0]
-    let paidRequestId = ''
-    let paidPoNumber = ''
-    let paidAmount = 0
-    let paidVendor = ''
+    setPayments(prev => prev.map(item => item.id === paymentId ? {
+      ...item,
+      status: 'Paid',
+      paymentDate: savedPayment.payment_date || today,
+      history: [
+        ...(item.history || []),
+        { timestamp: `${today} ${new Date().toLocaleTimeString()}`, actor, action: 'Payment Disbursed' },
+      ],
+    } : item))
 
-    setPayments(prev => prev.map(p => {
-      if (p.id !== paymentId) return p
-      if (status === 'Paid') {
-        paidRequestId = p.requestId
-        paidPoNumber = p.poNumber
-        paidAmount = p.amount
-        paidVendor = p.vendor
-      }
-      return {
-        ...p,
-        status,
-        notes: notes || p.notes,
-        paymentDate: status === 'Paid' ? today : p.paymentDate,
-        history: [
-          ...(p.history || []),
-          { timestamp: `${today} ${new Date().toLocaleTimeString()}`, actor, action: `Status changed to ${status}`, note: notes },
-        ],
-      }
-    }))
+    triggerGlobalDataSync('workflow_transition')
+    window.dispatchEvent(new Event('kss_backend_updated'))
+  }, [payments])
 
-    // If status changed to Paid, persist to backend
+  const updatePaymentStatus = useCallback(async (paymentId: string, status: PaymentStatus, actor = 'Mark Finance Officer', notes?: string) => {
     if (status === 'Paid') {
-      disbursePaymentApi(paymentId).catch(() => null)
-      createPaymentApi({
-        requestId: paidRequestId,
-        poNumber: paidPoNumber,
-        amount: paidAmount,
-        vendor: paidVendor,
-        status: 'Paid',
-        notes
-      }).then(() => {
-        window.dispatchEvent(new Event('kss_backend_updated'))
-      }).catch(() => null)
+      await disbursePayment(paymentId, actor)
+      if (notes) setPayments(prev => prev.map(item => item.id === paymentId ? { ...item, notes } : item))
+      return
     }
 
-    // Synchronize request status to completed
-    if (status === 'Paid' && paidRequestId) {
-      const matchId = paidRequestId.split('-PROD-')[0]
-      setBackendRequests(prev => prev.map(r => {
-        if (r.id === paidRequestId || r.id === matchId) {
-          return { ...r, status: 'completed', paymentStatus: 'Paid', financeStatus: 'Completed' }
-        }
-        return r
-      }))
-    }
-  }, [])
+    const today = new Date().toISOString().split('T')[0]
+    setPayments(prev => prev.map(item => item.id === paymentId ? {
+      ...item,
+      status,
+      notes: notes || item.notes,
+      history: [
+        ...(item.history || []),
+        { timestamp: `${today} ${new Date().toLocaleTimeString()}`, actor, action: `Status changed to ${status}`, note: notes },
+      ],
+    } : item))
+  }, [disbursePayment])
 
   // ─── Vendor Lifecycle & Raise Ticket Pipeline Actions ────────────────────────
 
@@ -4653,7 +5044,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }))
   }, [allRequests])
 
-  const makePayment = useCallback((
+  const makePayment = useCallback(async (
     requestId: string,
     ticketId?: string,
     paymentDetails?: {
@@ -4679,6 +5070,28 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const matchedReq = allRequests.find(r => r.id === requestId)
     const effectiveAmount = paymentDetails?.amount || matchedReq?.amount || 350000
     const effectiveVendor = matchedReq?.vendor || 'Dell Technologies India'
+    const lowerMethod = selectedMethod.toLowerCase()
+    const apiPaymentMethod = lowerMethod.includes('upi')
+      ? 'UPI'
+      : lowerMethod.includes('cash')
+        ? 'Cash'
+        : lowerMethod.includes('card')
+          ? 'Credit Card'
+          : 'Bank Transfer'
+
+    // Persist and confirm the payment before changing local workflow state.
+    const savedPayment = await createPaymentApi({
+      requestId,
+      amount: effectiveAmount,
+      vendor: effectiveVendor,
+      paymentMethod: apiPaymentMethod,
+      referenceNumber: utrRef,
+      notes: userNotes,
+      status: 'Paid'
+    })
+    if (!savedPayment || !['PAID', 'SUCCESS', 'MOCK_SUCCESS'].includes(String(savedPayment.status || '').toUpperCase())) {
+      throw new Error('Payment was not saved by the server. Check the payment details and try again.')
+    }
 
     const reqNorm = (requestId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
     const tckNorm = (ticketId || '').replace(/^(REQ-|TCK-|PO-|PRD-)/, '').slice(0, 8).trim().toUpperCase()
@@ -4844,24 +5257,8 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return inv
     }))
 
-    // 6. Persist Payment to PostgreSQL backend via Django REST API
-    createPaymentApi({
-      requestId: requestId,
-      invoiceId: `INV-${requestId}`,
-      poNumber: `PO-${requestId}`,
-      amount: effectiveAmount,
-      vendor: effectiveVendor,
-      paymentMethod: selectedMethod,
-      referenceNumber: utrRef,
-      notes: userNotes,
-      status: 'Paid'
-    }).then(() => {
-      window.dispatchEvent(new Event('kss_backend_updated'))
-    }).catch(e => {
-      console.warn('Backend payment creation warning:', e)
-    })
-
-    // Broadcast update event to all portals
+    // Refresh workflow data only after the backend confirms payment persistence.
+    triggerGlobalDataSync('workflow_transition')
     window.dispatchEvent(new Event('kss_backend_updated'))
 
     return {
@@ -5015,6 +5412,7 @@ export const ManagerDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       selectVendorQuotation,
       addRFQ,
       sendToFinance,
+      sendReceiptToHigherAuthority,
       verifyDocument,
       submitTicket,
       submitProductTicket,
@@ -5114,10 +5512,11 @@ export const defaultManagerDataContextValue: ManagerDataContextType = {
   acceptRequest: noop,
   rejectRequest: noop,
   recommendToFinance: noop,
-  approveRequest: noop,
+  approveRequest: async () => {},
   selectVendorQuotation: noop,
   addRFQ: noop,
   sendToFinance: noop,
+  sendReceiptToHigherAuthority: async () => {},
   verifyDocument: noop,
   submitTicket: noop,
   submitProductTicket: noop,
@@ -5125,7 +5524,7 @@ export const defaultManagerDataContextValue: ManagerDataContextType = {
   rejectVendorInvoice: noop,
   approveFinanceRequest: noop,
   processRequestPayment: async () => {},
-  rejectFinanceRequest: noop,
+  rejectFinanceRequest: async () => {},
   sendBackFinanceRequest: noop,
   holdFinanceRequest: noop,
   requestClarification: noop,
@@ -5138,13 +5537,13 @@ export const defaultManagerDataContextValue: ManagerDataContextType = {
   updatePOStatus: noop,
   verifyReceipt: noop,
   renewContract: noop,
-  disbursePayment: noop,
-  updatePaymentStatus: noop,
+  disbursePayment: async () => {},
+  updatePaymentStatus: async () => {},
   assignVendorToRequest: noop,
   vendorAcceptRequest: noop,
   vendorRejectRequest: noop,
   vendorSubmitDeliveryAndInvoice: noop,
-  makePayment: () => ({ utrRef: '', amount: 0, date: '', vendor: '' }),
+  makePayment: async () => ({ utrRef: '', amount: 0, date: '', vendor: '' }),
   addComplaint: noop,
   updateComplaintStatus: noop,
   addComplaintComment: noop,

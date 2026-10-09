@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { getNotifications, getUnreadNotificationCount, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
+import { getNotifications, getNotificationsWithCount, getUnreadNotificationCount, markNotificationRead, markAllNotificationsRead, BackendNotification } from '../../api/notificationApi'
 import { subscribeGlobalDataSync, triggerGlobalDataSync } from '../../utils/syncUtils'
 
 export interface NotificationItem {
@@ -67,21 +67,21 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
   const fetchRealNotifications = useCallback(async () => {
     if (fetchInFlight.current) return
     fetchInFlight.current = true
-    setLoading(true)
     try {
       const isVendorPortal = location.pathname.includes('/portal/vendor') || activeRole === 'VENDOR' || user?.role === 'VENDOR'
-      let params: { role?: string; user?: string; vendor?: string } = { role: activeRole }
-
-      if (isVendorPortal) {
-        params = { vendor: getActiveVendorId() }
-      } else if (user?.username) {
-        params = { user: user.username, role: activeRole }
+      let params: { role?: string; user?: string; vendor?: string; page_size?: number } = { 
+        role: activeRole,
+        page_size: 20
       }
 
-      const [data, unreadTotal] = await Promise.all([
-        getNotifications({ ...params, page_size: 1000 }),
-        getUnreadNotificationCount(params),
-      ])
+      if (isVendorPortal) {
+        params.vendor = getActiveVendorId()
+      } else if (user?.username) {
+        params.user = user.username
+        params.role = activeRole
+      }
+
+      const { notifications: data, unreadCount: totalUnread } = await getNotificationsWithCount(params)
       
       const mapped: NotificationItem[] = data.map((n) => {
         const readStatus = n.is_read !== undefined ? Boolean(n.is_read) : Boolean(n.isRead)
@@ -93,14 +93,14 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
           timestamp: n.timestamp || 'Just now',
           date: n.date || n.created_at || '',
           isRead: readStatus,
-          category: n.category || 'Approval',
+          category: (n.category as any) || 'Approval',
           requestId: reqId,
           sender: n.sender || 'Procurement System',
         }
       })
 
       setNotifications(mapped)
-      if (unreadTotal !== null) setUnreadCount(unreadTotal)
+      setUnreadCount(totalUnread)
     } catch (err) {
       console.warn('Temporary issue loading notifications in dropdown:', err)
     } finally {
@@ -117,11 +117,38 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       fetchRealNotifications()
     })
 
-    // 2. Heartbeat interval to ensure background real-time updates
-    const interval = setInterval(fetchRealNotifications, 3000)
+    // 2. Direct Window event listeners for immediate in-tab mutations
+    const handleUpdate = () => {
+      fetchRealNotifications()
+    }
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchRealNotifications()
+      }
+    }
+
+    window.addEventListener('kss_backend_updated', handleUpdate)
+    window.addEventListener('kss_notifications_updated', handleUpdate)
+    window.addEventListener('kss_request_created', handleUpdate)
+    window.addEventListener('storage', handleUpdate)
+    window.addEventListener('focus', handleUpdate)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // 3. Heartbeat polling interval (10s) when tab is active
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchRealNotifications()
+      }
+    }, 10000)
 
     return () => {
       unsubscribeSync()
+      window.removeEventListener('kss_backend_updated', handleUpdate)
+      window.removeEventListener('kss_notifications_updated', handleUpdate)
+      window.removeEventListener('kss_request_created', handleUpdate)
+      window.removeEventListener('storage', handleUpdate)
+      window.removeEventListener('focus', handleUpdate)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       clearInterval(interval)
     }
   }, [fetchRealNotifications])
@@ -237,7 +264,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
     return getNotificationPageRoute()
   }
 
-  // Click notification: mark as read, close dropdown, navigate to destination
+  // Click notification: mark as read, close dropdown, navigate to notification page
   const handleNotificationClick = async (item: NotificationItem) => {
     if (!item.isRead) {
       setNotifications((prev) =>
@@ -253,7 +280,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ curr
       }
     }
     setIsOpen(false)
-    const targetRoute = resolveTargetRoute(item)
+    const targetRoute = getNotificationPageRoute()
     navigate(targetRoute, {
       state: {
         selectedNotificationId: item.id,

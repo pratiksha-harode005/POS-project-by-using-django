@@ -9,6 +9,11 @@ import {
 
 export const STEP_NAMES = HARDWARE_STAGES
 
+const getHistoryFallbackTimestamp = (lastUpdated: string, time: string, rawStatus?: string) => {
+  if (lastUpdated) return `${lastUpdated} ${time}`
+  return rawStatus ? 'Not available' : `2026-09-11 ${time}`
+}
+
 export interface StepHistoryItem {
   stageNumber: number
   stageName: string
@@ -22,6 +27,7 @@ export interface TrackingStepperProps {
   requestId?: string
   currentStage?: number // 0-based
   status: 'Pending' | 'Approved' | 'Rejected' | 'Returned' | 'In Procurement' | 'Completed' | string
+  rawStatus?: string
   currentlyWith?: string
   lastUpdated?: string
   history?: StepHistoryItem[]
@@ -65,8 +71,9 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
   requestId,
   currentStage,
   status,
+  rawStatus,
   currentlyWith,
-  lastUpdated = '2026-09-11',
+  lastUpdated = '',
   history,
   approval_steps,
   category,
@@ -110,6 +117,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
   const progression = useMemo(() => {
     const res = getWorkflowProgression({
       status,
+      raw_status: rawStatus,
       financeStatus,
       category,
       title,
@@ -134,6 +142,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
     return res
   }, [
     status,
+    rawStatus,
     financeStatus,
     category,
     title,
@@ -196,7 +205,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
         stageName: 'Create Request',
         actor: 'Team Lead (Requester)',
         action: 'Request Created & Submitted',
-        timestamp: lastUpdated ? `${lastUpdated} 09:30 AM` : '2026-09-11 09:30 AM',
+        timestamp: getHistoryFallbackTimestamp(lastUpdated, '09:30 AM', rawStatus),
         note: 'Initial procurement request submitted for approval.',
       },
     ]
@@ -209,7 +218,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
           stageName: 'PM Review',
           actor: 'Project Manager — Sarah Manager',
           action: effectiveStageIdx === 1 ? 'Under Review & Pre-Estimation' : 'PM Review Completed',
-          timestamp: lastUpdated ? `${lastUpdated} 11:15 AM` : '2026-09-11 11:15 AM',
+          timestamp: getHistoryFallbackTimestamp(lastUpdated, '11:15 AM', rawStatus),
           note:
             effectiveStageIdx === 1
               ? 'Request is currently undergoing manager budget and pre-estimation review.'
@@ -223,7 +232,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
           stageName: 'Request Approved',
           actor: 'Sarah Manager (Procurement Manager)',
           action: effectiveStageIdx === 2 ? 'Pending Final Recommendation' : 'Request Approved & Forwarded',
-          timestamp: lastUpdated ? `${lastUpdated} 01:30 PM` : '2026-09-11 01:30 PM',
+          timestamp: getHistoryFallbackTimestamp(lastUpdated, '01:30 PM', rawStatus),
           note: 'Request approved by PM and recommended to Finance Directorate.',
         })
       }
@@ -234,7 +243,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
           stageName: 'Payment Approved',
           actor: 'Mark Finance (Finance Directorate)',
           action: effectiveStageIdx === 3 ? 'Under Financial Audit' : 'Payment Approved',
-          timestamp: lastUpdated ? `${lastUpdated} 03:00 PM` : '2026-09-11 03:00 PM',
+          timestamp: getHistoryFallbackTimestamp(lastUpdated, '03:00 PM', rawStatus),
           note: 'Commercial budget approved and capital authorized for disbursement.',
         })
       }
@@ -245,7 +254,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
           stageName: 'Payment Justified',
           actor: 'Treasury & Bank Clearing',
           action: effectiveStageIdx === 4 ? 'Awaiting Payment Disbursement' : 'Payment Justified & Settled',
-          timestamp: lastUpdated ? `${lastUpdated} 04:15 PM` : '2026-09-11 04:15 PM',
+          timestamp: getHistoryFallbackTimestamp(lastUpdated, '04:15 PM', rawStatus),
           note: 'Transaction executed and UTR justification recorded.',
         })
       }
@@ -256,108 +265,82 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
           stageName: 'Request Closed',
           actor: 'Team Lead / Requester',
           action: progression.isCompleted ? 'Request Closed & Verified' : 'Awaiting Receipt Confirmation',
-          timestamp: lastUpdated ? `${lastUpdated} 05:00 PM` : '2026-09-11 05:00 PM',
+          timestamp: getHistoryFallbackTimestamp(lastUpdated, '05:00 PM', rawStatus),
           note: 'Software credentials received, verified, and procurement request closed.',
         })
       }
     } else {
-      // Hardware supply chain steps
-      if (effectiveStageIdx >= 1) {
-        items.push({
-          stageNumber: 2,
-          stageName: 'Manager Approval',
+      // Dynamic hardware supply chain steps fallback
+      const hwStageDetails: Record<string, { actor: string; time: string; note: string }> = {
+        'Manager Approval': {
           actor: 'Sarah Manager',
-          action: effectiveStageIdx === 1 ? 'Under Review' : 'Approved by Manager',
-          timestamp: lastUpdated ? `${lastUpdated} 11:15 AM` : '2026-09-11 11:15 AM',
-          note:
-            effectiveStageIdx === 1
-              ? 'Request is currently undergoing manager budget and justification verification.'
-              : 'Manager approved and routed to next approval stage.',
-        })
-      }
-
-      if (effectiveStageIdx >= 2) {
-        items.push({
-          stageNumber: 3,
-          stageName: 'Finance Approval',
+          time: '11:15 AM',
+          note: 'Manager reviews and approves the procurement request.',
+        },
+        'Finance Approval': {
           actor: 'Mark Finance',
-          action: effectiveStageIdx === 2 ? 'In Review' : 'Budget Approved',
-          timestamp: lastUpdated ? `${lastUpdated} 02:45 PM` : '2026-09-11 02:45 PM',
-          note: 'Department allocation checked against Q3 Capex threshold.',
-        })
-      }
-
-      if (effectiveStageIdx >= 3) {
-        items.push({
-          stageNumber: 4,
-          stageName: 'Admin Approval',
+          time: '02:45 PM',
+          note: 'Finance review and budget allocation verification.',
+        },
+        'Admin Approval': {
           actor: 'Priyanka Sharma (Admin)',
-          action: effectiveStageIdx === 3 ? 'Under Admin Review' : 'Approved by Executive Authority',
-          timestamp: lastUpdated ? `${lastUpdated} 04:30 PM` : '2026-09-11 04:30 PM',
+          time: '04:30 PM',
           note: 'Executive procurement governance and compliance sign-off.',
-        })
+        },
+        'RFQ Sent': {
+          actor: 'Procurement Sourcing Team',
+          time: '09:00 AM',
+          note: 'Request for Quotations dispatched to verified vendors.',
+        },
+        'Vendor Quotes Received': {
+          actor: 'Vendor Sourcing Desk',
+          time: '01:20 PM',
+          note: 'Vendor quotations are collected and evaluated.',
+        },
+        'Product Order': {
+          actor: 'Vendor Partner',
+          time: '02:00 PM',
+          note: 'The selected quotation proceeds to product ordering.',
+        },
+        Delivery: {
+          actor: 'Logistics & Dock',
+          time: '03:00 PM',
+          note: 'Ordered goods proceed through delivery and receiving.',
+        },
+        'Verification and Order Complete': {
+          actor: 'Procurement Audit & Operations',
+          time: '04:00 PM',
+          note: 'Delivery and order documents are verified for payment release.',
+        },
+        Payment: {
+          actor: 'Treasury & Finance',
+          time: '04:45 PM',
+          note: 'Procurement payment disbursed to supplier to settle order fulfillment.',
+        },
+        'Payment Completed': {
+          actor: 'Treasury & Finance',
+          time: '04:45 PM',
+          note: 'Procurement payment disbursed to supplier to settle order fulfillment.',
+        },
       }
 
-      if (effectiveStageIdx >= 4) {
+      progression.stages.slice(1).forEach((stageName, offset) => {
+        const stageIndex = offset + 1
+        if (stageIndex > effectiveStageIdx) return
+        const detail = hwStageDetails[stageName] || {
+          actor: 'Procurement Operations',
+          time: '02:00 PM',
+          note: `${stageName} processed.`,
+        }
         items.push({
-          stageNumber: 5,
-          stageName: 'RFQ Sent',
-          actor: 'Procurement Sourcing Team',
-          action: 'RFQs Dispatched to Vendors',
-          timestamp: `${lastUpdated} 09:00 AM`,
-          note: 'Request for Quotations dispatched to verified vendors.',
+          stageNumber: stageIndex + 1,
+          stageName,
+          actor: detail.actor,
+          action: stageIndex === effectiveStageIdx ? (progression.isCompleted ? 'Completed' : 'In Progress') : 'Completed',
+          timestamp: getHistoryFallbackTimestamp(lastUpdated, detail.time, rawStatus),
+          note: detail.note,
         })
-      }
-      if (effectiveStageIdx >= 5) {
-        items.push({
-          stageNumber: 6,
-          stageName: 'Vendor Quotes Received',
-          actor: 'Vendor Sourcing Desk',
-          action: 'Quotations Evaluated',
-          timestamp: `${lastUpdated} 01:20 PM`,
-          note: 'Bids received and commercial comparison completed.',
-        })
-      }
-      if (effectiveStageIdx >= 6) {
-        items.push({
-          stageNumber: 7,
-          stageName: 'Delivery',
-          actor: 'Dock & Receiving',
-          action: 'Physical Delivery Verified',
-          timestamp: `${lastUpdated} 03:00 PM`,
-          note: 'Goods received on-site and inspected.',
-        })
-      }
-      if (effectiveStageIdx >= 7) {
-        items.push({
-          stageNumber: 8,
-          stageName: 'Invoice',
-          actor: 'Accounts Payable',
-          action: 'Invoice Reconciled',
-          timestamp: `${lastUpdated} 10:30 AM`,
-          note: 'Vendor tax invoice matched with delivery receipt and order record.',
-        })
-      }
-      if (effectiveStageIdx >= 8) {
-        items.push({
-          stageNumber: 9,
-          stageName: 'Verification and Order Complete',
-          actor: 'Procurement Audit & Operations',
-          action: 'Two-Way Verification Certified',
-          timestamp: `${lastUpdated} 02:00 PM`,
-          note: 'Goods Receipt and Invoice verification completed and approved for payment release.',
-        })
-      }
-      if (effectiveStageIdx >= 9 || progression.isCompleted) {
-        items.push({
-          stageNumber: 10,
-          stageName: 'Payment',
-          actor: 'Treasury & Finance',
-          action: progression.isCompleted ? 'Payment Processed & Released' : 'Disbursement Scheduled',
-          timestamp: `${lastUpdated} 04:45 PM`,
-          note: 'Procurement payment disbursed to awarded supplier to settle order fulfillment.',
-        })
-      }
+      })
     }
 
     return items
@@ -395,7 +378,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
               Live Workflow Sync
             </span>
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-              {progression.workflowType === 'SOFTWARE' ? 'Software / Digital (6 Stages)' : 'Hardware Workflow (10 Stages)'}
+              {progression.workflowType === 'SOFTWARE' ? 'Software / Digital (6 Stages)' : `Hardware Workflow (${stages.length} Stages)`}
             </span>
           </div>
         </div>
@@ -587,7 +570,7 @@ export const TrackingStepper: React.FC<TrackingStepperProps> = ({
           </button>
 
           <span className="text-gray-400 text-xs">
-            Last updated: {lastUpdated}
+            Last updated: {lastUpdated || 'Not available'}
           </span>
         </div>
 

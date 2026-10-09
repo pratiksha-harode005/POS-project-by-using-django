@@ -45,9 +45,11 @@ import {
   XCircle,
   X,
   Trash2,
+  AlertTriangle,
   Search,
 } from 'lucide-react'
 import { DocumentPdfViewerModal, DocumentPdfData } from '../../components/portal/DocumentPdfViewerModal'
+import { ModalPortal } from '../../components/portal/ModalPortal'
 import { verifyDocumentApi } from '../../api/managerApi'
 import {
   getVendorInvoices,
@@ -6712,8 +6714,9 @@ export function UploadDocumentModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4 overflow-y-auto animate-fadeIn">
-      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp my-4 text-xs">
+    <ModalPortal isOpen={isOpen}>
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4 overflow-y-auto animate-fadeIn">
+        <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp my-4 text-xs relative z-10">
         
         {/* Clean Modal Header */}
         <div className="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between flex-shrink-0">
@@ -7056,6 +7059,7 @@ export function UploadDocumentModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -7156,6 +7160,8 @@ export const VendorDocumentsPage: React.FC = () => {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [viewingDoc, setViewingDoc] = useState<any | null>(null)
   const [downloadToast, setDownloadToast] = useState('')
+  const [docToDelete, setDocToDelete] = useState<any | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Merge Admin's status overrides into document list
   const applyOverrides = (docs: any[]) => {
@@ -7293,6 +7299,17 @@ export const VendorDocumentsPage: React.FC = () => {
     window.dispatchEvent(new Event('storage'))
     setDownloadToast('Document deleted successfully.')
     setTimeout(() => setDownloadToast(''), 3000)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!docToDelete) return
+    setIsDeleting(true)
+    try {
+      await handleDeleteDoc(docToDelete)
+    } finally {
+      setIsDeleting(false)
+      setDocToDelete(null)
+    }
   }
 
   const handleDownloadDoc = (doc: any) => {
@@ -7470,7 +7487,7 @@ Certified Digital Audit Seal • KSS Procurement OS Governance Standard
                         </button>
 
                         <button
-                          onClick={() => handleDeleteDoc(doc)}
+                          onClick={() => setDocToDelete(doc)}
                           className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition-colors cursor-pointer"
                           title="Delete Document"
                         >
@@ -7485,6 +7502,81 @@ Certified Digital Audit Seal • KSS Procurement OS Governance Standard
           </table>
         </div>
       )}
+
+      {/* Delete Confirmation Warning Modal */}
+      <ModalPortal isOpen={Boolean(docToDelete)}>
+        {docToDelete && (
+          <div
+            className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4 animate-fadeIn"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isDeleting) {
+                setDocToDelete(null)
+              }
+            }}
+          >
+            <div
+              className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-scaleUp relative z-10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0">
+                  <AlertTriangle size={20} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-gray-900">Delete Document</h3>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Are you sure you want to delete this document? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-xs space-y-2">
+                <div className="flex items-center justify-between text-gray-600">
+                  <span className="font-medium text-gray-500">Document Ref:</span>
+                  <span className="font-bold text-blue-600">{docToDelete.id}</span>
+                </div>
+                <div className="flex items-start justify-between text-gray-600 gap-2">
+                  <span className="font-medium text-gray-500 whitespace-nowrap">Document Name:</span>
+                  <span className="font-bold text-gray-900 text-right truncate max-w-[220px]">{docToDelete.name}</span>
+                </div>
+                {docToDelete.category && (
+                  <div className="flex items-center justify-between text-gray-600">
+                    <span className="font-medium text-gray-500">Category:</span>
+                    <span className="font-semibold text-gray-800">{docToDelete.category}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setDocToDelete(null)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" /> Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={13} /> Delete Document
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalPortal>
 
       <UploadDocumentModal
         isOpen={showUploadModal}

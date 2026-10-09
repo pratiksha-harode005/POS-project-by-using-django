@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useFinanceData, TicketProduct, isFinanceRelevantRequest } from '../../context/ManagerDataContext'
+import { isHardwareRequest, isSoftwareRequest } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentPdfViewerModal } from '../../components/portal/DocumentPdfViewerModal'
 import { markVendorInvoiceVerified, markVendorDeliveryVerified } from '../vendor/VendorPortalPages'
@@ -28,10 +29,16 @@ export const FinanceRaiseTicketPage: React.FC = () => {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Strictly filter tickets so only Finance-eligible, manager-forwarded, non-rejected requests appear
+  // Strictly filter tickets: Show only Hardware requests where Vendor has sent/submitted the PO
   const financeTickets = useMemo(() => {
     const list = tickets.filter(t => {
       if (!t.requestId && !t.id) return false
+
+      // Reject software tickets directly
+      if ((t as any).isSoftware || (t as any).workflowType === 'SOFTWARE') return false
+      const tCat = ((t as any).category || (t.products && t.products[0]?.category) || '').toLowerCase()
+      if (tCat.includes('software') || tCat.includes('saas') || tCat.includes('cloud') || tCat.includes('license') || tCat.includes('subscription')) return false
+
       const normTicketReq = (t.requestId || t.id || '').replace(/^(REQ-|PO-|TCK-|TKT-|RFQ-)/i, '').trim().toUpperCase()
       const req = financeRequests.find(r => {
         if (!r.id) return false
@@ -39,10 +46,29 @@ export const FinanceRaiseTicketPage: React.FC = () => {
         const normReq = r.id.replace(/^(REQ-|PO-|TCK-|TKT-|RFQ-)/i, '').trim().toUpperCase()
         return normReq === normTicketReq
       })
+
       if (req) {
-        return isFinanceRelevantRequest(req) && req.status !== 'rejected'
+        // STRICT: Must be Hardware and NOT Software
+        if (isSoftwareRequest(req) || !isHardwareRequest(req)) return false
+        if (req.status === 'rejected') return false
+
+        // STRICT: Must have Vendor PO sent / submitted
+        const hasVendorPo = Boolean(
+          t.productOrder ||
+          (t.products && t.products.some(p => p.productOrder)) ||
+          req.poNumber ||
+          (req as any).po_number ||
+          (req as any).po_id ||
+          ((req as any).purchase_orders && (req as any).purchase_orders.length > 0)
+        )
+        if (!hasVendorPo) return false
+
+        return isFinanceRelevantRequest(req)
       }
-      return false
+
+      // If req not in financeRequests list, ensure ticket itself has a valid hardware PO
+      const hasTicketPo = Boolean(t.productOrder || (t.products && t.products.some(p => p.productOrder)))
+      return hasTicketPo
     })
     return [...list].sort((a, b) => {
       const timeA = new Date(a.createdAt || a.createdDate || (a as any).created_at || 0).getTime()
@@ -146,6 +172,7 @@ export const FinanceRaiseTicketPage: React.FC = () => {
   const [utrRef, setUtrRef] = useState('')
   const [settlementNote, setSettlementNote] = useState('')
   const [utrError, setUtrError] = useState('')
+  const [isPaymentSubmitting, setIsPaymentSubmitting] = useState(false)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -358,7 +385,8 @@ export const FinanceRaiseTicketPage: React.FC = () => {
   const handleOpenPaymentModal = handleMakePayment
 
   // Validate UTR / reference and dispatch payment
-  const handleConfirmAndPay = () => {
+  const handleConfirmAndPay = async () => {
+    if (isPaymentSubmitting) return
     if (payMethod === 'bank') {
       const isBankUtrValid = /^[A-Za-z]{4}[0-9]{11}$/.test(utrRef.trim())
       if (!isBankUtrValid) {
@@ -376,13 +404,19 @@ export const FinanceRaiseTicketPage: React.FC = () => {
     const amount = product ? product.totalAmount : ticket.requestAmount
     const vendor = product?.vendor || ticket.products?.[0]?.vendor || 'Vendor Partner'
     const methodLabel = payMethod === 'bank' ? 'NEFT / RTGS / IMPS' : payMethod === 'upi' ? 'UPI Instant Transfer' : payMethod === 'cash' ? 'Cash / Petty Cash' : 'Corporate Card'
-    const res = makePayment(ticket.requestId, ticket.id, {
+    setIsPaymentSubmitting(true)
+    const res = await makePayment(ticket.requestId, ticket.id, {
       amount,
       paymentMethod: methodLabel,
       productId: product?.id,
       transactionRef: utrRef.trim(),
-      referenceNumber: utrRef.trim()
-    })
+      referenceNumber: utrRef.trim(),
+      notes: settlementNote.trim() || undefined,
+    }).catch((error: unknown) => {
+      showToast(error instanceof Error ? error.message : 'Payment could not be saved. Please retry.', 'error')
+      return null
+    }).finally(() => setIsPaymentSubmitting(false))
+    if (!res) return
 
     setPaymentResult({
       ...res,
@@ -1320,15 +1354,15 @@ export const FinanceRaiseTicketPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleConfirmAndPay}
-                      disabled={!canPay}
+                      disabled={!canPay || isPaymentSubmitting}
                       className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-black rounded-xl shadow transition-all ${
-                        canPay
+                        canPay && !isPaymentSubmitting
                           ? 'bg-slate-800 hover:bg-slate-900 text-white cursor-pointer'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       }`}
                     >
                       <CreditCard size={14} />
-                      Confirm &amp; Pay ({fmt(payable)})
+                      {isPaymentSubmitting ? 'Saving payment…' : `Confirm & Pay (${fmt(payable)})`}
                     </button>
                   </div>
                 </div>
@@ -1529,10 +1563,10 @@ export const FinanceRaiseTicketPage: React.FC = () => {
 
             <div className="flex items-center gap-3">
               <Link
-                to="/portal/finance/history"
+                to="/portal/finance/purchase-requests"
                 className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center justify-center gap-1.5"
               >
-                <span>View Approvals Timeline</span>
+                <span>View Purchase Requests</span>
                 <ArrowRight size={14} />
               </Link>
               <button

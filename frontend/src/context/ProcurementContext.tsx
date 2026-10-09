@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { getTeamLeadRequests, createTeamLeadRequest, saveDraftRequest, resubmitTeamLeadRequest, submitDraftRequest, deleteDraftRequest } from '../api/teamleadApi'
-import { getWorkflowProgression, sortRequestsNewestFirst } from '../utils/workflowUtils'
+import { getWorkflowProgression, sortRequestsNewestFirst, isSoftwareRequest } from '../utils/workflowUtils'
 import { apiClient } from '../api/client'
 import { triggerGlobalDataSync, subscribeGlobalDataSync } from '../utils/syncUtils'
 
@@ -37,6 +37,7 @@ export interface PurchaseRequest {
   flowType: 'A' | 'B'
   extraFields?: Record<string, any>
   history: ApprovalStep[]
+  approval_steps?: any[]
   deliveryRef?: string
   expectedDelivery?: string
   poRef?: string
@@ -156,7 +157,7 @@ interface ProcurementContextType {
   addRequest: (req: Omit<PurchaseRequest, 'id' | 'date' | 'lastUpdated' | 'currentlyWith' | 'history'> & { id?: string }) => Promise<PurchaseRequest>
   submitDraft: (id: string, updatedData?: Partial<PurchaseRequest>) => Promise<void>
   deleteDraft: (id: string) => Promise<void>
-  refreshBackendRequests: () => Promise<void>
+  refreshBackendRequests: (options?: { requestsOnly?: boolean }) => Promise<void>
   resubmitRequest: (id: string, updatedData?: Partial<PurchaseRequest>) => void
   uploadReceipt: (paymentId: string, receiptData: ReceiptSubmissionPayload | File) => void
   assignVendorToRequest: (requestId: string, vendorId: string, vendorName: string, notes?: string) => void
@@ -165,6 +166,7 @@ interface ProcurementContextType {
   markNotificationRead: (id: number) => void
   isPaymentsLoading: boolean
   paymentsError: string | null
+  requestRefreshError: string | null
   markAllNotificationsRead: () => void
   releaseFinancePayment: (paymentIdOrPoRef: string) => void
   updateNotificationPreferences: (prefs: Record<string, boolean>) => void
@@ -208,6 +210,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [isPaymentsLoading, setIsPaymentsLoading] = useState(true)
   const [paymentsError, setPaymentsError] = useState<string | null>(null)
+  const [requestRefreshError, setRequestRefreshError] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<NotificationRecord[]>([])
   const [profile, setProfile] = useState<ExtendedProfile>(INITIAL_PROFILE)
   const [notificationPreferences, setNotificationPreferences] = useState<Record<string, boolean>>({
@@ -237,10 +240,12 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // Dynamic parallel fetch from Django REST API backend
   const isFetchingRef = React.useRef(false)
   const refreshQueuedRef = React.useRef(false)
+  const refreshQueuedRequestsOnlyRef = React.useRef<boolean | null>(null)
   const requestMutationVersionRef = React.useRef(0)
 
   // Dynamic fetch from Django REST API backend
-  const refreshBackendRequests = async () => {
+  const refreshBackendRequests = async (options?: { requestsOnly?: boolean }) => {
+    const requestsOnly = Boolean(options?.requestsOnly)
     const token = localStorage.getItem('access_token')
     if (!token) {
       setIsPaymentsLoading(false)
@@ -248,23 +253,50 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
     if (isFetchingRef.current) {
       refreshQueuedRef.current = true
+      refreshQueuedRequestsOnlyRef.current = refreshQueuedRequestsOnlyRef.current === null
+        ? requestsOnly
+        : refreshQueuedRequestsOnlyRef.current && requestsOnly
       return
     }
     isFetchingRef.current = true
     const requestVersionAtFetchStart = requestMutationVersionRef.current
+    const currentUserRole = (localStorage.getItem('user_role') || '').toUpperCase()
+    const isTeamLead = currentUserRole === 'TEAM_LEAD'
+    const requestParams = {
+      page_size: 500,
+      ...(isTeamLead ? { my_only: true } : {}),
+      throwOnError: true,
+    }
+    let sorted: PurchaseRequest[] = requests
 
     try {
       // PERFORMANCE FIX: Fetch requests and payments in parallel.
       // Previously requests were awaited first, then payments — doubling round-trip time.
       // Now both kick off simultaneously and we process each result when both arrive.
-      const [requestsResult, paymentsResult] = await Promise.allSettled([
-        getTeamLeadRequests({ page_size: 500 }),
-        apiClient.get('/payments/', { params: { page_size: 500 } })
-      ])
+      const requestFetch = getTeamLeadRequests(requestParams)
+      let requestsResult: PromiseSettledResult<any>
+      let paymentsResult: PromiseSettledResult<any> | null = null
+      if (requestsOnly) {
+        ;[requestsResult] = await Promise.allSettled([requestFetch])
+      } else {
+        ;[requestsResult, paymentsResult] = await Promise.allSettled([
+          requestFetch,
+          apiClient.get('/payments/', { params: { page_size: 500 } })
+        ])
+      }
 
+      const requestFailed = requestsResult.status === 'rejected'
+      if (requestsResult.status === 'rejected') {
+        const refreshError = requestsResult.reason
+        setRequestRefreshError(refreshError instanceof Error ? refreshError.message : 'Unable to refresh requests.')
+        console.warn('Failed to fetch Team Lead requests', refreshError)
+      } else {
+        setRequestRefreshError(null)
+      }
       const data = requestsResult.status === 'fulfilled' ? requestsResult.value : null
-      const list = Array.isArray(data) ? data : data?.results || []
-      const mapped: PurchaseRequest[] = list.map((item: any) => {
+      const list = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : null
+      if (!requestFailed && !list) throw new Error('The request list API returned an unexpected response.')
+      const mapped: PurchaseRequest[] = (list || []).map((item: any) => {
 
         let normalizedStatus: PurchaseRequest['status'] = 'Pending'
         const bs = (item.status || '').toUpperCase()
@@ -396,6 +428,14 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           item.existing_cost
         ) || 0
 
+        const updateTimestamps: string[] = [
+          item.updated_at,
+          ...(Array.isArray(item.approval_history) ? item.approval_history.map((step: any) => step.created_at || step.timestamp) : []),
+          ...(Array.isArray(item.approval_steps) ? item.approval_steps.map((step: any) => step.updated_at || step.created_at || step.timestamp) : []),
+          ...(Array.isArray(item.timeline) ? item.timeline.map((step: any) => step.timestamp) : []),
+        ].filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)))
+        const latestUpdate = updateTimestamps.sort((a, b) => Date.parse(b) - Date.parse(a))[0]
+
         return {
           id: item.request_id || item.id,
           title: item.title,
@@ -416,7 +456,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           date: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
           createdAt: item.created_at,
           dbId: item.id,
-          lastUpdated: item.updated_at ? item.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          lastUpdated: latestUpdate ? latestUpdate.slice(0, 10) : '',
           currentlyWith: { role: currentlyWithRole, name: currentlyWithName },
           flowType: item.flow_type || 'A',
           extraFields: item.extra_fields || {},
@@ -472,18 +512,20 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 remark: s.notes || '',
               }))
             : [],
+          approval_steps: Array.isArray(item.approval_steps) ? item.approval_steps : [],
         }
       })
-      const sorted = sortRequestsNewestFirst(mapped)
+      sorted = sortRequestsNewestFirst(mapped)
       // console.log removed — was serializing entire array on every poll tick
-      if (requestVersionAtFetchStart === requestMutationVersionRef.current) {
+      if (!requestFailed && requestVersionAtFetchStart === requestMutationVersionRef.current) {
         setRequests(sorted)
-      } else {
+      } else if (!requestFailed) {
         // Ignore a list snapshot that began before a create finished, then refresh it.
         refreshQueuedRef.current = true
       }
 
-      try {
+      if (paymentsResult) {
+        try {
         setPaymentsError(null)
         // Use the pre-fetched payments result from the parallel Promise.allSettled above
         const payRes = paymentsResult.status === 'fulfilled' ? paymentsResult.value : null
@@ -545,30 +587,33 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
           const dbIdStr = String(req.dbId || '')
           if (!existingReqIds.has(reqIdStr) && !existingReqIds.has(dbIdStr)) {
             const isSoft = (
+              isSoftwareRequest(req) ||
               (req.category || '').toLowerCase().includes('software') ||
               (req.category || '').toLowerCase().includes('saas') ||
               (req.category || '').toLowerCase().includes('cloud') ||
               (req.category || '').toLowerCase().includes('license') ||
               (req.category || '').toLowerCase().includes('subscription') ||
               Boolean(req.software_name) ||
-              req.flowType === 'B'
+              req.flowType === 'B' ||
+              req.flow_type === 'B'
             )
             
             const rawSt = (req.raw_status || req.status || '').toUpperCase()
             const extra = req.extra_fields || req.extraFields || {}
             const pj = req.payment_justification_detail || extra.payment_justification || {}
             const hasPaymentInfo = (
-              Boolean(extra.software_receipt_id || extra.receipt_no) ||
-              ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED'].includes(rawSt) ||
+              Boolean(extra.software_receipt_id || extra.receipt_no || extra.mock_payment_ref || extra.payment_reference) ||
+              ['REQUEST_COMPLETED', 'COMPLETED', 'TEAM_LEAD_ACKNOWLEDGED', 'TEAM_LEAD_CONFIRMED', 'MANAGER_VERIFIED', 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT', 'PAYMENT_JUSTIFIED', 'PAYMENT_JUSTIFICATION_SUBMITTED', 'PAYMENT_PROCESSED', 'PAID'].includes(rawSt) ||
               Boolean(extra.team_lead_acknowledged) ||
               Boolean(req.confirmed_by_team_lead) ||
-              Boolean(pj.is_acknowledged)
+              Boolean(pj.is_acknowledged) ||
+              (req.payment_status || '').toUpperCase() === 'PAID'
             )
 
             if (isSoft && hasPaymentInfo) {
               const amt = Number(pj.actual_purchase_amount || pj.final_payable_amount || extra.actual_purchase_amount || extra.final_payable_amount || req.finance_approved_amount || req.approved_amount || req.estimatedCost || 0)
               const receiptId = extra.software_receipt_id || extra.receipt_no || `RCP-SW-${req.id}`
-              const refNo = extra.software_receipt_id || extra.receipt_no || req.payment_reference || extra.payment_reference || `TXN-${req.id}`
+              const refNo = extra.software_receipt_id || extra.receipt_no || req.payment_reference || extra.payment_reference || extra.mock_payment_ref || `TXN-${req.id}`
               const payDate = extra.receipt_generated_at?.split('T')[0] || extra.acknowledged_at?.split('T')[0] || pj.payment_date || extra.mock_payment_date?.split('T')[0] || req.requiredBy || req.date || ''
 
               let st = 'Paid'
@@ -580,13 +625,14 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 id: receiptId,
                 requestId: req.id,
                 title: req.title,
-                vendor: pj.vendor_name || req.preferredVendor || req.vendor || 'Microsoft Corporation',
+                vendor: pj.vendor_name || req.preferredVendor || req.vendor || 'Enterprise SaaS Provider',
                 amount: amt,
                 status: st,
                 paymentStage: 'Payment Processed',
                 dueDate: payDate,
                 receiptUploaded: true,
-                flowType: req.flowType || 'A',
+                flowType: req.flowType || 'B',
+                category: req.category || 'Software & SaaS',
                 releaseReason: req.justification || '',
                 releasedBy: { role: 'System', name: pj.payment_method || 'Corporate Credit Card' },
                 receiptDetails: {
@@ -601,6 +647,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
                   ...req,
                   request_id: req.id,
                   software_name: req.software_name || req.title,
+                  category: req.category || 'Software & SaaS',
                   payment_justification_detail: pj || req.payment_justification_detail,
                   extra_fields: req.extra_fields || req.extraFields || {},
                   created_by_detail: req.created_by_detail || { first_name: 'Team', last_name: 'Lead', role: 'Team Lead' },
@@ -617,16 +664,20 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         console.warn('Failed to fetch payments in ProcurementContext', payErr)
         setPaymentsError(payErr?.message || 'Failed to fetch payments')
       }
+      }
     } catch (e) {
       console.warn('Backend requests fetch fallback:', e)
       setIsPaymentsLoading(false)
+      setRequestRefreshError(e instanceof Error ? e.message : 'Unable to refresh requests.')
       setPaymentsError('Failed to fetch requests or payments')
     } finally {
       isFetchingRef.current = false
       setIsPaymentsLoading(false)
       if (refreshQueuedRef.current) {
         refreshQueuedRef.current = false
-        void refreshBackendRequests()
+        const queuedRequestsOnly = refreshQueuedRequestsOnlyRef.current ?? false
+        refreshQueuedRequestsOnlyRef.current = null
+        void refreshBackendRequests({ requestsOnly: queuedRequestsOnly })
       }
     }
   }
@@ -634,13 +685,19 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
   useEffect(() => {
     refreshBackendRequests()
     const unsubscribe = subscribeGlobalDataSync(() => {
-      refreshBackendRequests()
+      const isTeamLead = (localStorage.getItem('user_role') || '').toUpperCase() === 'TEAM_LEAD'
+      void refreshBackendRequests(isTeamLead ? { requestsOnly: true } : undefined)
     })
     
     // Poll every 30 seconds — 5s was hammering the backend (12× per minute per tab).
     // Global sync (subscribeGlobalDataSync) handles immediate cross-tab updates.
     const pollInterval = setInterval(() => {
-      refreshBackendRequests()
+      const isTeamLead = (localStorage.getItem('user_role') || '').toUpperCase() === 'TEAM_LEAD'
+      if (isTeamLead) {
+        if (document.visibilityState === 'visible') void refreshBackendRequests({ requestsOnly: true })
+        return
+      }
+      void refreshBackendRequests()
     }, 30000)
 
     return () => {
@@ -748,7 +805,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const targetId = matched?.dbId || id
       await submitDraftRequest(targetId, updatedData || {})
       triggerGlobalDataSync('draft_submitted')
-      await refreshBackendRequests()
+      await refreshBackendRequests({ requestsOnly: true })
     } catch (err) {
       console.error('Failed to submit draft:', err)
       throw err
@@ -813,7 +870,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     resubmitTeamLeadRequest(id, updatedData)
       .then(() => {
-        refreshBackendRequests()
+        void refreshBackendRequests({ requestsOnly: true })
         window.dispatchEvent(new Event('kss_backend_updated'))
       })
       .catch((err) => console.warn('Backend request resubmit sync error:', err))
@@ -1083,6 +1140,7 @@ export const ProcurementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         updateProfile,
         isPaymentsLoading,
         paymentsError,
+        requestRefreshError,
       }}
     >
       {children}

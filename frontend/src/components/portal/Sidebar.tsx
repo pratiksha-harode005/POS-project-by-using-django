@@ -124,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ role }) => {
   }, [requests, role])
 
   return (
-    <aside className="w-64 bg-[#0A1128] text-slate-300 h-full flex flex-col flex-shrink-0 shadow-lg border-r border-slate-900 z-30 select-none">
+    <aside className="w-64 bg-[#0A1128] text-slate-300 h-full flex flex-col flex-shrink-0 shadow-lg border-r border-slate-900 relative z-10 select-none">
       {/* Brand Header */}
       <div className="h-16 flex items-center gap-3 px-5 border-b border-slate-800/80 bg-[#070D1E] flex-shrink-0">
         <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { X, CheckCircle2, ArrowRight, ShieldCheck } from 'lucide-react'
+import { ModalPortal } from '../portal/ModalPortal'
 
 export interface CardDetailItem {
   title: string
@@ -26,8 +27,9 @@ export default function CardDetailModal({ isOpen, onClose, item }: CardDetailMod
   const colorStyle = item.color || '#2563EB'
 
   return (
-    <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 sm:p-8 space-y-6 relative overflow-hidden text-slate-900">
+    <ModalPortal isOpen={isOpen}>
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 z-[9999] overflow-hidden animate-fadeIn">
+        <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 sm:p-8 space-y-6 relative overflow-hidden text-slate-900 my-auto animate-scaleUp">
 
         {/* Top Header Row */}
         <div className="flex items-start justify-between">
@@ -127,5 +129,6 @@ export default function CardDetailModal({ isOpen, onClose, item }: CardDetailMod
 
       </div>
     </div>
-  )
+  </ModalPortal>
+)
 }

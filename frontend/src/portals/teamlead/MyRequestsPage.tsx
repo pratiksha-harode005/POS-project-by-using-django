@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { TrackingStepper } from '../../components/portal/TrackingStepper'
 import { useProcurement, PurchaseRequest } from '../../context/ProcurementContext'
 import { useAuth } from '../../context/AuthContext'
@@ -1492,13 +1492,13 @@ export const MyRequestsPage: React.FC = () => {
 
   const incomingSearch = searchParams.get('search') || searchParams.get('id') || searchParams.get('requestId') || routeState?.search || routeState?.requestId || ''
 
-  const { requests, resubmitRequest, refreshBackendRequests } = useProcurement()
+  const { requests, resubmitRequest, refreshBackendRequests, requestRefreshError } = useProcurement()
+  const refreshBackendRequestsRef = useRef(refreshBackendRequests)
+  refreshBackendRequestsRef.current = refreshBackendRequests
 
   useEffect(() => {
-    if (refreshBackendRequests) {
-      refreshBackendRequests()
-    }
-  }, [refreshBackendRequests])
+    void refreshBackendRequestsRef.current({ requestsOnly: true })
+  }, [])
 
   const [requestType, setRequestType] = useState<'all' | 'software' | 'hardware'>('all')
   const [search, setSearch] = useState(() => incomingSearch)
@@ -1532,8 +1532,46 @@ export const MyRequestsPage: React.FC = () => {
   const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [resubmitSuccess, setResubmitSuccess] = useState(false)
   const [mockPaymentMethods, setMockPaymentMethods] = useState<Record<string, string>>({})
+  const [processingPaymentId, setProcessingPaymentId] = useState<string | number | null>(null)
+  const [acknowledgingId, setAcknowledgingId] = useState<string | number | null>(null)
+  const [paymentSuccessMsg, setPaymentSuccessMsg] = useState<Record<string, string>>({})
   const [receiptModalPayment, setReceiptModalPayment] = useState<any | null>(null)
   const [expandedJustificationId, setExpandedJustificationId] = useState<string | number | null>(null)
+
+  const handleExecuteMockPayment = async (req: PurchaseRequest) => {
+    const method = mockPaymentMethods[req.id] || 'Corporate Digital Card'
+    const payableAmount = (req as any).approved_amount || (req as any).finance_approved_amount || (req as any).requested_amount || req.estimatedCost || 0
+    setProcessingPaymentId(req.id)
+    try {
+      await mockPaymentApi(req.id, {
+        payment_method: method,
+        amount: Number(payableAmount) || 0,
+        notes: `Mock payment completed via ${method} for ${req.title}.`,
+      })
+      setPaymentSuccessMsg(prev => ({ ...prev, [req.id]: `Mock payment of RS ${Number(payableAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })} processed successfully via ${method}!` }))
+      triggerGlobalDataSync('mock_payment')
+      void refreshBackendRequests({ requestsOnly: true })
+      window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+    } catch (err: any) {
+      alert('Mock payment failed: ' + (err.response?.data?.error || err.message))
+    } finally {
+      setProcessingPaymentId(null)
+    }
+  }
+
+  const handleAcknowledgeRequest = async (req: PurchaseRequest) => {
+    setAcknowledgingId(req.id)
+    try {
+      await acknowledgeRequestApi(req.id, 'Software credentials and access acknowledged by Team Lead. Requisition completed.')
+      triggerGlobalDataSync('team_lead_acknowledged')
+      void refreshBackendRequests({ requestsOnly: true })
+      window.dispatchEvent(new CustomEvent('kss_backend_updated'))
+    } catch (err: any) {
+      alert('Acknowledgement failed: ' + (err.response?.data?.error || err.message))
+    } finally {
+      setAcknowledgingId(null)
+    }
+  }
 
   const toggleHistory = (id: string) => {
     setExpandedHistory((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -1589,11 +1627,16 @@ export const MyRequestsPage: React.FC = () => {
     }, 1400)
   }
 
-  const softwareCount = useMemo(() => requests.filter(r => isSoftwareRequest(r)).length, [requests])
-  const hardwareCount = useMemo(() => requests.filter(r => isHardwareRequest(r)).length, [requests])
+  const submittedRequests = useMemo(
+    () => requests.filter((req) => req.status !== 'Draft' && String((req as any).raw_status || '').toUpperCase() !== 'DRAFT'),
+    [requests]
+  )
+
+  const softwareCount = useMemo(() => submittedRequests.filter(r => isSoftwareRequest(r)).length, [submittedRequests])
+  const hardwareCount = useMemo(() => submittedRequests.filter(r => isHardwareRequest(r)).length, [submittedRequests])
 
   const filtered = useMemo(() => {
-    const matching = requests
+    const matching = submittedRequests
       .filter((req) => {
         const matchesSearch =
           req.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -1615,7 +1658,7 @@ export const MyRequestsPage: React.FC = () => {
         return matchesSearch && matchesStatus && matchesCategory && matchesDate && matchesType
       })
     return sortRequestsNewestFirst(matching)
-  }, [requests, search, filterStatus, filterCategory, startDate, endDate, requestType])
+  }, [submittedRequests, search, filterStatus, filterCategory, startDate, endDate, requestType])
 
   const totalActiveCount = filtered.filter((r) => r.status !== 'Completed' && r.status !== 'Rejected').length
   const totalCostSum = filtered.reduce((acc, curr) => acc + (curr.estimatedCost || 0), 0)
@@ -1650,12 +1693,28 @@ export const MyRequestsPage: React.FC = () => {
         </div>
       </div>
 
+      {requestRefreshError && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <span className="flex items-center gap-2">
+            <AlertCircle size={17} className="shrink-0" />
+            Unable to refresh your requests: {requestRefreshError}
+          </span>
+          <button
+            type="button"
+            onClick={() => void refreshBackendRequests({ requestsOnly: true })}
+            className="shrink-0 font-semibold underline underline-offset-2"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Request Type Segmented Filter */}
       <div className="flex items-center justify-between">
         <RequestTypeFilter
           value={requestType}
           onChange={setRequestType}
-          totalCount={requests.length}
+          totalCount={submittedRequests.length}
           softwareCount={softwareCount}
           hardwareCount={hardwareCount}
         />
@@ -1681,7 +1740,6 @@ export const MyRequestsPage: React.FC = () => {
               className="w-full text-xs font-semibold p-2 border rounded-lg bg-gray-50 border-gray-300 text-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
             >
               <option value="All">All Statuses</option>
-              <option value="Draft">Draft</option>
               <option value="Pending">Pending</option>
               <option value="Approved">Approved</option>
               <option value="In Procurement">In Procurement</option>
@@ -1756,19 +1814,17 @@ export const MyRequestsPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {!isHardwareRequest(req) && (req.status === 'Returned' || req.status === 'Pending' || req.status === 'Draft') && (
+                    {!isHardwareRequest(req) && (req.status === 'Returned' || req.status === 'Pending') && (
                       <button
                         onClick={() => handleOpenEdit(req)}
                         className={`flex items-center gap-1.5 font-bold text-xs px-4 py-2 rounded-xl shadow transition-all ${
                           req.status === 'Returned'
                             ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                            : req.status === 'Draft'
-                            ? 'bg-gray-700 hover:bg-gray-900 text-white'
                             : 'bg-white border-2 border-blue-500 text-blue-600 hover:bg-blue-50'
                         }`}
                       >
                         <RotateCcw size={15} />
-                        {req.status === 'Returned' ? 'Edit & Resubmit' : req.status === 'Draft' ? 'Edit & Submit' : 'Edit & Resubmit'}
+                        Edit & Resubmit
                       </button>
                     )}
                   </div>
@@ -1808,11 +1864,17 @@ export const MyRequestsPage: React.FC = () => {
                 <TrackingStepper
                   currentStage={req.currentStage}
                   status={req.status}
+                  rawStatus={req.raw_status}
+                  currentlyWith={req.rawRequest?.currently_with}
+                  lastUpdated={req.lastUpdated}
                   category={req.category}
                   title={req.title}
                   flowType={req.flowType}
                   history={req.history as any}
-                  approval_steps={(req as any).approval_steps}
+                  approval_steps={req.approval_steps || req.rawRequest?.approval_steps}
+                  timeline={req.timeline as any}
+                  finalApprovalBy={req.final_approval_by}
+                  approvalPath={req.approval_path}
                   financeStatus={(req as any).financeStatus}
                   paymentStatus={(req as any).paymentStatus}
                   poNumber={req.poRef || (req as any).poNumber || (req as any).po_number}
@@ -1821,6 +1883,201 @@ export const MyRequestsPage: React.FC = () => {
                   is_invoice_verified={(req as any).is_invoice_verified || (req as any).documentsVerified}
                   rfqId={(req as any).rfqId || (req as any).rfq_id}
                 />
+
+                {/* ─── SOFTWARE WORKFLOW INTERACTIVE ACTIONS ────────────────────────── */}
+                {(() => {
+                  const isSoft = isSoftwareRequest(req) || isFlowBCategory(req.category)
+                  if (!isSoft) return null
+
+                  const rawStUpper = String((req as any).raw_status || req.status || '').toUpperCase()
+                  const isPaidOrBeyond = [
+                    'PAYMENT_PROCESSED',
+                    'PAYMENT_JUSTIFICATION_SUBMITTED',
+                    'PAYMENT_JUSTIFIED',
+                    'MANAGER_VERIFIED',
+                    'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT',
+                    'TEAM_LEAD_ACKNOWLEDGED',
+                    'REQUEST_COMPLETED',
+                    'COMPLETED',
+                    'TEAM_LEAD_CONFIRMED',
+                  ].includes(rawStUpper) || Boolean((req as any).extra_fields?.mock_payment_ref) || (req as any).payment_status === 'PAID'
+
+                  const isApprovedForPayment = (
+                    rawStUpper === 'ADMIN_APPROVED' ||
+                    rawStUpper === 'FINANCE_APPROVED' ||
+                    rawStUpper === 'MANAGER_APPROVED' ||
+                    rawStUpper === 'PAYMENT_APPROVED' ||
+                    rawStUpper === 'APPROVED' ||
+                    req.status === 'Approved' ||
+                    Boolean((req as any).can_pay_mock) ||
+                    Boolean((req as any).is_payment_eligible)
+                  ) && !isPaidOrBeyond
+
+                  const isMockPaymentReady = isApprovedForPayment
+                  const isPaymentJustificationPending = rawStUpper === 'PAYMENT_PROCESSED' || (isPaidOrBeyond && !req.payment_justification_detail && !(req as any).extra_fields?.payment_justification && rawStUpper !== 'REQUEST_COMPLETED' && rawStUpper !== 'COMPLETED')
+                  const hasPaymentJustificationSubmitted = (
+                    rawStUpper === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+                    rawStUpper === 'PAYMENT_JUSTIFIED' ||
+                    rawStUpper === 'MANAGER_VERIFIED' ||
+                    rawStUpper === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT' ||
+                    rawStUpper === 'TEAM_LEAD_ACKNOWLEDGED' ||
+                    rawStUpper === 'REQUEST_COMPLETED' ||
+                    rawStUpper === 'COMPLETED' ||
+                    Boolean(req.payment_justification_detail) ||
+                    Boolean((req as any).extra_fields?.payment_justification)
+                  )
+                  const isAwaitingAcknowledgement = (
+                    rawStUpper === 'MANAGER_VERIFIED' ||
+                    rawStUpper === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT' ||
+                    rawStUpper === 'PAYMENT_JUSTIFIED' ||
+                    Boolean((req as any).can_acknowledge) ||
+                    Boolean((req as any).is_awaiting_acknowledgement)
+                  )
+
+                  const payableAmt = (req as any).approved_amount || (req as any).finance_approved_amount || (req as any).requested_amount || req.estimatedCost || 0
+                  const approverLabel = rawStUpper === 'ADMIN_APPROVED'
+                    ? 'Admin Approved (Final Approval)'
+                    : rawStUpper === 'FINANCE_APPROVED'
+                    ? 'Finance Approved'
+                    : rawStUpper === 'MANAGER_APPROVED'
+                    ? 'Manager Approved'
+                    : 'Requisition Approved'
+
+                  return (
+                    <div className="mt-4 space-y-4">
+                      {/* Success Flash Notice */}
+                      {paymentSuccessMsg[req.id] && (
+                        <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex items-center justify-between shadow-xs">
+                          <span className="flex items-center gap-2 font-semibold">
+                            <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
+                            {paymentSuccessMsg[req.id]}
+                          </span>
+                          <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded">Status: Payment Processed</span>
+                        </div>
+                      )}
+
+                      {/* 1. NOW PAY (MOCK) ACTION BANNER */}
+                      {isMockPaymentReady && (
+                        <div className="p-5 bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-950 rounded-2xl text-white shadow-xl border-2 border-purple-400/40 flex flex-col md:flex-row items-center justify-between gap-5 animate-fadeIn">
+                          <div className="space-y-2 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-emerald-400/20 text-emerald-300 border border-emerald-400/40 flex items-center gap-1">
+                                <CheckCircle2 size={12} /> {approverLabel}
+                              </span>
+                              <span className="text-[11px] text-purple-200 font-medium">
+                                Software / SaaS Procurement Workflow
+                              </span>
+                            </div>
+                            <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
+                              <CreditCard className="text-purple-400" size={20} />
+                              Execute Mock Payment for {req.title}
+                            </h3>
+                            <p className="text-xs text-purple-200/90 leading-relaxed max-w-2xl">
+                              This requisition has been formally approved. Select payment method and click below to simulate instant corporate payment disbursement and unlock digital software justification submission.
+                            </p>
+
+                            <div className="flex flex-wrap items-center gap-3 pt-2">
+                              <div className="bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-xl border border-white/15">
+                                <span className="text-[10px] uppercase text-purple-200 font-bold block">Payable Amount</span>
+                                <span className="font-extrabold text-white text-base text-emerald-300">
+                                  RS {Number(payableAmt).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+
+                              <div className="bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-xl border border-white/15 min-w-[220px]">
+                                <span className="text-[10px] uppercase text-purple-200 font-bold block mb-1">Payment Method</span>
+                                <select
+                                  value={mockPaymentMethods[req.id] || 'Corporate Digital Card'}
+                                  onChange={(e) => setMockPaymentMethods(prev => ({ ...prev, [req.id]: e.target.value }))}
+                                  className="w-full bg-slate-900 text-white font-bold text-xs rounded-lg px-2.5 py-1.5 border border-purple-400/40 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                >
+                                  <option value="Corporate Digital Card">Corporate Digital Card</option>
+                                  <option value="Corporate Card">Corporate Card</option>
+                                  <option value="Wire Transfer / NEFT">Wire Transfer / NEFT</option>
+                                  <option value="UPI">UPI Payment</option>
+                                  <option value="Direct Bank Transfer">Direct Bank Transfer</option>
+                                  <option value="Credit Card">Credit Card</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex-shrink-0 w-full md:w-auto flex flex-col items-center md:items-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleExecuteMockPayment(req)}
+                              disabled={processingPaymentId === req.id}
+                              className="w-full md:w-auto px-8 py-3.5 bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 disabled:opacity-50 text-slate-950 font-black text-sm rounded-xl shadow-xl hover:shadow-2xl flex items-center justify-center gap-2.5 transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+                            >
+                              <Zap size={18} className="fill-current text-slate-950" />
+                              {processingPaymentId === req.id ? 'Processing Mock Payment...' : 'Now Pay (Mock)'}
+                            </button>
+                            <span className="text-[10px] text-purple-200/80 text-center md:text-right font-medium">
+                              ⚡ Instant simulated disbursement & auto-status transition
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 2. PAYMENT JUSTIFICATION FORM (When Mock Payment is completed) */}
+                      {isPaymentJustificationPending && (
+                        <div>
+                          <SoftwareJustificationForm req={req} />
+                        </div>
+                      )}
+
+                      {/* 3. AWAITING TEAM LEAD ACKNOWLEDGEMENT BANNER */}
+                      {isAwaitingAcknowledgement && (
+                        <div className="p-4 bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 rounded-2xl text-white shadow-md border border-emerald-400/30 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fadeIn">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
+                                <ShieldCheck size={12} /> Manager Verified
+                              </span>
+                              <span className="text-[11px] text-emerald-200 font-medium">Final Step</span>
+                            </div>
+                            <h4 className="text-sm font-extrabold text-white">Manager Verification Complete — Ready to Close Requisition</h4>
+                            <p className="text-xs text-emerald-100/80">Department Manager has verified payment proofs & SaaS details. Confirm receipt of credentials to complete this request.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAcknowledgeRequest(req)}
+                            disabled={acknowledgingId === req.id}
+                            className="px-6 py-2.5 bg-emerald-400 hover:bg-emerald-300 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl shadow flex items-center gap-2 transition-all cursor-pointer flex-shrink-0"
+                          >
+                            <CheckCircle size={15} />
+                            {acknowledgingId === req.id ? 'Completing...' : 'Acknowledge & Complete'}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* 4. PAYMENT JUSTIFICATION DETAILS ACCORDION */}
+                      {hasPaymentJustificationSubmitted && !isPaymentJustificationPending && (
+                        <div className="rounded-xl border border-violet-200 bg-white overflow-hidden shadow-2xs">
+                          <div className="flex items-center justify-between p-3 bg-violet-50/70 text-xs">
+                            <div className="flex items-center gap-2 text-violet-950 font-bold">
+                              <FileText size={16} className="text-violet-600" />
+                              <span>Payment Justification & SaaS Audit Details</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedJustificationId(expandedJustificationId === req.id ? null : req.id)}
+                              className="text-violet-700 font-bold hover:text-violet-900 flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              {expandedJustificationId === req.id ? 'Hide Justification Details' : 'View Justification Details'}
+                              {expandedJustificationId === req.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            </button>
+                          </div>
+                          {expandedJustificationId === req.id && (
+                            <div className="p-4 border-t border-violet-100 animate-fadeIn">
+                              <PaymentJustificationDetailsDisplay req={req} />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* ─── SUBSCRIPTION & RENEWAL SECTION ─────────────────────────────────── */}
                 {(req as any).renewal_eligibility && (req as any).renewal_eligibility.available !== undefined && (
@@ -1851,7 +2108,7 @@ export const MyRequestsPage: React.FC = () => {
                             onClick={async () => {
                               try {
                                 await renewRequestApi(req.id)
-                                refreshBackendRequests()
+                                void refreshBackendRequests({ requestsOnly: true })
                                 triggerGlobalDataSync()
                                 alert("Renewal request created successfully! Check your Drafts/Pending requests.")
                               } catch (e: any) {
@@ -1867,7 +2124,7 @@ export const MyRequestsPage: React.FC = () => {
                             onClick={async () => {
                               try {
                                 await upgradeRequestApi(req.id)
-                                refreshBackendRequests()
+                                void refreshBackendRequests({ requestsOnly: true })
                                 triggerGlobalDataSync()
                                 alert("Upgrade request created successfully! Check your Drafts/Pending requests.")
                               } catch (e: any) {
@@ -1920,7 +2177,7 @@ export const MyRequestsPage: React.FC = () => {
                     {isHistoryOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                     {isHistoryOpen ? 'Hide full history' : 'View full history'} ({req.history?.length || 0} steps)
                   </button>
-                  <span className="text-[11px] text-gray-400 font-medium">Last updated: {formatDate(req.lastUpdated)}</span>
+                  <span className="text-[11px] text-gray-400 font-medium">Last updated: {formatDate(req.lastUpdated) || 'Not available'}</span>
                 </div>
 
                 {isHistoryOpen && (

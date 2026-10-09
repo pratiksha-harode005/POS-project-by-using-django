@@ -93,6 +93,50 @@ class ProcurementApprovalWorkflowTests(APITestCase):
         self.assertEqual(matching['status'], PurchaseRequest.STATUS_DRAFT)
         self.assertEqual(matching['department_detail']['name'], self.dept_it.name)
 
+    def test_team_lead_draft_enters_manager_queue_only_after_submit(self):
+        self.client.force_authenticate(user=self.team_lead)
+        created = self.client.post('/api/team-lead/requests/', {
+            'title': 'Draft approval transition check',
+            'category': 'IT Hardware',
+            'description': 'Verify a draft enters the manager queue only after submission.',
+            'quantity': 2,
+            'total_estimated_cost': '2400.00',
+            'is_draft': True,
+            'status': 'DRAFT',
+        }, format='json')
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        draft = PurchaseRequest.objects.get(pk=created.data['id'])
+        self.assertEqual(draft.status, PurchaseRequest.STATUS_DRAFT)
+        self.assertEqual(draft.current_stage, 0)
+
+        self.client.force_authenticate(user=self.manager)
+        manager_before = self.client.get('/api/manager/requests/', {'page_size': 500})
+        self.assertEqual(manager_before.status_code, status.HTTP_200_OK, manager_before.data)
+        manager_before_results = manager_before.data.get('results', []) if isinstance(manager_before.data, dict) else manager_before.data
+        self.assertFalse(any(item.get('request_id') == draft.request_id for item in manager_before_results))
+
+        self.client.force_authenticate(user=self.team_lead)
+        submitted = self.client.post(
+            f'/api/team-lead/requests/{draft.id}/submit_draft/',
+            {'estimatedCost': 2400, 'justification': 'Ready for approval.'},
+            format='json'
+        )
+        self.assertEqual(submitted.status_code, status.HTTP_200_OK, submitted.data)
+
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, PurchaseRequest.STATUS_MANAGER_REVIEW)
+        self.assertEqual(draft.current_approval_level, PurchaseRequest.LEVEL_MANAGER)
+        self.assertEqual(draft.current_stage, 1)
+        self.assertEqual(draft.created_by, self.team_lead)
+        self.assertEqual(draft.department, self.dept_it)
+        self.assertTrue(draft.approval_history.filter(action='SUBMIT', new_status=PurchaseRequest.STATUS_MANAGER_REVIEW).exists())
+
+        self.client.force_authenticate(user=self.manager)
+        manager_after = self.client.get('/api/manager/requests/', {'page_size': 500})
+        self.assertEqual(manager_after.status_code, status.HTTP_200_OK, manager_after.data)
+        manager_after_results = manager_after.data.get('results', []) if isinstance(manager_after.data, dict) else manager_after.data
+        self.assertTrue(any(item.get('request_id') == draft.request_id for item in manager_after_results))
+
     def test_workflow_1_employee_create_tl_approve_moves_to_manager(self):
         """Workflow: Employee -> Team Lead -> Approve -> Manager Review"""
         pr = self._create_employee_request()

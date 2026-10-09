@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { CreditCard, Eye, AlertTriangle, Search, Filter } from 'lucide-react'
 import { useProcurement, PaymentRecord } from '../../context/ProcurementContext'
 import { UnifiedReceiptModal } from '../../components/portal/UnifiedReceiptModal'
+import { isSoftwareRequest } from '../../utils/workflowUtils'
 
 export const PaymentStatusPage: React.FC = () => {
   const { payments, isPaymentsLoading, paymentsError } = useProcurement()
@@ -21,36 +22,103 @@ export const PaymentStatusPage: React.FC = () => {
     }).format(val)
   }
 
+  // Helper to extract deterministic receipt / payment timestamp (newest first)
+  const getReceiptTimestamp = (record: any): number => {
+    if (!record) return 0
+    const pr = record.purchaseRequestDetail || {}
+    const extra = pr.extra_fields || pr.extraFields || {}
+    const pj = pr.payment_justification_detail || extra.payment_justification || {}
+
+    // 1. Explicit receipt generation timestamp (ISO string with milliseconds/seconds)
+    const receiptGenAt = extra.receipt_generated_at
+    if (receiptGenAt) {
+      const t = new Date(receiptGenAt).getTime()
+      if (!isNaN(t) && t > 0) return t
+    }
+
+    // 2. Justification submitted timestamp / confirmation timestamp / acknowledgement timestamp
+    const justifiedAt = pj.submitted_at || extra.justification_submitted_at || pr.confirmed_at || extra.acknowledged_at
+    if (justifiedAt) {
+      const t = new Date(justifiedAt).getTime()
+      if (!isNaN(t) && t > 0) return t
+    }
+
+    // 3. Payment record creation timestamp / PJ creation timestamp
+    const payCreatedAt = record.created_at || (record as any).createdAt || pj.created_at
+    if (payCreatedAt) {
+      const t = new Date(payCreatedAt).getTime()
+      if (!isNaN(t) && t > 0) return t
+    }
+
+    // 4. Request database creation timestamp (date or created_at)
+    const reqCreatedAt = pr.created_at || pr.createdAt || pr.rawRequest?.created_at || record.rawRequest?.created_at || pr.date
+    if (reqCreatedAt) {
+      const t = new Date(reqCreatedAt).getTime()
+      if (!isNaN(t) && t > 0) return t
+    }
+
+    // 5. Payment date (if valid date string like YYYY-MM-DD)
+    const payDate = extra.mock_payment_date || record.payment_date || pj.payment_date || pr.payment_date || record.receiptDetails?.purchaseDate
+    if (payDate) {
+      const t = new Date(payDate).getTime()
+      if (!isNaN(t) && t > 0) return t
+    }
+
+    return 0
+  }
+
+  // Helper to extract numeric DB id for deterministic tie-breaking
+  const getReceiptDbId = (record: any): number => {
+    if (!record) return 0
+    const pr = record.purchaseRequestDetail || {}
+    const rawId = pr.dbId ?? pr.rawRequest?.id ?? (record as any).dbId ?? record.id
+    if (typeof rawId === 'number') return rawId
+    const parsed = parseInt(String(rawId).replace(/\D/g, ''), 10)
+    return isNaN(parsed) ? 0 : parsed
+  }
+
   // Filter & Sort payments: Newest receipt first, one card per receipt
   const filteredAndSortedPayments = useMemo(() => {
     // Only include software/SaaS payments, exclude hardware
     let result = payments.filter((p: any) => {
-      // It's software if flowType is 'B', or category has software/saas/cloud/license/subscription, or software_name exists
+      const pr = p.purchaseRequestDetail || {}
+      const extra = pr.extra_fields || pr.extraFields || {}
+      const pj = pr.payment_justification_detail || extra.payment_justification || {}
+
       const isSoft = (
         p.flowType === 'B' ||
+        isSoftwareRequest(p) ||
+        isSoftwareRequest(pr) ||
         (p.category || '').toLowerCase().includes('software') ||
         (p.category || '').toLowerCase().includes('saas') ||
         (p.category || '').toLowerCase().includes('cloud') ||
         (p.category || '').toLowerCase().includes('license') ||
         (p.category || '').toLowerCase().includes('subscription') ||
-        Boolean(p.purchaseRequestDetail?.software_name) ||
-        Boolean(p.purchaseRequestDetail?.title?.toLowerCase().includes('software')) ||
+        (pr.category || '').toLowerCase().includes('software') ||
+        (pr.category || '').toLowerCase().includes('saas') ||
+        (pr.category || '').toLowerCase().includes('cloud') ||
+        (pr.category || '').toLowerCase().includes('license') ||
+        (pr.category || '').toLowerCase().includes('subscription') ||
+        Boolean(pr.software_name) ||
+        Boolean(pj.software_name) ||
+        Boolean(pr.title?.toLowerCase().includes('software')) ||
         Boolean(p.receiptDetails?.itemName?.toLowerCase().includes('software')) ||
         Boolean(p.receiptDetails?.itemName?.toLowerCase().includes('saas'))
       )
       return isSoft
     })
 
-    // Newest first (by receipt generated date / confirmed date / payment date / created_at descending)
+    // Newest first: strictly ordered by actual receipt generation / payment / creation timestamp, with DB ID tie-breaker
     result.sort((a, b) => {
-      const prA = a.purchaseRequestDetail || {}
-      const prB = b.purchaseRequestDetail || {}
-      const extraA = prA.extra_fields || prA.extraFields || {}
-      const extraB = prB.extra_fields || prB.extraFields || {}
-      const timeA = new Date(extraA.receipt_generated_at || prA.confirmed_at || a.dueDate || (a as any).created_at || prA.date || 0).getTime()
-      const timeB = new Date(extraB.receipt_generated_at || prB.confirmed_at || b.dueDate || (b as any).created_at || prB.date || 0).getTime()
+      const timeA = getReceiptTimestamp(a)
+      const timeB = getReceiptTimestamp(b)
       if (timeB !== timeA) return timeB - timeA
-      return String(b.id).localeCompare(String(a.id))
+
+      const idA = getReceiptDbId(a)
+      const idB = getReceiptDbId(b)
+      if (idB !== idA) return idB - idA
+
+      return String(b.id || '').localeCompare(String(a.id || ''))
     })
 
     // Search filter
@@ -91,7 +159,7 @@ export const PaymentStatusPage: React.FC = () => {
         </div>
 
         <div className="bg-purple-50 border border-purple-200 text-purple-900 px-4 py-2 rounded-xl text-xs font-bold shadow-2xs">
-          Total Receipts: {payments.length} Records
+          Total Receipts: {filteredAndSortedPayments.length} Records
         </div>
       </div>
 
@@ -159,7 +227,7 @@ export const PaymentStatusPage: React.FC = () => {
                 const requestId = p.requestId || pr.request_id || pr.id || 'Not available'
                 const paymentAmount = formatINR(p.amount ?? pj.actual_purchase_amount ?? pr.finance_approved_amount ?? pr.approved_amount)
                 const paymentStatus = p.status || pr.payment_status || 'Paid'
-                const paymentDate = extra.receipt_generated_at?.split('T')[0] || p.payment_date || p.dueDate || pj.payment_date || pr.confirmed_at?.split('T')[0] || 'Not available'
+                const paymentDate = extra.receipt_generated_at?.split('T')[0] || extra.acknowledged_at?.split('T')[0] || p.payment_date || pj.payment_date || pr.confirmed_at?.split('T')[0] || extra.mock_payment_date?.split('T')[0] || p.receiptDetails?.purchaseDate || pr.created_at?.split('T')[0] || pr.date || 'Not available'
 
                 return (
                   <div

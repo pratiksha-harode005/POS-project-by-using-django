@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useManagerData, TicketProduct } from '../../context/ManagerDataContext'
+import { isHardwareRequest, isSoftwareRequest } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
 import { DocumentPdfViewerModal } from '../../components/portal/DocumentPdfViewerModal'
 import { markVendorInvoiceVerified, markVendorDeliveryVerified, markPaymentPaidForPO } from '../vendor/VendorPortalPages'
@@ -51,7 +52,39 @@ export const RaiseTicketPage: React.FC = () => {
 
   const filteredTicketList = useMemo(() => {
     const q = ticketSearch.toLowerCase().trim()
-    const baseList = !q ? tickets : tickets.filter(t =>
+    const validHardwareTickets = tickets.filter(t => {
+      if ((t as any).isSoftware || (t as any).workflowType === 'SOFTWARE') return false
+      const tCat = ((t as any).category || (t.products && t.products[0]?.category) || '').toLowerCase()
+      if (tCat.includes('software') || tCat.includes('saas') || tCat.includes('cloud') || tCat.includes('license') || tCat.includes('subscription')) return false
+
+      const normTicketReq = (t.requestId || t.id || '').replace(/^(REQ-|PO-|TCK-|TKT-|RFQ-)/i, '').trim().toUpperCase()
+      const req = allRequests.find(r => {
+        if (!r.id) return false
+        if (r.id === t.requestId || r.id === t.id) return true
+        const normReq = r.id.replace(/^(REQ-|PO-|TCK-|TKT-|RFQ-)/i, '').trim().toUpperCase()
+        return normReq === normTicketReq
+      })
+
+      if (req) {
+        if (isSoftwareRequest(req) || !isHardwareRequest(req)) return false
+        if (req.status === 'rejected') return false
+        const hasVendorPo = Boolean(
+          t.productOrder ||
+          (t.products && t.products.some(p => p.productOrder)) ||
+          req.poNumber ||
+          (req as any).po_number ||
+          (req as any).po_id ||
+          ((req as any).purchase_orders && (req as any).purchase_orders.length > 0)
+        )
+        if (!hasVendorPo) return false
+      }
+
+      const hasPo = Boolean(t.productOrder || (t.products && t.products.some(p => p.productOrder)))
+      if (!hasPo) return false
+      return true
+    })
+
+    const baseList = !q ? validHardwareTickets : validHardwareTickets.filter(t =>
       String(t.id || '').toLowerCase().includes(q) ||
       String(t.requestId || '').toLowerCase().includes(q) ||
       String(t.requestTitle || '').toLowerCase().includes(q) ||
@@ -74,7 +107,7 @@ export const RaiseTicketPage: React.FC = () => {
       }
       return (b.id || '').localeCompare(a.id || '')
     })
-  }, [tickets, ticketSearch])
+  }, [tickets, allRequests, ticketSearch])
 
   useEffect(() => {
     if (tickets.length > 0 && (!selectedTicketId || !tickets.some(t => t.id === selectedTicketId))) {
@@ -126,6 +159,7 @@ export const RaiseTicketPage: React.FC = () => {
   const [utrRef, setUtrRef] = useState('')
   const [settlementNote, setSettlementNote] = useState('')
   const [utrError, setUtrError] = useState('')
+  const [isPaymentSubmitting, setIsPaymentSubmitting] = useState(false)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -383,7 +417,8 @@ export const RaiseTicketPage: React.FC = () => {
   const handleOpenPaymentModal = handleMakePayment
 
   // Validate UTR / reference based on payment method and dispatch
-  const handleConfirmAndPay = () => {
+  const handleConfirmAndPay = async () => {
+    if (isPaymentSubmitting) return
     if (payMethod === 'bank') {
       const isBankUtrValid = /^[A-Za-z]{4}[0-9]{11}$/.test(utrRef.trim())
       if (!isBankUtrValid) {
@@ -401,13 +436,19 @@ export const RaiseTicketPage: React.FC = () => {
     const amount = product ? product.totalAmount : ticket.requestAmount
     const vendor = product?.vendor || ticket.products?.[0]?.vendor || 'Dell Technologies India'
     const methodLabel = payMethod === 'bank' ? 'NEFT / RTGS / IMPS' : payMethod === 'upi' ? 'UPI Instant Transfer' : payMethod === 'cash' ? 'Cash / Petty Cash' : 'Corporate Card'
-    const res = makePayment(ticket.requestId, ticket.id, {
+    setIsPaymentSubmitting(true)
+    const res = await makePayment(ticket.requestId, ticket.id, {
       amount,
       paymentMethod: methodLabel,
       productId: product?.id,
       transactionRef: utrRef.trim(),
-      referenceNumber: utrRef.trim()
-    })
+      referenceNumber: utrRef.trim(),
+      notes: settlementNote.trim() || undefined,
+    }).catch((error: unknown) => {
+      showToast(error instanceof Error ? error.message : 'Payment could not be saved. Please retry.', 'error')
+      return null
+    }).finally(() => setIsPaymentSubmitting(false))
+    if (!res) return
 
     // Immediately mark payment as paid in Vendor Portal as well
     markPaymentPaidForPO(ticket.requestId)
@@ -1343,15 +1384,15 @@ export const RaiseTicketPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleConfirmAndPay}
-                      disabled={!canPay}
+                      disabled={!canPay || isPaymentSubmitting}
                       className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-black rounded-xl shadow transition-all ${
-                        canPay
+                        canPay && !isPaymentSubmitting
                           ? 'bg-slate-800 hover:bg-slate-900 text-white cursor-pointer'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       }`}
                     >
                       <CreditCard size={14} />
-                      Confirm &amp; Pay ({fmt(payable)})
+                      {isPaymentSubmitting ? 'Saving payment…' : `Confirm & Pay (${fmt(payable)})`}
                     </button>
                   </div>
                 </div>

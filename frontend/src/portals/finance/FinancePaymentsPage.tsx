@@ -144,13 +144,25 @@ export const FinancePaymentsPage: React.FC = () => {
     return payments.find((p) => p.id === selectedPayment.id) || selectedPayment
   }, [payments, selectedPayment])
 
-  const handleDisburse = (id: string) => {
-    disbursePayment(id, actorName)
+  const handleDisburse = async (id: string): Promise<boolean> => {
+    try {
+      await disbursePayment(id, actorName)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Payment was not saved by the server.', 'error')
+      return false
+    }
     showToast(`✓ Payment ${id} disbursed successfully via banking gateway`)
+    navigate('/portal/finance/purchase-requests')
+    return true
   }
 
-  const handleStatusChange = (id: string, newStatus: PaymentStatus, note?: string) => {
-    updatePaymentStatus(id, newStatus, actorName, note)
+  const handleStatusChange = async (id: string, newStatus: PaymentStatus, note?: string) => {
+    try {
+      await updatePaymentStatus(id, newStatus, actorName, note)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Payment status was not saved by the server.', 'error')
+      return
+    }
     showToast(`✓ Payment status updated to ${newStatus}`)
   }
 
@@ -644,9 +656,8 @@ export const FinancePaymentsPage: React.FC = () => {
                 {activePayment.status !== 'Paid' && (
                   <button
                     type="button"
-                    onClick={() => {
-                      handleDisburse(activePayment.id)
-                      setSelectedPayment(null)
+                    onClick={async () => {
+                      if (await handleDisburse(activePayment.id)) setSelectedPayment(null)
                     }}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
                   >

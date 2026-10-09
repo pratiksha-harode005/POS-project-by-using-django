@@ -2,6 +2,7 @@ import os
 import datetime
 from decimal import Decimal
 from django.db import transaction, models
+from django.db.models import Prefetch
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status, permissions
@@ -29,9 +30,12 @@ from apps.core.permissions import (
     IsTeamLeadRole, IsManagerRole, IsFinanceRole, IsAdminRole, IsEmployeeRole
 )
 from apps.notification_management.models import Notification
+from apps.notification_management.services import notify_stage_event
 from apps.payment_management.models import Payment
 from apps.procurement.models import PurchaseOrder, GoodsReceipt
+from apps.invoice_management.models import Invoice
 from apps.vendor_management.models import Vendor
+from apps.rfq_management.models import RFQ, Quotation
 from apps.users.models import User, Department
 
 
@@ -47,6 +51,18 @@ ACTION_HISTORY_CODES = {
     'acknowledge': ('TEAM_LEAD_ACKNOWLEDGE', 'TEAM_LEAD_CONFIRM', 'TEAM_LEAD_CONFIRMED'),
     'process_payment': ('PAYMENT_COMPLETED', 'PAYMENT_PROCESSED', 'PROCESS_PAYMENT'),
 }
+
+
+def is_verified_direct_manager_hardware_payment_ready(pr):
+    """Allow Treasury to record payment after the direct Manager hardware flow is verified."""
+    return bool(
+        pr
+        and not pr.is_software
+        and (pr.status or '').strip().upper() in ['IN PROCUREMENT', 'IN_PROCUREMENT']
+        and pr.current_stage >= 8
+        and determine_final_approval_by(pr) == 'MANAGER'
+        and pr.purchase_orders.filter(status__iexact='Delivered').exists()
+    )
 
 
 def completed_action_response(pr, action, user_role=None):
@@ -102,7 +118,7 @@ class RejectionReasonViewSet(viewsets.ModelViewSet):
 def get_purchase_request_by_pk_or_request_id(pk, for_update=False):
     """
     Safely retrieves a PurchaseRequest whether pk is an integer database ID
-    or a business request_id string (e.g. 'PR-2026-001', 'REQ-001').
+    or a business request_id string (e.g. 'PR-2026-001', 'REQ-001', '002111D5').
     """
     qs = PurchaseRequest.objects.select_for_update() if for_update else PurchaseRequest.objects
     pk_str = str(pk).strip()
@@ -110,7 +126,29 @@ def get_purchase_request_by_pk_or_request_id(pk, for_update=False):
         pr = qs.filter(pk=int(pk_str)).first()
         if pr:
             return pr
-    return qs.filter(request_id=pk_str).first()
+
+    # Direct match on request_id
+    pr = qs.filter(request_id__iexact=pk_str).first()
+    if pr:
+        return pr
+
+    # Try with REQ- prefix if missing
+    if not pk_str.upper().startswith('REQ-'):
+        pr = qs.filter(request_id__iexact=f"REQ-{pk_str}").first()
+        if pr:
+            return pr
+    else:
+        unprefixed = pk_str.split('-', 1)[-1]
+        pr = qs.filter(request_id__iexact=unprefixed).first()
+        if pr:
+            return pr
+
+    # Fallback to contains
+    pr = qs.filter(request_id__icontains=pk_str).first()
+    if pr:
+        return pr
+
+    return None
 
 
 def apply_request_type_filter(queryset, request):
@@ -166,7 +204,8 @@ def get_base_purchase_request_queryset():
     """
     Standard highly-optimized QuerySet for PurchaseRequest.
     Pre-selects all ForeignKey relations and prefetches approval history, steps, payments,
-    and justifications required by PurchaseRequestSerializer while avoiding unused deep nested prefetches.
+    rfqs, purchase orders, goods receipts, and justifications required by PurchaseRequestSerializer
+    to eliminate N+1 queries.
     """
     return PurchaseRequest.objects.select_related(
         'created_by',
@@ -178,17 +217,48 @@ def get_base_purchase_request_queryset():
         'assigned_manager__department',
         'payment_justification',
         'payment_justification__submitted_by',
+        'payment_justification__submitted_by__department',
         'payment_justification__verified_by',
+        'payment_justification__verified_by__department',
         'research_estimation',
         'research_estimation__researched_by',
+        'research_estimation__researched_by__department',
         'original_request',
         'original_request__department',
-        'parent_request'
+        'original_request__payment_justification',
+        'original_request__payment_justification__submitted_by',
+        'original_request__payment_justification__submitted_by__department',
+        'original_request__payment_justification__verified_by',
+        'original_request__payment_justification__verified_by__department',
+        'parent_request',
+        'parent_request__payment_justification',
     ).prefetch_related(
         'approval_steps__actor',
+        'approval_steps__actor__department',
         'approval_steps__reason',
         'approval_history__performed_by',
-        'payments'
+        'approval_history__performed_by__department',
+        'payments',
+        Prefetch(
+            'rfqs',
+            queryset=RFQ.objects.prefetch_related(
+                'quotations',
+                'invited_vendors'
+            )
+        ),
+        Prefetch(
+            'purchase_orders',
+            queryset=PurchaseOrder.objects.select_related('vendor').prefetch_related(
+                'goods_receipts',
+                'invoices'
+            )
+        ),
+        Prefetch(
+            'all_descendants',
+            queryset=PurchaseRequest.objects.only(
+                'id', 'request_id', 'status', 'renewal_sequence', 'request_operation', 'original_request_id'
+            )
+        )
     ).all().order_by('-created_at', '-id')
 
 
@@ -243,7 +313,23 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                         PurchaseRequest.STATUS_PAYMENT_PROCESSED,
                         PurchaseRequest.STATUS_PAYMENT_COMPLETED,
                         PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN,
+                        PurchaseRequest.STATUS_ADMIN_APPROVED,
+                        PurchaseRequest.STATUS_APPROVED,
+                        PurchaseRequest.STATUS_PAYMENT_JUSTIFICATION_SUBMITTED,
+                        PurchaseRequest.STATUS_PAYMENT_JUSTIFIED,
+                        PurchaseRequest.STATUS_MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT,
+                        PurchaseRequest.STATUS_MANAGER_VERIFIED,
+                        PurchaseRequest.STATUS_TEAM_LEAD_ACKNOWLEDGED,
+                        PurchaseRequest.STATUS_REQUEST_COMPLETED,
+                        PurchaseRequest.STATUS_COMPLETED,
                     ]) |
+                    models.Q(extra_fields__sent_to_higher_authority=True) |
+                    models.Q(extra_fields__is_sent_to_higher_authority=True) |
+                    models.Q(extra_fields__sent_to_finance_received_reports=True) |
+                    models.Q(extra_fields__sent_to_admin_receipts=True) |
+                    models.Q(extra_fields__team_lead_acknowledged=True) |
+                    models.Q(approval_history__action__in=['SENT_RECEIPT_HIGHER_AUTHORITY', 'TEAM_LEAD_ACKNOWLEDGE', 'MANAGER_VERIFIED', 'FINANCE_APPROVE', 'RECOMMEND_FINANCE', 'RECOMMEND_ADMIN']) |
+                    models.Q(approval_history__user_role='FINANCE') |
                     models.Q(approval_steps__decision__in=['RECOMMEND', 'RECOMMEND_FINANCE', 'FINANCE_APPROVE', 'RECOMMEND_ADMIN']) |
                     models.Q(approval_steps__role='FINANCE') |
                     models.Q(created_by__role='FINANCE') |
@@ -515,6 +601,91 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
 
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='send-receipt-higher-authority', permission_classes=[permissions.IsAuthenticated])
+    def send_receipt_higher_authority(self, request, pk=None):
+        """
+        TRANSMIT RECEIPT TO HIGHER AUTHORITY (Finance Received Reports & Admin Receipts):
+        Persists receipt metadata, flags request for Finance Received Reports and Admin Receipts Archive.
+        """
+        user = request.user
+        notes = request.data.get('notes') or request.data.get('comments') or 'Transmitted by Manager to Finance Directorate (Received Reports) and Admin Directorate (Receipts Archive).'
+        user_fullname = f"{user.first_name} {user.last_name}".strip() if user else 'Procurement Manager'
+
+        with transaction.atomic():
+            pr = get_purchase_request_by_pk_or_request_id(pk, for_update=True) or self.get_object()
+            if not pr:
+                return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if not isinstance(pr.extra_fields, dict):
+                pr.extra_fields = {}
+
+            clean_id = (pr.request_id or str(pr.id)).replace('REQ-', '').replace('REP-', '')
+            rcp_id = pr.extra_fields.get('software_receipt_id') or pr.extra_fields.get('receipt_no') or f"RCP-SW-{clean_id}"
+
+            pr.extra_fields['sent_to_higher_authority'] = True
+            pr.extra_fields['is_sent_to_higher_authority'] = True
+            pr.extra_fields['sent_to_finance_received_reports'] = True
+            pr.extra_fields['sent_to_admin_receipts'] = True
+            pr.extra_fields['receipt_higher_authority_sent_at'] = timezone.now().isoformat()
+            pr.extra_fields['receipt_higher_authority_notes'] = notes
+            pr.extra_fields['receipt_higher_authority_sent_by'] = user_fullname or 'Procurement Manager'
+            pr.extra_fields['software_receipt_id'] = rcp_id
+            pr.extra_fields['receipt_no'] = rcp_id
+
+            pr.save()
+
+            try:
+                vendor_obj = Vendor.objects.filter(name__icontains=pr.vendor or '').first() or Vendor.objects.first()
+                po, _ = PurchaseOrder.objects.get_or_create(
+                    purchase_request=pr,
+                    defaults={
+                        'po_id': f"PO-SW-{clean_id}",
+                        'vendor': vendor_obj,
+                        'total_amount': pr.finance_approved_amount or pr.approved_amount or pr.requested_amount or Decimal('0.00'),
+                        'status': 'Delivered'
+                    }
+                )
+                GoodsReceipt.objects.update_or_create(
+                    receipt_id=rcp_id,
+                    defaults={
+                        'purchase_order': po,
+                        'received_by': user if user.is_authenticated else pr.created_by,
+                        'status': 'Verified',
+                        'delivery_location': 'Cloud / Digital Provisioning',
+                        'product_name': pr.software_name or pr.title,
+                        'ordered_quantity': pr.quantity or 1,
+                        'received_quantity': pr.quantity or 1,
+                        'verified_by_name': user_fullname or 'Procurement Manager',
+                        'notes': f"Software payment receipt for {pr.software_name or pr.title}. Transmitted to Higher Authority."
+                    }
+                )
+            except Exception as gr_sync_err:
+                import logging
+                logging.getLogger(__name__).warning(f"GoodsReceipt sync in send_receipt_higher_authority: {gr_sync_err}")
+
+            ApprovalHistory.objects.create(
+                request=pr,
+                action='SENT_RECEIPT_HIGHER_AUTHORITY',
+                performed_by=user,
+                user_role=getattr(user, 'role', 'MANAGER') if user else 'MANAGER',
+                previous_status=pr.status,
+                new_status=pr.status,
+                comments=f"Receipt transmitted to Higher Authority. Notes: {notes}",
+                approved_amount=pr.finance_approved_amount or pr.approved_amount or pr.requested_amount,
+                cost_center=pr.cost_center or '',
+                budget_available=True,
+                vendor=pr.vendor or ''
+            )
+
+            notify_stage_event(
+                'RECEIPT_SENT_HIGHER_AUTHORITY',
+                purchase_request=pr,
+                actor=user,
+                details={'receipt_id': rcp_id, 'notes': notes}
+            )
+
+            return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def process_approval(self, request, pk=None):
         pr = self.get_object()
@@ -606,23 +777,35 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 PurchaseRequest.STATUS_REQUEST_COMPLETED,
                 PurchaseRequest.STATUS_COMPLETED,
             ]
-            if pr.status in already_approved_statuses or pr.status in ['In Procurement', 'Approved', 'Completed']:
-                return Response(self.get_serializer(pr).data, status=status.HTTP_200_OK)
-            if amt_val is not None and orig_cost > 0 and amt_val > orig_cost and role == 'MANAGER':
-                return Response(
-                    {'detail': f"Approved amount ({amt_val}) cannot exceed requested amount ({orig_cost})."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            if amt_val is not None and amt_val > 50000 and role == 'MANAGER':
-                return Response(
-                    {'detail': f"Manager approval limit is Rs.50,000. For amounts exceeding Rs.50,000 ({amt_val}), please recommend to Finance."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            if amt_val is not None and amt_val > 100000 and (role == 'FINANCE' or pr.current_stage == 2 or (role and 'FINANCE' in str(role).upper())):
-                return Response(
-                    {'detail': f"Finance approval limit is Rs.1,00,000. Approved amount (Rs.{amt_val:,.2f}) cannot exceed Rs.1,00,000. For amounts exceeding Rs.1,00,000, please recommend to Admin."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            orig_req_amt = float(
+                pr.extra_fields.get('original_requested_amount') or
+                pr.requested_amount or
+                pr.total_estimated_cost or
+                pr.existing_cost or
+                orig_cost or
+                0
+            ) if isinstance(pr.extra_fields, dict) else float(pr.requested_amount or pr.total_estimated_cost or pr.existing_cost or orig_cost or 0)
+
+            # Manager Approval Limit: <= ₹50,000 based on requested amount (Original PR) and approved amount
+            if role == 'MANAGER' or pr.current_stage == 1:
+                if orig_req_amt > 50000 or (amt_val is not None and amt_val > 50000) or (approved_amount is not None and approved_amount > 50000):
+                    return Response(
+                        {'detail': f"Manager approval limit is ₹50,000. Requested amount (₹{orig_req_amt:,.2f}) exceeds ₹50,000. Please recommend this request to Finance / Higher Authority."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                elif amt_val is not None and orig_req_amt > 0 and amt_val > orig_req_amt:
+                    return Response(
+                        {'detail': f"Approved amount ({amt_val}) cannot exceed requested amount ({orig_req_amt})."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Finance Approval Limit: <= ₹1,00,000
+            if role == 'FINANCE' or pr.current_stage == 2 or (role and 'FINANCE' in str(role).upper()):
+                if orig_req_amt > 100000 or (amt_val is not None and amt_val > 100000) or (approved_amount is not None and approved_amount > 100000):
+                    return Response(
+                        {'detail': f"Finance approval limit is ₹1,00,000. Amount (₹{orig_req_amt:,.2f}) exceeds ₹1,00,000. Please recommend this request to Admin / Higher Authority."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             if not pr.extra_fields or not isinstance(pr.extra_fields, dict):
                 pr.extra_fields = {}
             if 'original_requested_amount' not in pr.extra_fields or float(pr.extra_fields.get('original_requested_amount') or 0) == 0:
@@ -796,10 +979,10 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         )
 
         try:
-            from apps.notification_management.services import notify_stage_event
+            reason_txt = reason_obj.text if reason_obj else (serializer.validated_data.get('notes') or serializer.validated_data.get('comments') or serializer.validated_data.get('reason') or '')
             act_details = {
                 'amount': amt_val or pr.total_estimated_cost,
-                'reason': reason_obj.text if reason_obj else '',
+                'reason': reason_txt,
             }
             if act == 'APPROVE':
                 if role == 'ADMIN' or getattr(actor, 'is_superuser', False):
@@ -823,36 +1006,6 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
-        recipients = set()
-        if pr.created_by:
-            recipients.add(pr.created_by)
-        for step_item in ApprovalStep.objects.filter(request=pr).select_related('actor'):
-            if step_item.actor:
-                recipients.add(step_item.actor)
-
-        if act == 'RECOMMEND':
-            for f_u in User.objects.filter(role='FINANCE'):
-                recipients.add(f_u)
-        elif act in ['RECOMMEND_ADMIN', 'RECOMMEND_TO_ADMIN']:
-            for a_u in User.objects.filter(role='ADMIN'):
-                recipients.add(a_u)
-
-        username_display = getattr(actor, 'username', 'Manager') if actor else 'Manager'
-        msg = f"Request {pr.request_id} ({pr.title}) updated to '{pr.status}' by {username_display} ({act})"
-        if reason_obj:
-            msg += f" - Reason: {reason_obj.text}"
-
-        for u in recipients:
-            try:
-                Notification.objects.create(
-                    user=u,
-                    purchase_request=pr,
-                    title=f"Request {pr.request_id} Update",
-                    message=msg
-                )
-            except Exception:
-                pass
-
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
     @action(
@@ -869,6 +1022,23 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         recommended_amount = request.data.get('recommended_amount') or request.data.get('approved_amount')
 
         with transaction.atomic():
+            valid_statuses = [
+                PurchaseRequest.STATUS_FINANCE_REVIEW,
+                PurchaseRequest.STATUS_FINANCE_RECOMMENDED,
+                PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE,
+                PurchaseRequest.STATUS_MANAGER_RECOMMENDED_TO_FINANCE,
+                PurchaseRequest.STATUS_FINANCE_RESEARCH,
+                PurchaseRequest.STATUS_COST_ESTIMATION,
+                PurchaseRequest.STATUS_FINANCE_REPORT,
+                PurchaseRequest.STATUS_MANAGER_APPROVED,
+                'Pending', 'Recommended', 'Submitted', 'SENT_TO_FINANCE'
+            ]
+            if pr.status not in valid_statuses:
+                return Response(
+                    {'error': f"Request can only be recommended to Admin while awaiting Finance review. Current status: '{pr.status}'."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             prev_status = pr.status
             pr.status = PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN
             pr.current_approval_level = PurchaseRequest.LEVEL_ADMIN
@@ -1059,7 +1229,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 'Approved',
                 PurchaseRequest.STATUS_PAYMENT_COMPLETED
             ]
-            if pr.status not in valid_statuses:
+            if pr.status not in valid_statuses and not is_verified_direct_manager_hardware_payment_ready(pr):
                 return Response(
                     {'error': f"Payment can only be processed for Approved requests. Current status: '{pr.status}'."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -1179,9 +1349,42 @@ class TeamLeadRequestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = get_base_purchase_request_queryset()
+        qs = get_base_purchase_request_queryset().prefetch_related(
+            Prefetch(
+                'purchase_orders',
+                queryset=PurchaseOrder.objects.only(
+                    'id', 'purchase_request_id', 'po_id', 'status', 'updated_at'
+                ).prefetch_related(
+                    Prefetch(
+                        'goods_receipts',
+                        queryset=GoodsReceipt.objects.only(
+                            'id', 'purchase_order_id', 'status', 'verified_at', 'verified_by_name', 'updated_at'
+                        )
+                    ),
+                    Prefetch(
+                        'invoices',
+                        queryset=Invoice.objects.only(
+                            'id', 'purchase_order_id', 'status', 'is_manager_verified',
+                            'verified_at', 'verified_by_name', 'updated_at'
+                        )
+                    ),
+                )
+            ),
+            Prefetch(
+                'rfqs',
+                queryset=RFQ.objects.only('id', 'purchase_request_id').prefetch_related(
+                    Prefetch(
+                        'quotations',
+                        queryset=Quotation.objects.only('id', 'rfq_id', 'status', 'created_at', 'updated_at')
+                    )
+                )
+            )
+        )
         scope = self.request.query_params.get('scope')
-        if scope == 'department' and user.department:
+        my_only = self.request.query_params.get('my_only') == 'true'
+        if my_only and user and not user.is_anonymous:
+            qs = qs.filter(created_by=user)
+        elif scope == 'department' and user and not user.is_anonymous and user.department:
             qs = qs.filter(models.Q(department=user.department) | models.Q(created_by=user) | models.Q(assigned_team_lead=user))
         return apply_request_type_filter(qs, self.request)
 
@@ -1499,11 +1702,11 @@ class TeamLeadRequestViewSet(viewsets.ModelViewSet):
                 notes=comments
             )
 
-            Notification.objects.create(
-                user=pr.created_by,
+            notify_stage_event(
+                'REQUEST_REJECTED',
                 purchase_request=pr,
-                title=f"Request {pr.request_id} Rejected",
-                message=f"Your request '{pr.title}' was rejected by Team Lead {user.username}. Reason: {comments}"
+                actor=user,
+                details={'reason': comments}
             )
 
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
@@ -1602,7 +1805,7 @@ class TeamLeadRequestViewSet(viewsets.ModelViewSet):
                 'Payment Completed',
                 'Completed'
             ]
-            if pr.status not in valid_statuses:
+            if pr.status not in valid_statuses and not is_verified_direct_manager_hardware_payment_ready(pr):
                 return Response(
                     {'error': f"Cannot confirm request in status '{pr.status}'. Manager must verify payment justification first."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -1774,12 +1977,27 @@ class TeamLeadRequestViewSet(viewsets.ModelViewSet):
             raw_amount = data.get('amount') or pr.approved_amount or pr.finance_approved_amount or pr.requested_amount or 0
             
             # Payment Method Handling
-            valid_methods = ['Corporate Card', 'Wire Transfer / NEFT', 'Credit Card', 'UPI', 'Direct Bank Transfer']
-            req_payment_method = data.get('payment_method')
-            if not req_payment_method:
-                return Response({'error': 'payment_method is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            valid_methods = [
+                'Corporate Card',
+                'Corporate Digital Card',
+                'Wire Transfer / NEFT',
+                'Credit Card',
+                'UPI',
+                'Direct Bank Transfer',
+                'Net Banking',
+                'Mock Payment',
+            ]
+            req_payment_method = data.get('payment_method') or 'Corporate Digital Card'
             if req_payment_method not in valid_methods:
-                return Response({'error': f"Invalid payment_method. Allowed values: {', '.join(valid_methods)}"}, status=status.HTTP_400_BAD_REQUEST)
+                # normalize if similar
+                if 'card' in req_payment_method.lower():
+                    req_payment_method = 'Corporate Digital Card'
+                elif 'upi' in req_payment_method.lower():
+                    req_payment_method = 'UPI'
+                elif 'bank' in req_payment_method.lower() or 'transfer' in req_payment_method.lower():
+                    req_payment_method = 'Direct Bank Transfer'
+                else:
+                    return Response({'error': f"Invalid payment_method. Allowed values: {', '.join(valid_methods)}"}, status=status.HTTP_400_BAD_REQUEST)
 
             try:
                 from decimal import Decimal
@@ -2457,6 +2675,91 @@ class TeamLeadRequestViewSet(viewsets.ModelViewSet):
         serializer = PurchaseRequestSerializer(pr, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='send-receipt-higher-authority', permission_classes=[permissions.IsAuthenticated])
+    def send_receipt_higher_authority(self, request, pk=None):
+        """
+        MANAGER TRANSMIT RECEIPT TO HIGHER AUTHORITY (Finance Received Reports & Admin Receipts):
+        Persists receipt metadata, flags request for Finance Received Reports and Admin Receipts Archive.
+        """
+        user = request.user
+        notes = request.data.get('notes') or request.data.get('comments') or 'Transmitted by Manager to Finance Directorate (Received Reports) and Admin Directorate (Receipts Archive).'
+        user_fullname = f"{user.first_name} {user.last_name}".strip() if user else 'Procurement Manager'
+
+        with transaction.atomic():
+            pr = get_purchase_request_by_pk_or_request_id(pk, for_update=True)
+            if not pr:
+                return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if not isinstance(pr.extra_fields, dict):
+                pr.extra_fields = {}
+
+            clean_id = (pr.request_id or str(pr.id)).replace('REQ-', '').replace('REP-', '')
+            rcp_id = pr.extra_fields.get('software_receipt_id') or pr.extra_fields.get('receipt_no') or f"RCP-SW-{clean_id}"
+
+            pr.extra_fields['sent_to_higher_authority'] = True
+            pr.extra_fields['is_sent_to_higher_authority'] = True
+            pr.extra_fields['sent_to_finance_received_reports'] = True
+            pr.extra_fields['sent_to_admin_receipts'] = True
+            pr.extra_fields['receipt_higher_authority_sent_at'] = timezone.now().isoformat()
+            pr.extra_fields['receipt_higher_authority_notes'] = notes
+            pr.extra_fields['receipt_higher_authority_sent_by'] = user_fullname or 'Procurement Manager'
+            pr.extra_fields['software_receipt_id'] = rcp_id
+            pr.extra_fields['receipt_no'] = rcp_id
+
+            pr.save()
+
+            try:
+                vendor_obj = Vendor.objects.filter(name__icontains=pr.vendor or '').first() or Vendor.objects.first()
+                po, _ = PurchaseOrder.objects.get_or_create(
+                    purchase_request=pr,
+                    defaults={
+                        'po_id': f"PO-SW-{clean_id}",
+                        'vendor': vendor_obj,
+                        'total_amount': pr.finance_approved_amount or pr.approved_amount or pr.requested_amount or Decimal('0.00'),
+                        'status': 'Delivered'
+                    }
+                )
+                GoodsReceipt.objects.update_or_create(
+                    receipt_id=rcp_id,
+                    defaults={
+                        'purchase_order': po,
+                        'received_by': user if user.is_authenticated else pr.created_by,
+                        'status': 'Verified',
+                        'delivery_location': 'Cloud / Digital Provisioning',
+                        'product_name': pr.software_name or pr.title,
+                        'ordered_quantity': pr.quantity or 1,
+                        'received_quantity': pr.quantity or 1,
+                        'verified_by_name': user_fullname or 'Procurement Manager',
+                        'notes': f"Software payment receipt for {pr.software_name or pr.title}. Transmitted to Higher Authority."
+                    }
+                )
+            except Exception as gr_sync_err:
+                import logging
+                logging.getLogger(__name__).warning(f"GoodsReceipt sync in send_receipt_higher_authority: {gr_sync_err}")
+
+            ApprovalHistory.objects.create(
+                request=pr,
+                action='SENT_RECEIPT_HIGHER_AUTHORITY',
+                performed_by=user,
+                user_role=getattr(user, 'role', 'MANAGER') if user else 'MANAGER',
+                previous_status=pr.status,
+                new_status=pr.status,
+                comments=f"Receipt transmitted to Higher Authority. Notes: {notes}",
+                approved_amount=pr.finance_approved_amount or pr.approved_amount or pr.requested_amount,
+                cost_center=pr.cost_center or '',
+                budget_available=True,
+                vendor=pr.vendor or ''
+            )
+
+            notify_stage_event(
+                'RECEIPT_SENT_HIGHER_AUTHORITY',
+                purchase_request=pr,
+                actor=user,
+                details={'receipt_id': rcp_id, 'notes': notes}
+            )
+
+            return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
+
     def create_subscription_operation(self, request, pk, operation):
         user = request.user
         with transaction.atomic():
@@ -2571,7 +2874,7 @@ class TeamLeadRequestViewSet(viewsets.ModelViewSet):
                 flow_type=pr.flow_type or 'B',
                 status=PurchaseRequest.STATUS_PENDING,
                 current_stage=1,
-                current_approval_level=PurchaseRequest.LEVEL_TEAM_LEAD,
+                current_approval_level=PurchaseRequest.LEVEL_MANAGER,
                 parent_request=pr,
                 original_request=root,
                 request_operation=operation,
@@ -2582,7 +2885,6 @@ class TeamLeadRequestViewSet(viewsets.ModelViewSet):
                     'original_estimated_cost': float(orig_cost),
                     'requestType': operation.title(),
                     'purchase_type': operation.title(),
-                    'payment_justification': pj_extra,
                     'original_payment_justification': pj_extra,
                 }
             )
@@ -2629,14 +2931,6 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
         if not user or not user.is_authenticated:
             return qs
 
-        if user.role != 'ADMIN':
-            if user.department:
-                qs = qs.filter(
-                    models.Q(department=user.department) | 
-                    models.Q(assigned_manager=user) | 
-                    models.Q(department__isnull=True) |
-                    models.Q(created_by__department=user.department)
-                )
         # Ensure Draft requests never enter Manager review queues
         qs = qs.exclude(status='DRAFT').exclude(current_stage=0)
         return apply_request_type_filter(qs, self.request)
@@ -2776,9 +3070,6 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
             if not pr:
                 return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-            if user.role != 'ADMIN' and user.department and pr.department != user.department and getattr(pr, 'assigned_manager', None) != user and getattr(pr, 'assigned_team_lead', None) != user:
-                raise PermissionDenied("You can only approve requests within your department.")
-
             duplicate_response = completed_action_response(pr, 'approve', user.role)
             if duplicate_response:
                 return duplicate_response
@@ -2801,6 +3092,23 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
             if pr.status not in valid_statuses:
                 return Response(
                     {'error': f"Invalid status transition. Request is in '{pr.status}', but must be in Manager Review to be approved by Manager."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Approval limit check: <= ₹50,000 based on requested amount (Original PR) and approved amount
+            orig_req_amt = float(
+                pr.extra_fields.get('original_requested_amount') or
+                pr.requested_amount or
+                pr.total_estimated_cost or
+                pr.existing_cost or
+                0
+            ) if isinstance(pr.extra_fields, dict) else float(pr.requested_amount or pr.total_estimated_cost or pr.existing_cost or 0)
+
+            if orig_req_amt > 50000 or (approved_amount is not None and float(approved_amount) > 50000):
+                return Response(
+                    {
+                        'error': f"Approval limit exceeded: Requested amount (₹{orig_req_amt:,.2f}) exceeds the Manager approval limit of ₹50,000. Manager cannot approve this request directly. Please recommend it to Finance / Higher Authority."
+                    },
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -2877,9 +3185,6 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
             if not pr:
                 return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-            if user.role != 'ADMIN' and user.department and pr.department != user.department and getattr(pr, 'assigned_manager', None) != user and getattr(pr, 'assigned_team_lead', None) != user:
-                raise PermissionDenied("You can only reject requests within your department.")
-
             if pr.status not in [PurchaseRequest.STATUS_MANAGER_REVIEW, 'Pending', 'SUBMITTED']:
                 return Response(
                     {'error': f"Invalid status transition. Request is in '{pr.status}', but must be in 'MANAGER_REVIEW' to be rejected by Manager."},
@@ -2913,16 +3218,12 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
                 notes=comments
             )
 
-            if pr.created_by:
-                try:
-                    Notification.objects.create(
-                        user=pr.created_by,
-                        purchase_request=pr,
-                        title=f"Request {pr.request_id} Rejected by Manager",
-                        message=f"Request '{pr.title}' was rejected by Manager {user.username}. Reason: {comments}"
-                    )
-                except Exception:
-                    pass
+            notify_stage_event(
+                'REQUEST_REJECTED',
+                purchase_request=pr,
+                actor=user,
+                details={'reason': comments}
+            )
 
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
@@ -2941,9 +3242,6 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
             pr = get_purchase_request_by_pk_or_request_id(pk, for_update=True)
             if not pr:
                 return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-            if user.role != 'ADMIN' and user.department and pr.department != user.department and getattr(pr, 'assigned_manager', None) != user and getattr(pr, 'assigned_team_lead', None) != user:
-                raise PermissionDenied("You can only send back requests within your department.")
 
             if pr.status not in [PurchaseRequest.STATUS_MANAGER_REVIEW, PurchaseRequest.STATUS_PAYMENT_JUSTIFICATION_SUBMITTED, 'Pending', 'SUBMITTED']:
                 return Response(
@@ -3249,18 +3547,90 @@ class ManagerRequestViewSet(viewsets.ReadOnlyModelViewSet):
 
             return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
-            try:
-                if pr.created_by:
-                    Notification.objects.create(
-                        user=pr.created_by,
-                        purchase_request=pr,
-                        title=f"Payment Justification Verified | {pr.request_id}",
-                        message=f"Manager has verified your Payment Justification for '{pr.title}'. Please acknowledge to complete the request."
-                    )
-            except Exception:
-                pass
+    @action(detail=True, methods=['post'], url_path='send-receipt-higher-authority', permission_classes=[permissions.IsAuthenticated])
+    def send_receipt_higher_authority(self, request, pk=None):
+        """
+        MANAGER TRANSMIT RECEIPT TO HIGHER AUTHORITY (Finance Received Reports & Admin Receipts):
+        Persists receipt metadata, flags request for Finance Received Reports and Admin Receipts Archive.
+        """
+        user = request.user
+        notes = request.data.get('notes') or request.data.get('comments') or 'Transmitted by Manager to Finance Directorate (Received Reports) and Admin Directorate (Receipts Archive).'
+        user_fullname = f"{user.first_name} {user.last_name}".strip() if user else 'Procurement Manager'
 
-        return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
+        with transaction.atomic():
+            pr = get_purchase_request_by_pk_or_request_id(pk, for_update=True)
+            if not pr:
+                return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if not isinstance(pr.extra_fields, dict):
+                pr.extra_fields = {}
+
+            clean_id = (pr.request_id or str(pr.id)).replace('REQ-', '').replace('REP-', '')
+            rcp_id = pr.extra_fields.get('software_receipt_id') or pr.extra_fields.get('receipt_no') or f"RCP-SW-{clean_id}"
+
+            pr.extra_fields['sent_to_higher_authority'] = True
+            pr.extra_fields['is_sent_to_higher_authority'] = True
+            pr.extra_fields['sent_to_finance_received_reports'] = True
+            pr.extra_fields['sent_to_admin_receipts'] = True
+            pr.extra_fields['receipt_higher_authority_sent_at'] = timezone.now().isoformat()
+            pr.extra_fields['receipt_higher_authority_notes'] = notes
+            pr.extra_fields['receipt_higher_authority_sent_by'] = user_fullname or 'Procurement Manager'
+            pr.extra_fields['software_receipt_id'] = rcp_id
+            pr.extra_fields['receipt_no'] = rcp_id
+
+            pr.save()
+
+            try:
+                vendor_obj = Vendor.objects.filter(name__icontains=pr.vendor or '').first() or Vendor.objects.first()
+                po, _ = PurchaseOrder.objects.get_or_create(
+                    purchase_request=pr,
+                    defaults={
+                        'po_id': f"PO-SW-{clean_id}",
+                        'vendor': vendor_obj,
+                        'total_amount': pr.finance_approved_amount or pr.approved_amount or pr.requested_amount or Decimal('0.00'),
+                        'status': 'Delivered'
+                    }
+                )
+                GoodsReceipt.objects.update_or_create(
+                    receipt_id=rcp_id,
+                    defaults={
+                        'purchase_order': po,
+                        'received_by': user if user.is_authenticated else pr.created_by,
+                        'status': 'Verified',
+                        'delivery_location': 'Cloud / Digital Provisioning',
+                        'product_name': pr.software_name or pr.title,
+                        'ordered_quantity': pr.quantity or 1,
+                        'received_quantity': pr.quantity or 1,
+                        'verified_by_name': user_fullname or 'Procurement Manager',
+                        'notes': f"Software payment receipt for {pr.software_name or pr.title}. Transmitted to Higher Authority."
+                    }
+                )
+            except Exception as gr_sync_err:
+                import logging
+                logging.getLogger(__name__).warning(f"GoodsReceipt sync in send_receipt_higher_authority: {gr_sync_err}")
+
+            ApprovalHistory.objects.create(
+                request=pr,
+                action='SENT_RECEIPT_HIGHER_AUTHORITY',
+                performed_by=user,
+                user_role=getattr(user, 'role', 'MANAGER') if user else 'MANAGER',
+                previous_status=pr.status,
+                new_status=pr.status,
+                comments=f"Receipt transmitted to Higher Authority. Notes: {notes}",
+                approved_amount=pr.finance_approved_amount or pr.approved_amount or pr.requested_amount,
+                cost_center=pr.cost_center or '',
+                budget_available=True,
+                vendor=pr.vendor or ''
+            )
+
+            notify_stage_event(
+                'RECEIPT_SENT_HIGHER_AUTHORITY',
+                purchase_request=pr,
+                actor=user,
+                details={'receipt_id': rcp_id, 'notes': notes}
+            )
+
+            return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
 class FinanceRequestViewSet(viewsets.ModelViewSet):
     """
@@ -3563,6 +3933,23 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            # Finance approval limit check: <= ₹1,00,000 based on requested amount and approved amount
+            orig_req_amt = float(
+                pr.extra_fields.get('original_requested_amount') or
+                pr.requested_amount or
+                pr.total_estimated_cost or
+                pr.existing_cost or
+                0
+            ) if isinstance(pr.extra_fields, dict) else float(pr.requested_amount or pr.total_estimated_cost or pr.existing_cost or 0)
+
+            if orig_req_amt > 100000 or (approved_amount is not None and float(approved_amount) > 100000):
+                return Response(
+                    {
+                        'error': f"Approval limit exceeded: Amount (₹{orig_req_amt:,.2f}) exceeds the Finance approval limit of ₹1,00,000. Finance cannot approve this request directly. Please recommend it to Admin / Higher Authority."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             prev_status = pr.status
             new_status = PurchaseRequest.STATUS_FINANCE_APPROVED
             pr.status = new_status
@@ -3756,18 +4143,33 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
             valid_statuses = [
                 PurchaseRequest.STATUS_FINANCE_REVIEW,
                 PurchaseRequest.STATUS_FINANCE_RECOMMENDED,
+                PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE,
+                PurchaseRequest.STATUS_MANAGER_RECOMMENDED_TO_FINANCE,
+                PurchaseRequest.STATUS_FINANCE_RESEARCH,
+                PurchaseRequest.STATUS_COST_ESTIMATION,
+                PurchaseRequest.STATUS_FINANCE_REPORT,
                 PurchaseRequest.STATUS_MANAGER_APPROVED,
-                'Pending', 'Recommended', 'Submitted', 'SENT_TO_FINANCE'
+                'Pending', 'Recommended', 'Submitted', 'SENT_TO_FINANCE',
+                'RECOMMENDED_TO_FINANCE', 'MANAGER_RECOMMENDED_TO_FINANCE',
+                'FINANCE_REVIEW', 'FINANCE_RECOMMENDED'
             ]
             if pr.status not in valid_statuses:
                 return Response(
-                    {'error': f"Invalid status transition. Request is in '{pr.status}', but must be in 'FINANCE_REVIEW' to be rejected by Finance."},
+                    {'error': f"Invalid status transition. Request is in '{pr.status}', but must be under Finance review to be rejected by Finance."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
             prev_status = pr.status
             pr.status = PurchaseRequest.STATUS_FINANCE_REJECTED
             pr.current_approval_level = PurchaseRequest.LEVEL_NONE
+
+            extra = pr.extra_fields if isinstance(pr.extra_fields, dict) else {}
+            extra['rejection_reason'] = comments
+            extra['rejected_by'] = f"{user.first_name} {user.last_name}".strip() or user.username
+            extra['rejected_date'] = str(timezone.now().date())
+            extra['finance_rejected'] = True
+            extra['finance_comment'] = comments
+            pr.extra_fields = extra
             pr.save()
 
             ApprovalHistory.objects.create(
@@ -3792,16 +4194,12 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
                 notes=comments
             )
 
-            if pr.created_by:
-                try:
-                    Notification.objects.create(
-                        user=pr.created_by,
-                        purchase_request=pr,
-                        title=f"Request {pr.request_id} Rejected by Finance",
-                        message=f"Request '{pr.title}' was rejected by Finance ({user.username}). Reason: {comments}"
-                    )
-                except Exception:
-                    pass
+            notify_stage_event(
+                'REQUEST_REJECTED',
+                purchase_request=pr,
+                actor=user,
+                details={'reason': comments}
+            )
 
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
@@ -3824,12 +4222,19 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
             valid_statuses = [
                 PurchaseRequest.STATUS_FINANCE_REVIEW,
                 PurchaseRequest.STATUS_FINANCE_RECOMMENDED,
+                PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE,
+                PurchaseRequest.STATUS_MANAGER_RECOMMENDED_TO_FINANCE,
+                PurchaseRequest.STATUS_FINANCE_RESEARCH,
+                PurchaseRequest.STATUS_COST_ESTIMATION,
+                PurchaseRequest.STATUS_FINANCE_REPORT,
                 PurchaseRequest.STATUS_MANAGER_APPROVED,
-                'Pending', 'Recommended', 'Submitted', 'SENT_TO_FINANCE'
+                'Pending', 'Recommended', 'Submitted', 'SENT_TO_FINANCE',
+                'RECOMMENDED_TO_FINANCE', 'MANAGER_RECOMMENDED_TO_FINANCE',
+                'FINANCE_REVIEW', 'FINANCE_RECOMMENDED'
             ]
             if pr.status not in valid_statuses:
                 return Response(
-                    {'error': f"Invalid status transition. Request is currently in '{pr.status}', but must be in 'FINANCE_REVIEW' to be sent back by Finance."},
+                    {'error': f"Invalid status transition. Request is currently in '{pr.status}', but must be under Finance review to be sent back by Finance."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -3893,6 +4298,23 @@ class FinanceRequestViewSet(viewsets.ModelViewSet):
 
             if user.role not in ['ADMIN', 'FINANCE']:
                 raise PermissionDenied("Only Finance Officers and Administrators can recommend requests to Admin.")
+
+            valid_statuses = [
+                PurchaseRequest.STATUS_FINANCE_REVIEW,
+                PurchaseRequest.STATUS_FINANCE_RECOMMENDED,
+                PurchaseRequest.STATUS_RECOMMENDED_TO_FINANCE,
+                PurchaseRequest.STATUS_MANAGER_RECOMMENDED_TO_FINANCE,
+                PurchaseRequest.STATUS_FINANCE_RESEARCH,
+                PurchaseRequest.STATUS_COST_ESTIMATION,
+                PurchaseRequest.STATUS_FINANCE_REPORT,
+                PurchaseRequest.STATUS_MANAGER_APPROVED,
+                'Pending', 'Recommended', 'Submitted', 'SENT_TO_FINANCE'
+            ]
+            if pr.status not in valid_statuses:
+                return Response(
+                    {'error': f"Request can only be recommended to Admin while awaiting Finance review. Current status: '{pr.status}'."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             prev_status = pr.status
             pr.status = PurchaseRequest.STATUS_RECOMMENDED_TO_ADMIN
@@ -4133,6 +4555,21 @@ class AdminRequestViewSet(viewsets.ModelViewSet):
                 vendor=pr.vendor or ''
             )
 
+            ApprovalStep.objects.create(
+                request=pr,
+                actor=user,
+                role='ADMIN',
+                decision='REJECT',
+                notes=comments
+            )
+
+            notify_stage_event(
+                'REQUEST_REJECTED',
+                purchase_request=pr,
+                actor=user,
+                details={'reason': comments}
+            )
+
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='send-back')
@@ -4163,6 +4600,21 @@ class AdminRequestViewSet(viewsets.ModelViewSet):
                 cost_center=pr.cost_center or '',
                 budget_available=bool(pr.budget_available if pr.budget_available is not None else True),
                 vendor=pr.vendor or ''
+            )
+
+            ApprovalStep.objects.create(
+                request=pr,
+                actor=user,
+                role='ADMIN',
+                decision='RETURN',
+                notes=comments
+            )
+
+            notify_stage_event(
+                'REQUEST_RETURNED',
+                purchase_request=pr,
+                actor=user,
+                details={'reason': comments}
             )
 
         return Response(PurchaseRequestSerializer(pr).data, status=status.HTTP_200_OK)

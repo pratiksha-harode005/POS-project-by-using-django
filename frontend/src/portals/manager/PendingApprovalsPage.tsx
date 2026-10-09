@@ -161,25 +161,45 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
     setShowApprovalModal(true)
   }
 
-  const handleConfirmApproval = (params: ApprovalParameters) => {
+  const handleConfirmApproval = async (params: ApprovalParameters) => {
     if (!activeReq) return
-    approveRequest(activeReq.id, params.approvalComments, params)
-    showToast(`✓ Request ${activeReq.id} approved successfully! Forwarded for procurement.`, 'success')
-    setActiveReq(null)
-    setShowApprovalModal(false)
+    try {
+      await approveRequest(activeReq.id, params.approvalComments, params)
+      showToast(`✓ Request ${activeReq.id} approved successfully! Forwarded for procurement.`, 'success')
+      setActiveReq(null)
+      setShowApprovalModal(false)
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.response?.data?.error || err?.message
+      showToast(detail || `Could not approve request ${activeReq.id}.`, 'error')
+    }
   }
 
-  const handleConfirm = (data: { action: ModalActionType; reason?: string; notes?: string }) => {
+  const handleConfirm = async (data: { action: ModalActionType; reason?: string; notes?: string }) => {
     if (!activeReq) return
     if (data.action === 'APPROVE') {
-      approveRequest(activeReq.id, data.notes)
-      showToast(`✓ Request ${activeReq.id} approved successfully! Forwarded for procurement.`, 'success')
+      try {
+        await approveRequest(activeReq.id, data.notes)
+        showToast(`✓ Request ${activeReq.id} approved successfully! Forwarded for procurement.`, 'success')
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail || err?.response?.data?.error || err?.message
+        showToast(detail || `Could not approve request ${activeReq.id}.`, 'error')
+      }
     } else if (data.action === 'REJECT') {
-      rejectRequest(activeReq.id, data.reason || '', data.notes)
-      showToast(`✕ Request ${activeReq.id} rejected. Audit recorded.`, 'error')
+      try {
+        await rejectRequest(activeReq.id, data.reason || '', data.notes)
+        showToast(`✕ Request ${activeReq.id} rejected. Audit recorded.`, 'error')
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail || err?.response?.data?.error || err?.message
+        showToast(detail || `Could not reject request ${activeReq.id}.`, 'error')
+      }
     } else if (data.action === 'RECOMMEND') {
-      recommendToFinance(activeReq.id, data.reason || '')
-      showToast(`↑ Request ${activeReq.id} recommended to Higher Authority.`, 'info')
+      try {
+        await recommendToFinance(activeReq.id, data.reason || '')
+        showToast(`↑ Request ${activeReq.id} recommended to Higher Authority.`, 'info')
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail || err?.response?.data?.error || err?.message
+        showToast(detail || `Could not recommend request ${activeReq.id}.`, 'error')
+      }
     }
     setActiveReq(null)
     setModalAction(null)
@@ -585,6 +605,22 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                 {/* Software / SaaS Payment Justification Banner */}
                 {(() => {
                   const reqRawSt = ((req as any).raw_status || req.status || '').toUpperCase()
+                  const st = (req.status || '').toLowerCase()
+
+                  // Never show payment justification banner for pre-approval / initial stages
+                  const isPreApproval = (
+                    reqRawSt === 'PENDING' ||
+                    reqRawSt === 'MANAGER_REVIEW' ||
+                    reqRawSt === 'SUBMITTED' ||
+                    reqRawSt === 'CREATED' ||
+                    reqRawSt === 'MANAGER_RESEARCHING' ||
+                    st === 'pending' ||
+                    st === 'pending_approval' ||
+                    st === 'pending_arrival' ||
+                    st === 'manager_researching'
+                  )
+                  if (isPreApproval) return null
+
                   const isJustificationVerified = 
                     reqRawSt === 'PAYMENT_JUSTIFIED' ||
                     reqRawSt === 'MANAGER_VERIFIED' ||
@@ -595,23 +631,16 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                     Boolean((req as any).extra_fields?.justification_verified_at) ||
                     Boolean((req as any).payment_justification_detail?.verified_at)
 
-                  const hasJustification = Boolean(
-                    isJustificationVerified ||
-                    reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-                    reqRawSt === 'PAYMENT_PROCESSED' ||
-                    (req as any).payment_justification_detail ||
-                    (req as any).extra_fields?.payment_justification
-                  )
                   const isAwaitingJustificationVerification = (
                     !isJustificationVerified &&
                     (reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-                     reqRawSt === 'PAYMENT_PROCESSED' ||
-                     Boolean((req as any).extra_fields?.payment_justification || (req as any).payment_justification_detail)) &&
-                    reqRawSt !== 'COMPLETED' &&
-                    reqRawSt !== 'REQUEST_COMPLETED'
+                     st === 'payment_justification_submitted' ||
+                     (Boolean((req as any).extra_fields?.payment_justification || (req as any).payment_justification_detail) &&
+                      reqRawSt !== 'COMPLETED' &&
+                      reqRawSt !== 'REQUEST_COMPLETED'))
                   )
 
-                  if (!hasJustification) return null
+                  if (!isJustificationVerified && !isAwaitingJustificationVerification) return null
 
                   return (
                     <div className="bg-gradient-to-r from-violet-50 via-purple-50 to-indigo-50 border-2 border-violet-300 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs text-violet-950 shadow-2xs animate-fadeIn">
@@ -767,20 +796,34 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                     </button>
                   </div>
 
-                  {/* Action Buttons: Show ONLY View/Verify Justification when justification exists */}
+                  {/* Action Buttons: Show ONLY View/Verify Justification when in post-payment justification stage */}
                   {(() => {
                     const reqRawSt = ((req as any).raw_status || req.status || '').toUpperCase()
-                    const hasJustification = Boolean(
+                    const st = (req.status || '').toLowerCase()
+
+                    const isPreApproval = (
+                      reqRawSt === 'PENDING' ||
+                      reqRawSt === 'MANAGER_REVIEW' ||
+                      reqRawSt === 'SUBMITTED' ||
+                      reqRawSt === 'CREATED' ||
+                      reqRawSt === 'MANAGER_RESEARCHING' ||
+                      st === 'pending' ||
+                      st === 'pending_approval' ||
+                      st === 'pending_arrival' ||
+                      st === 'manager_researching'
+                    )
+
+                    const isPostPaymentJustificationStage = !isPreApproval && (
                       reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-                      (req as any).payment_justification_detail ||
-                      (req as any).extra_fields?.payment_justification ||
-                      (req as any).extra_fields?.justification_verified_at ||
+                      st === 'payment_justification_submitted' ||
                       reqRawSt === 'PAYMENT_JUSTIFIED' ||
                       reqRawSt === 'MANAGER_VERIFIED' ||
                       reqRawSt === 'MANAGER_VERIFIED_PENDING_TEAM_LEAD_ACKNOWLEDGEMENT'
                     )
+
                     const isAwaitingJustificationVerification = (
                       reqRawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
+                      st === 'payment_justification_submitted' ||
                       (Boolean((req as any).extra_fields?.payment_justification || (req as any).payment_justification_detail) &&
                        !(req as any).extra_fields?.justification_verified_at &&
                        reqRawSt !== 'PAYMENT_JUSTIFIED' &&
@@ -789,7 +832,7 @@ export const PendingApprovalsPage: React.FC<PendingApprovalsPageProps> = ({ init
                        reqRawSt !== 'REQUEST_COMPLETED')
                     )
 
-                    if (hasJustification) {
+                    if (isPostPaymentJustificationStage) {
                       return (
                         <div className="flex items-center gap-2 flex-wrap">
                           <button

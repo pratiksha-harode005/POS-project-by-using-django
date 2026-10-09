@@ -7,7 +7,7 @@ import {
 import { useFinanceData, ProcurementRequest, ApprovalParameters } from '../../context/ManagerDataContext'
 import { RequestApprovalModal } from '../../components/portal/RequestApprovalModal'
 import { RequestTypeFilter } from '../../components/portal/RequestTypeFilter'
-import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst } from '../../utils/workflowUtils'
+import { isSoftwareRequest, isHardwareRequest, sortRequestsNewestFirst, getManagerStatus } from '../../utils/workflowUtils'
 import { useAuth } from '../../context/AuthContext'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
@@ -31,6 +31,13 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
 
   useEffect(() => {
     refreshData?.()
+    const handleUpdate = () => refreshData?.()
+    window.addEventListener('kss_backend_updated', handleUpdate)
+    window.addEventListener('storage', handleUpdate)
+    return () => {
+      window.removeEventListener('kss_backend_updated', handleUpdate)
+      window.removeEventListener('storage', handleUpdate)
+    }
   }, [refreshData])
 
   const actorName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : 'Finance Officer'
@@ -50,7 +57,7 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
     setTimeout(() => setToast(null), 3500)
   }
 
-  const handleConfirmApproval = (params: ApprovalParameters) => {
+  const handleConfirmApproval = async (params: ApprovalParameters) => {
     if (!approveModalReq) return
     const isAlreadyApp = Boolean(
       isAdminApprovedRequest(approveModalReq) ||
@@ -71,10 +78,11 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
       setApproveModalReq(null)
       return
     }
-    approveFinanceRequest(
+    await approveFinanceRequest(
       approveModalReq.id,
       params.approvalComments || 'Verified within budget allocation. Authorized for PO release.',
-      actorName
+      actorName,
+      params
     )
     showToast(`✓ Request ${approveModalReq.id} approved! Forwarded for PO release.`, 'success')
     setApproveModalReq(null)
@@ -401,6 +409,7 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
                     r.status === 'finance_rejected'
                   )
                   const isFinanceHold = Boolean(r.financeStatus === 'On Hold' || r.status === 'finance_on_hold')
+                  const mgrStatus = getManagerStatus(r)
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
@@ -425,15 +434,9 @@ export const FinancePurchaseRequestsPage: React.FC = () => {
                       </td>
                       <td className="p-4 whitespace-nowrap">
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border shadow-2xs ${
-                            r.status === 'approved' || r.approvedBy
-                              ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                              : r.status === 'rejected'
-                              ? 'bg-rose-100 text-rose-900 border-rose-300'
-                              : 'bg-amber-100 text-amber-900 border-amber-300'
-                          }`}
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border shadow-2xs ${mgrStatus.className}`}
                         >
-                          {r.approvedBy ? 'Manager Approved' : r.status === 'rejected' ? 'Manager Rejected' : 'Pending Manager'}
+                          {mgrStatus.label}
                         </span>
                       </td>
                       <td className="p-4 whitespace-nowrap">

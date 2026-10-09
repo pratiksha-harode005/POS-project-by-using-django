@@ -16,6 +16,7 @@ import {
   sendBackRequestApi,
   recommendToFinanceApi
 } from '../../api/managerApi'
+import { getManagerStatusInfo } from './ManagerPurchaseRequestsPage'
 import { PaymentJustificationDetailsDisplay } from '../teamlead/MyRequestsPage'
 
 const fmt = (v: number) => `₹${Number(v || 0).toLocaleString('en-IN')}`
@@ -298,17 +299,14 @@ export const ManagerRequestDetailsPage: React.FC = () => {
               }`}>
                 {req.priority} Priority
               </span>
-              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
-                req.status === 'approved' || req.status === 'finance_approved' || req.paymentStatus === 'Paid'
-                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                  : req.status === 'finance_review'
-                  ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
-                  : req.status === 'rejected'
-                  ? 'bg-rose-100 text-rose-900 border-rose-300'
-                  : 'bg-amber-100 text-amber-900 border-amber-300'
-              }`}>
-                {req.status === 'finance_review' ? 'Finance Review' : req.approvedBy ? 'Manager Approved' : req.status === 'rejected' ? 'Manager Rejected' : 'Pending Manager Review'}
-              </span>
+              {(() => {
+                const mgrStatus = getManagerStatusInfo(req)
+                return (
+                  <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border shadow-2xs ${mgrStatus.className}`}>
+                    {mgrStatus.label}
+                  </span>
+                )
+              })()}
             </div>
             <h2 className="text-xl font-bold text-slate-900 mt-2">{req.title}</h2>
             <p className="text-xs text-slate-500 mt-1">
@@ -690,6 +688,20 @@ export const ManagerRequestDetailsPage: React.FC = () => {
       {/* ─── SOFTWARE & SAAS: Payment Justification Review Card ────────── */}
       {(() => {
         const rawSt = ((req as any).raw_status || (req as any).status || '').toUpperCase()
+        const st = ((req as any).status || '').toLowerCase()
+        const isPreApproval = (
+          rawSt === 'PENDING' ||
+          rawSt === 'MANAGER_REVIEW' ||
+          rawSt === 'SUBMITTED' ||
+          rawSt === 'CREATED' ||
+          rawSt === 'MANAGER_RESEARCHING' ||
+          st === 'pending' ||
+          st === 'pending_approval' ||
+          st === 'pending_arrival' ||
+          st === 'manager_researching'
+        )
+        if (isPreApproval) return null
+
         const j = (req as any).extra_fields?.payment_justification || {}
         const isVerified = 
           rawSt === 'PAYMENT_JUSTIFIED' ||
@@ -703,7 +715,7 @@ export const ManagerRequestDetailsPage: React.FC = () => {
 
         const isAwaitingVerification = !isVerified && (
           rawSt === 'PAYMENT_JUSTIFICATION_SUBMITTED' ||
-          rawSt === 'PAYMENT_PROCESSED' ||
+          st === 'payment_justification_submitted' ||
           Boolean((req as any).payment_justification_detail || j.software_name)
         )
 

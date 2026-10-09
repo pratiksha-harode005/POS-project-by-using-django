@@ -38,11 +38,11 @@ export const getManagerRequests = async (params?: ApiRequestParams) => {
   const role = (localStorage.getItem('user_role') || '').toUpperCase()
   const primaryEndpoint = (role === 'MANAGER' || role === 'ADMIN') ? '/manager/requests/' : '/requests/'
   try {
-    const res = await apiClient.get(primaryEndpoint, { params: { ...params, page_size: 100 } })
+    const res = await apiClient.get(primaryEndpoint, { params: { page_size: 1000, ...params } })
     return res.data
   } catch (err) {
     try {
-      const fallback = await apiClient.get('/requests/', { params: { ...params, page_size: 100 } })
+      const fallback = await apiClient.get('/requests/', { params: { page_size: 1000, ...params } })
       return fallback.data
     } catch {
       return { results: [], count: 0 }
@@ -66,11 +66,11 @@ export const getDashboardStats = async () => {
   try {
     const role = (localStorage.getItem('user_role') || '').toUpperCase()
     const endpoint = (role === 'MANAGER' || role === 'ADMIN') ? '/manager/requests/' : '/requests/'
-    const res = await apiClient.get(endpoint, { params: { page_size: 100 } })
+    const res = await apiClient.get(endpoint, { params: { page_size: 1000 } })
     return res.data
   } catch {
     try {
-      const fallback = await apiClient.get('/requests/', { params: { page_size: 100 } })
+      const fallback = await apiClient.get('/requests/', { params: { page_size: 1000 } })
       return fallback.data
     } catch {
       return null
@@ -82,13 +82,13 @@ export const getDashboardStats = async () => {
 export const getPendingRequests = async (params?: ApiRequestParams) => {
   try {
     const res = await apiClient.get('/manager/requests/', {
-      params: { ...params, status: 'MANAGER_REVIEW' }
+      params: { page_size: 1000, ...params, status: 'MANAGER_REVIEW' }
     })
     return res.data
   } catch {
     try {
       const fallback = await apiClient.get('/requests/', {
-        params: { ...params, status: 'Pending' }
+        params: { page_size: 1000, ...params, status: 'Pending' }
       })
       return fallback.data
     } catch {
@@ -114,7 +114,7 @@ export const approveRequestApi = async (
   try {
     const res = await apiClient.post(`/manager/requests/${id}/approve/`, body)
     return res.data
-  } catch {
+  } catch (primaryErr) {
     try {
       const fallback = await apiClient.post(`/requests/${id}/process_approval/`, {
         action: 'APPROVE',
@@ -127,7 +127,7 @@ export const approveRequestApi = async (
       })
       return fallback.data
     } catch {
-      return { success: true }
+      throw primaryErr
     }
   }
 }
@@ -141,7 +141,7 @@ export const rejectRequestApi = async (id: string | number, reasonOrComments?: s
   try {
     const res = await apiClient.post(`/manager/requests/${id}/reject/`, { comments })
     return res.data
-  } catch {
+  } catch (primaryErr) {
     try {
       const fallback = await apiClient.post(`/requests/${id}/process_approval/`, {
         action: 'REJECT',
@@ -150,7 +150,7 @@ export const rejectRequestApi = async (id: string | number, reasonOrComments?: s
       })
       return fallback.data
     } catch {
-      return { success: true }
+      throw primaryErr
     }
   }
 }
@@ -372,7 +372,7 @@ export const disbursePaymentApi = async (paymentId: string) => {
     return res.data
   } catch (err) {
     console.warn('Failed to mark payment paid in backend:', err)
-    return null
+    throw err
   }
 }
 

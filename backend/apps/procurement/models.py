@@ -67,6 +67,7 @@ class GoodsReceipt(TimeStampedModel):
     receipt_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Pending Verification', db_index=True)
     notes = models.TextField(blank=True, default='')
+    reject_reason = models.TextField(blank=True, default='')
     verified_by_name = models.CharField(max_length=255, blank=True, default='')
     verified_at = models.DateTimeField(null=True, blank=True)
 

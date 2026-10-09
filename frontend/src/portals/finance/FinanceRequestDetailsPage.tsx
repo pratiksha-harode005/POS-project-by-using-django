@@ -109,7 +109,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
     setTimeout(() => setToast(null), 3500)
   }
 
-  const handleConfirmApproval = (params: ApprovalParameters) => {
+  const handleConfirmApproval = async (params: ApprovalParameters) => {
     if (!request) return
     if (isAwaitingAdminApproval(request)) {
       showToast(`Request ${request.id} is awaiting Admin approval.`, 'error')
@@ -135,7 +135,7 @@ export const FinanceRequestDetailsPage: React.FC = () => {
       setApproveModalOpen(false)
       return
     }
-    approveFinanceRequest(
+    await approveFinanceRequest(
       request.id,
       params.approvalComments || 'Verified within budget allocation. Authorized for PO release.',
       actorName,
@@ -1598,6 +1598,8 @@ export const FinanceRequestDetailsPage: React.FC = () => {
         onClose={() => setPaymentModalOpen(false)}
         onSuccess={(ref) => {
           showToast(`✓ Treasury payment successfully disbursed! Reference: ${ref}`, 'success')
+          setPaymentModalOpen(false)
+          navigate('/portal/finance/purchase-requests')
         }}
       />
     </div>

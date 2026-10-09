@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { QuotationItem } from '../../context/ManagerDataContext'
 import { formatDate } from '../../utils/formatDate'
+import { ModalPortal } from './ModalPortal'
 
 const fmt = (v: number) => `₹${v.toLocaleString('en-IN')}`
 
@@ -47,60 +48,61 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
   const unitLanded = Math.round(totalVal / qty)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white rounded-3xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] text-xs">
-        
-        {/* Modal Header */}
-        <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shrink-0">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-500/20 text-purple-200 border border-purple-400/30">
-                {quote.id}
-              </span>
-              <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-white/10 text-slate-200 border border-white/10">
-                {quote.rfqId}
-              </span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                quote.status === 'Selected' ? 'bg-emerald-500 text-white' :
-                quote.status === 'Shortlisted' ? 'bg-indigo-500 text-white' :
-                quote.status === 'Under Evaluation' ? 'bg-blue-500 text-white' :
-                'bg-rose-500 text-white'
-              }`}>
-                {quote.status}
-              </span>
+    <ModalPortal isOpen={Boolean(quote)}>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-900/40 backdrop-blur-md overflow-hidden animate-fadeIn">
+        <div className="bg-white rounded-3xl max-w-4xl w-full h-[94vh] max-h-[94vh] border border-slate-200 shadow-2xl overflow-hidden flex flex-col my-auto text-xs animate-scaleUp">
+          
+          {/* Modal Header */}
+          <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shrink-0">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-500/20 text-purple-200 border border-purple-400/30">
+                  {quote.id}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-white/10 text-slate-200 border border-white/10">
+                  {quote.rfqId}
+                </span>
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                  quote.status === 'Selected' ? 'bg-emerald-500 text-white' :
+                  quote.status === 'Shortlisted' ? 'bg-indigo-500 text-white' :
+                  quote.status === 'Under Evaluation' ? 'bg-blue-500 text-white' :
+                  'bg-rose-500 text-white'
+                }`}>
+                  {quote.status}
+                </span>
+              </div>
+              <h2 className="text-lg font-black text-white tracking-tight mt-1">
+                Quotation Commercial Breakdown
+              </h2>
+              <p className="text-slate-300 text-xs flex items-center gap-2 flex-wrap">
+                <span>{quote.rfqId}: <b>{quote.rfqTitle}</b></span>
+                <span>•</span>
+                <span>Submitted: <b>{formatDate(quote.quoteDate || quote.submittedAt)}</b></span>
+                <span>•</span>
+                <span className="text-amber-300 font-semibold">Valid Until: {formatDate(quote.validUntil)}</span>
+              </p>
             </div>
-            <h2 className="text-lg font-black text-white tracking-tight mt-1">
-              Quotation Commercial Breakdown
-            </h2>
-            <p className="text-slate-300 text-xs flex items-center gap-2 flex-wrap">
-              <span>{quote.rfqId}: <b>{quote.rfqTitle}</b></span>
-              <span>•</span>
-              <span>Submitted: <b>{formatDate(quote.quoteDate || quote.submittedAt)}</b></span>
-              <span>•</span>
-              <span className="text-amber-300 font-semibold">Valid Until: {formatDate(quote.validUntil)}</span>
-            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePrint}
+                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Print Quotation Dossier"
+              >
+                <Printer size={14} />
+                <span className="hidden sm:inline">Print Dossier</span>
+              </button>
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrint}
-              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-all"
-              title="Print Quotation Dossier"
-            >
-              <Printer size={14} />
-              <span className="hidden sm:inline">Print Dossier</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-all"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Scrollable Content Body */}
-        <div className="p-6 overflow-y-auto space-y-6">
+          {/* Scrollable Content Body */}
+          <div className="flex-1 p-6 overflow-y-auto space-y-6 min-h-0">
           
           {/* 1. Supplier Credentials Strip */}
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -394,7 +396,8 @@ export const QuotationCommercialModal: React.FC<QuotationCommercialModalProps> =
           </div>
         </div>
 
+        </div>
       </div>
-    </div>
+    </ModalPortal>
   )
 }

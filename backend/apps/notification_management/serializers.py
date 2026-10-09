@@ -1,11 +1,17 @@
 from django.utils import timezone
 from rest_framework import serializers
 from .models import Notification
-from apps.users.serializers import UserSerializer
+from apps.users.models import User
+
+
+class NotificationUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'vendor_id_code']
 
 
 class NotificationSerializer(serializers.ModelSerializer):
-    user_detail = UserSerializer(source='user', read_only=True)
+    user_detail = NotificationUserSerializer(source='user', read_only=True)
     request_id = serializers.ReadOnlyField(source='purchase_request.request_id')
     requestId = serializers.ReadOnlyField(source='purchase_request.request_id')
     isRead = serializers.BooleanField(source='is_read', required=False)

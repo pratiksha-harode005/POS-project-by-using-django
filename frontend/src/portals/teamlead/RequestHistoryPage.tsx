@@ -40,7 +40,11 @@ export const RequestHistoryPage: React.FC = () => {
     return `${diffDays} day(s)`
   }
 
-  const filtered = requests.filter((item) => {
+  const historyRequests = requests.filter(
+    (item) => item.status !== 'Draft' && String((item as any).raw_status || '').toUpperCase() !== 'DRAFT'
+  )
+
+  const filtered = historyRequests.filter((item) => {
     const itemSt = (item.status || '').toLowerCase().trim()
     const filterSt = (filterStatus || '').toLowerCase().trim()
     const matchesStatus =
@@ -267,7 +271,6 @@ export const RequestHistoryPage: React.FC = () => {
               <option value="Completed">Completed</option>
               <option value="Returned">Returned</option>
               <option value="Rejected">Rejected</option>
-              <option value="Draft">Draft</option>
             </select>
           </div>
 

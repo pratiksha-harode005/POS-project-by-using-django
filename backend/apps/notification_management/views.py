@@ -12,20 +12,18 @@ class NotificationViewSet(viewsets.ModelViewSet):
     serializer_class = NotificationSerializer
     permission_classes = [AllowAny]
 
-    def get_queryset(self):
+    def get_filtered_queryset(self, request=None):
+        req = request or self.request
         try:
-            user = self.request.user
+            user = req.user
             qs = Notification.objects.select_related(
                 'purchase_request',
-                'purchase_request__department',
-                'purchase_request__created_by',
-                'user',
-                'user__department'
-            ).order_by('-created_at')
+                'user'
+            )
 
-            role_param = self.request.query_params.get('role')
-            user_param = self.request.query_params.get('user') or self.request.query_params.get('user_id')
-            vendor_param = self.request.query_params.get('vendor') or self.request.query_params.get('vendor_id')
+            role_param = req.query_params.get('role')
+            user_param = req.query_params.get('user') or req.query_params.get('user_id')
+            vendor_param = req.query_params.get('vendor') or req.query_params.get('vendor_id')
 
             if self.action in ['retrieve', 'update', 'partial_update', 'destroy', 'mark_read'] or self.kwargs.get('pk'):
                 return Notification.objects.all()
@@ -37,11 +35,10 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
                 target_user = User.objects.filter(u_lookup).first()
                 if target_user:
-                    # Notifications are stored per recipient, so a role-wide OR
-                    # here counts one event once for every user in that role.
                     return qs.filter(user=target_user)
 
-                return qs.none()
+                r_clean = str(role_param).strip().upper()
+                return qs.filter(user__role__iexact=r_clean).distinct()
 
             if user_param:
                 if str(user_param).isdigit():
@@ -91,10 +88,51 @@ class NotificationViewSet(viewsets.ModelViewSet):
         except Exception:
             return Notification.objects.none()
 
+    def get_queryset(self):
+        return self.get_filtered_queryset().order_by('-created_at')
+
+    def list(self, request, *args, **kwargs):
+        base_qs = self.get_filtered_queryset(request)
+        unread_count = base_qs.filter(is_read=False).order_by().count()
+        
+        page_size_param = request.query_params.get('page_size')
+        if page_size_param:
+            try:
+                page_size = max(1, min(1000, int(page_size_param)))
+                page_num = max(1, int(request.query_params.get('page', 1)))
+                start = (page_num - 1) * page_size
+                end = start + page_size
+                ordered_qs = base_qs.order_by('-created_at')
+                total_count = ordered_qs.count()
+                items = ordered_qs[start:end]
+                serializer = self.get_serializer(items, many=True)
+                return Response({
+                    'count': total_count,
+                    'unread_count': unread_count,
+                    'results': serializer.data
+                })
+            except (ValueError, TypeError):
+                pass
+
+        page = self.paginate_queryset(self.get_queryset())
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            res = self.get_paginated_response(serializer.data)
+            res.data['unread_count'] = unread_count
+            return res
+
+        serializer = self.get_serializer(self.get_queryset(), many=True)
+        return Response({
+            'count': base_qs.count(),
+            'unread_count': unread_count,
+            'results': serializer.data
+        })
+
     @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def unread_count(self, request):
-        qs = self.get_queryset().filter(is_read=False)
-        return Response({'unread_count': qs.count()})
+        base_qs = self.get_filtered_queryset(request)
+        count = base_qs.filter(is_read=False).order_by().count()
+        return Response({'unread_count': count})
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def mark_all_read(self, request):

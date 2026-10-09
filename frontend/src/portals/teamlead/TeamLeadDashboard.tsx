@@ -83,15 +83,19 @@ export const TeamLeadDashboard: React.FC = () => {
     }
   }, [fetchLiveNotifications])
 
-  const returnedRequests = requests.filter((r) => r.status === 'Returned')
+  const submittedRequests = requests.filter(
+    (req) => req.status !== 'Draft' && String((req as any).raw_status || '').toUpperCase() !== 'DRAFT'
+  )
+
+  const returnedRequests = submittedRequests.filter((r) => r.status === 'Returned')
   const returnedCount = returnedRequests.length
 
-  const pendingCount = requests.filter((r) => r.status === 'Pending').length
-  const approvedCount = requests.filter((r) => r.status === 'Approved').length
-  const rejectedCount = requests.filter((r) => r.status === 'Rejected').length
-  const inProcurementCount = requests.filter((r) => r.status === 'In Procurement').length
-  const completedCount = requests.filter((r) => r.status === 'Completed').length
-  const totalCount = requests.length
+  const pendingCount = submittedRequests.filter((r) => r.status === 'Pending').length
+  const approvedCount = submittedRequests.filter((r) => r.status === 'Approved').length
+  const rejectedCount = submittedRequests.filter((r) => r.status === 'Rejected').length
+  const inProcurementCount = submittedRequests.filter((r) => r.status === 'In Procurement').length
+  const completedCount = submittedRequests.filter((r) => r.status === 'Completed').length
+  const totalCount = submittedRequests.length
 
   const handleQuickCreate = (category?: string, subcategory?: string) => {
     if (category) {
@@ -122,7 +126,7 @@ export const TeamLeadDashboard: React.FC = () => {
     { name: 'Rejected', value: rejectedCount, color: STATUS_COLORS.Rejected },
   ].filter((d) => d.value > 0)
 
-  const recentRequests = requests.slice(0, 5)
+  const recentRequests = submittedRequests.slice(0, 5)
 
   // Role-aware notifications for Team Lead with fallback
   const recentNotifications = (
